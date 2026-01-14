@@ -7,12 +7,14 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
+import NewProject from "./pages/NewProject";
 
 function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
       <Route path={"/projects"} component={Projects} />
+      <Route path={"/projects/new"} component={NewProject} />
       <Route path={"/projects/:id"} component={ProjectDetail} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />

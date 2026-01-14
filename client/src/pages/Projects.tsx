@@ -115,63 +115,12 @@ export default function Projects() {
               動画から自動でチュートリアルを生成します
             </p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                新規プロジェクト
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[525px]">
-              <form onSubmit={handleCreateProject}>
-                <DialogHeader>
-                  <DialogTitle>新規プロジェクト作成</DialogTitle>
-                  <DialogDescription>
-                    動画ファイルをアップロードして、新しいチュートリアルプロジェクトを作成します。
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="title">タイトル</Label>
-                    <Input
-                      id="title"
-                      name="title"
-                      placeholder="例: Excelの基本操作"
-                      required
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="description">説明（任意）</Label>
-                    <Textarea
-                      id="description"
-                      name="description"
-                      placeholder="このチュートリアルの内容を簡単に説明してください"
-                      rows={3}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="video">動画ファイル</Label>
-                    <Input
-                      id="video"
-                      name="video"
-                      type="file"
-                      accept="video/mp4,video/quicktime"
-                      required
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      対応形式: MP4, MOV
-                    </p>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button type="submit" disabled={isUploading}>
-                    {isUploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    作成
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <Link href="/projects/new">
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              新規プロジェクト
+            </Button>
+          </Link>
         </div>
 
         {isLoading ? (

@@ -23,8 +23,34 @@ export default function ProjectDetail() {
   const generateStepsMutation = trpc.step.generate.useMutation();
   const updateStepMutation = trpc.step.update.useMutation();
   const deleteStepMutation = trpc.step.delete.useMutation();
+  const generateSlideMutation = trpc.slide.generate.useMutation();
+  const generateVideoMutation = trpc.video.generate.useMutation();
 
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
+
+  const handleGenerateSlide = async () => {
+    try {
+      const result = await generateSlideMutation.mutateAsync({ projectId });
+      toast.success("スライドの生成が完了しました");
+      if (result.slideUrl) {
+        window.open(result.slideUrl, "_blank");
+      }
+    } catch (error) {
+      toast.error("スライドの生成に失敗しました");
+    }
+  };
+
+  const handleGenerateVideo = async () => {
+    try {
+      const result = await generateVideoMutation.mutateAsync({ projectId });
+      toast.success("動画の生成が完了しました");
+      if (result.videoUrl) {
+        window.open(result.videoUrl, "_blank");
+      }
+    } catch (error) {
+      toast.error("動画の生成に失敗しました");
+    }
+  };
 
   const handleGenerateSteps = async () => {
     try {
@@ -111,13 +137,23 @@ export default function ProjectDetail() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" disabled>
+            <Button 
+              variant="outline" 
+              onClick={handleGenerateSlide}
+              disabled={generateSlideMutation.isPending || !steps || steps.length === 0}
+            >
+              {generateSlideMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               <Download className="h-4 w-4 mr-2" />
-              スライドをダウンロード
+              スライドを生成
             </Button>
-            <Button variant="outline" disabled>
+            <Button 
+              variant="outline"
+              onClick={handleGenerateVideo}
+              disabled={generateVideoMutation.isPending || !steps || steps.length === 0}
+            >
+              {generateVideoMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               <Download className="h-4 w-4 mr-2" />
-              動画をダウンロード
+              動画を生成
             </Button>
           </div>
         </div>
