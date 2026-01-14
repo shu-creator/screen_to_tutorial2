@@ -1,0 +1,307 @@
+import { useAuth } from "@/_core/hooks/useAuth";
+import DashboardLayout from "@/components/DashboardLayout";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { trpc } from "@/lib/trpc";
+import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2 } from "lucide-react";
+import { Link, useParams } from "wouter";
+import { toast } from "sonner";
+import { useState } from "react";
+
+export default function ProjectDetail() {
+  const params = useParams<{ id: string }>();
+  const projectId = parseInt(params.id || "0");
+  
+  const { data: project, isLoading: projectLoading } = trpc.project.getById.useQuery({ id: projectId });
+  const { data: frames, isLoading: framesLoading, refetch: refetchFrames } = trpc.frame.listByProject.useQuery({ projectId });
+  const { data: steps, isLoading: stepsLoading, refetch: refetchSteps } = trpc.step.listByProject.useQuery({ projectId });
+  
+  const generateStepsMutation = trpc.step.generate.useMutation();
+  const updateStepMutation = trpc.step.update.useMutation();
+  const deleteStepMutation = trpc.step.delete.useMutation();
+
+  const [editingStepId, setEditingStepId] = useState<number | null>(null);
+
+  const handleGenerateSteps = async () => {
+    try {
+      await generateStepsMutation.mutateAsync({ projectId });
+      toast.success("ステップの生成を開始しました");
+      
+      // ポーリングで結果を確認
+      const pollInterval = setInterval(() => {
+        refetchSteps();
+      }, 3000);
+      
+      setTimeout(() => {
+        clearInterval(pollInterval);
+      }, 60000); // 1分後にポーリング停止
+      
+    } catch (error) {
+      toast.error("ステップの生成に失敗しました");
+    }
+  };
+
+  const handleUpdateStep = async (stepId: number, data: any) => {
+    try {
+      await updateStepMutation.mutateAsync({ id: stepId, ...data });
+      toast.success("ステップを更新しました");
+      refetchSteps();
+      setEditingStepId(null);
+    } catch (error) {
+      toast.error("ステップの更新に失敗しました");
+    }
+  };
+
+  const handleDeleteStep = async (stepId: number) => {
+    if (!confirm("このステップを削除しますか?")) return;
+    
+    try {
+      await deleteStepMutation.mutateAsync({ id: stepId });
+      toast.success("ステップを削除しました");
+      refetchSteps();
+    } catch (error) {
+      toast.error("ステップの削除に失敗しました");
+    }
+  };
+
+  if (projectLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!project) {
+    return (
+      <DashboardLayout>
+        <div className="text-center py-12">
+          <h2 className="text-2xl font-bold text-foreground mb-4">プロジェクトが見つかりません</h2>
+          <Link href="/projects">
+            <Button>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              プロジェクト一覧に戻る
+            </Button>
+          </Link>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link href="/projects">
+              <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            </Link>
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">{project.title}</h1>
+              <p className="text-muted-foreground mt-1">{project.description}</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" disabled>
+              <Download className="h-4 w-4 mr-2" />
+              スライドをダウンロード
+            </Button>
+            <Button variant="outline" disabled>
+              <Download className="h-4 w-4 mr-2" />
+              動画をダウンロード
+            </Button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <Tabs defaultValue="frames" className="w-full">
+          <TabsList>
+            <TabsTrigger value="frames">
+              <ImageIcon className="h-4 w-4 mr-2" />
+              フレーム ({frames?.length || 0})
+            </TabsTrigger>
+            <TabsTrigger value="steps">
+              <FileText className="h-4 w-4 mr-2" />
+              ステップ ({steps?.length || 0})
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Frames Tab */}
+          <TabsContent value="frames" className="space-y-4">
+            {framesLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : frames && frames.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {frames.map((frame) => (
+                  <Card key={frame.id}>
+                    <CardHeader>
+                      <CardTitle className="text-sm">フレーム {frame.frameNumber}</CardTitle>
+                      <CardDescription>
+                        {Math.floor(frame.timestamp / 1000)}秒 | 差分スコア: {frame.diffScore}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <img
+                        src={frame.imageUrl}
+                        alt={`Frame ${frame.frameNumber}`}
+                        className="w-full h-auto rounded-md border"
+                      />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <ImageIcon className="h-16 w-16 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2 text-foreground">
+                    フレームがありません
+                  </h3>
+                  <p className="text-muted-foreground text-center">
+                    動画の処理が完了すると、ここにフレームが表示されます。
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Steps Tab */}
+          <TabsContent value="steps" className="space-y-4">
+            <div className="flex justify-end">
+              <Button
+                onClick={handleGenerateSteps}
+                disabled={generateStepsMutation.isPending || !frames || frames.length === 0}
+              >
+                {generateStepsMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                <Wand2 className="h-4 w-4 mr-2" />
+                AIでステップを生成
+              </Button>
+            </div>
+
+            {stepsLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : steps && steps.length > 0 ? (
+              <div className="space-y-4">
+                {steps.map((step, index) => (
+                  <Card key={step.id}>
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div className="flex gap-4 flex-1">
+                          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
+                            {index + 1}
+                          </div>
+                          <div className="flex-1">
+                            {editingStepId === step.id ? (
+                              <div className="space-y-4">
+                                <div>
+                                  <Label htmlFor={`title-${step.id}`}>タイトル</Label>
+                                  <Input
+                                    id={`title-${step.id}`}
+                                    defaultValue={step.title}
+                                    onBlur={(e) => handleUpdateStep(step.id, { title: e.target.value })}
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor={`operation-${step.id}`}>操作</Label>
+                                  <Input
+                                    id={`operation-${step.id}`}
+                                    defaultValue={step.operation}
+                                    onBlur={(e) => handleUpdateStep(step.id, { operation: e.target.value })}
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor={`description-${step.id}`}>説明</Label>
+                                  <Textarea
+                                    id={`description-${step.id}`}
+                                    defaultValue={step.description}
+                                    rows={3}
+                                    onBlur={(e) => handleUpdateStep(step.id, { description: e.target.value })}
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor={`narration-${step.id}`}>ナレーション</Label>
+                                  <Textarea
+                                    id={`narration-${step.id}`}
+                                    defaultValue={step.narration || ""}
+                                    rows={2}
+                                    onBlur={(e) => handleUpdateStep(step.id, { narration: e.target.value })}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <CardTitle>{step.title}</CardTitle>
+                                <CardDescription className="mt-2">
+                                  <strong>操作:</strong> {step.operation}
+                                </CardDescription>
+                                <p className="text-sm text-foreground mt-2">{step.description}</p>
+                                {step.narration && (
+                                  <p className="text-sm text-muted-foreground mt-2 italic">
+                                    🎙️ {step.narration}
+                                  </p>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingStepId(editingStepId === step.id ? null : step.id)}
+                          >
+                            {editingStepId === step.id ? "完了" : "編集"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteStep(step.id)}
+                          >
+                            削除
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <FileText className="h-16 w-16 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2 text-foreground">
+                    ステップがありません
+                  </h3>
+                  <p className="text-muted-foreground text-center mb-4">
+                    AIでステップを生成ボタンをクリックして、自動で手順を生成しましょう。
+                  </p>
+                  <Button
+                    onClick={handleGenerateSteps}
+                    disabled={generateStepsMutation.isPending || !frames || frames.length === 0}
+                  >
+                    {generateStepsMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    <Wand2 className="h-4 w-4 mr-2" />
+                    AIでステップを生成
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
+    </DashboardLayout>
+  );
+}

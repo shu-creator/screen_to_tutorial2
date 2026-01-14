@@ -25,4 +25,59 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+/**
+ * Projects table - stores video processing projects
+ */
+export const projects = mysqlTable("projects", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  videoUrl: text("videoUrl").notNull(),
+  videoKey: varchar("videoKey", { length: 512 }).notNull(),
+  status: mysqlEnum("status", ["uploading", "processing", "completed", "failed"]).default("uploading").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Project = typeof projects.$inferSelect;
+export type InsertProject = typeof projects.$inferInsert;
+
+/**
+ * Frames table - stores extracted key frames from videos
+ */
+export const frames = mysqlTable("frames", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  frameNumber: int("frameNumber").notNull(),
+  timestamp: int("timestamp").notNull(), // milliseconds
+  imageUrl: text("imageUrl").notNull(),
+  imageKey: varchar("imageKey", { length: 512 }).notNull(),
+  diffScore: int("diffScore"), // difference score from previous frame
+  sortOrder: int("sortOrder").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Frame = typeof frames.$inferSelect;
+export type InsertFrame = typeof frames.$inferInsert;
+
+/**
+ * Steps table - stores AI-generated step descriptions for each frame
+ */
+export const steps = mysqlTable("steps", {
+  id: int("id").autoincrement().primaryKey(),
+  frameId: int("frameId").notNull().references(() => frames.id, { onDelete: "cascade" }),
+  projectId: int("projectId").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  operation: text("operation").notNull(),
+  description: text("description").notNull(),
+  narration: text("narration"),
+  audioUrl: text("audioUrl"),
+  audioKey: varchar("audioKey", { length: 512 }),
+  sortOrder: int("sortOrder").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Step = typeof steps.$inferSelect;
+export type InsertStep = typeof steps.$inferInsert;
