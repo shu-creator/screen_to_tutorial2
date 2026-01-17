@@ -8,6 +8,7 @@ import { processVideo } from "./videoProcessor";
 import { generateStepsForProject, regenerateStep } from "./stepGenerator";
 import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
+import { storagePut } from "./storage";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -38,19 +39,27 @@ export const appRouter = router({
       .input(z.object({
         title: z.string(),
         description: z.string().optional(),
-        videoUrl: z.string(),
-        videoKey: z.string(),
+        videoBase64: z.string(),
+        fileName: z.string(),
+        contentType: z.string(),
       }))
       .mutation(async ({ ctx, input }) => {
+        // Base64からバッファに変換
+        const videoBuffer = Buffer.from(input.videoBase64, "base64");
+        const videoKey = `projects/${ctx.user.id}/videos/${Date.now()}_${input.fileName}`;
+
+        // ストレージにアップロード
+        const { url: videoUrl } = await storagePut(videoKey, videoBuffer, input.contentType);
+
         const projectId = await db.createProject({
           userId: ctx.user.id,
           title: input.title,
           description: input.description,
-          videoUrl: input.videoUrl,
-          videoKey: input.videoKey,
+          videoUrl,
+          videoKey,
           status: "uploading",
         });
-        return { projectId };
+        return { projectId, videoUrl, videoKey };
       }),
     
     updateStatus: protectedProcedure

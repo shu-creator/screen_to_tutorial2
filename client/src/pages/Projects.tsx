@@ -11,7 +11,6 @@ import { Plus, Video, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react"
 import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
-import { storagePut } from "server/storage";
 
 export default function Projects() {
   const { user } = useAuth();
@@ -34,33 +33,45 @@ export default function Projects() {
       return;
     }
 
+    // ファイルサイズの制限（100MB）
+    const MAX_FILE_SIZE = 100 * 1024 * 1024;
+    if (videoFile.size > MAX_FILE_SIZE) {
+      toast.error("ファイルサイズは100MB以下にしてください");
+      return;
+    }
+
     setIsUploading(true);
 
     try {
-      // S3に動画をアップロード
-      const videoBuffer = await videoFile.arrayBuffer();
-      const videoKey = `projects/${user?.id}/videos/${Date.now()}_${videoFile.name}`;
-      
-      // storagePutはサーバーサイド関数なので、直接呼び出せません
-      // 代わりに、ファイルをBase64エンコードしてサーバーに送信する必要があります
-      // ここでは簡略化のため、URLを生成する処理をスキップします
-      
-      toast.error("動画アップロード機能は現在開発中です。サーバーサイドでの実装が必要です。");
-      setIsUploading(false);
-      return;
+      // ファイルをBase64エンコード
+      const arrayBuffer = await videoFile.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          ""
+        )
+      );
 
-      // TODO: 実際の実装では、以下のようにサーバーサイドでアップロードを行う
-      // const result = await createProjectMutation.mutateAsync({
-      //   title,
-      //   description,
-      //   videoUrl: uploadedUrl,
-      //   videoKey: videoKey,
-      // });
-      
-      // await processVideoMutation.mutateAsync({
-      //   projectId: result.projectId,
-      //   videoUrl: uploadedUrl,
-      // });
+      // サーバーにアップロード（サーバー側でストレージにアップロード）
+      const result = await createProjectMutation.mutateAsync({
+        title,
+        description: description || undefined,
+        videoBase64: base64,
+        fileName: videoFile.name,
+        contentType: videoFile.type || "video/mp4",
+      });
+
+      toast.success("プロジェクトを作成しました");
+      setIsDialogOpen(false);
+
+      // 動画処理を開始
+      await processVideoMutation.mutateAsync({
+        projectId: result.projectId,
+        videoUrl: result.videoUrl,
+      });
+
+      toast.success("動画処理を開始しました");
+      refetch();
 
     } catch (error) {
       console.error("プロジェクト作成エラー:", error);
