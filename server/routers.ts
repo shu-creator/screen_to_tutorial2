@@ -1,5 +1,6 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { createLogger } from "./_core/logger";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
@@ -9,6 +10,8 @@ import { generateStepsForProject, regenerateStep } from "./stepGenerator";
 import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
 import { storagePut } from "./storage";
+
+const logger = createLogger("Router");
 
 // セキュリティ: エラーメッセージからセンシティブ情報を除去
 function sanitizeError(error: unknown): string {
@@ -159,7 +162,7 @@ export const appRouter = router({
           })
           .catch(async (error) => {
             const errorMessage = error instanceof Error ? error.message : "動画処理中にエラーが発生しました";
-            console.error(`[VideoProcessor] Retry error for project ${projectId}: ${errorMessage}`);
+            logger.error("Retry processing failed", { projectId }, error instanceof Error ? error : undefined);
             await db.updateProjectError(projectId, errorMessage);
           });
 
@@ -239,7 +242,7 @@ export const appRouter = router({
             .catch(async (error) => {
               // エラーメッセージを取得（ユーザーに表示するため）
               const errorMessage = error instanceof Error ? error.message : "動画処理中にエラーが発生しました";
-              console.error(`[VideoProcessor] Error processing project ${projectId}: ${errorMessage}`);
+              logger.error("Video processing failed", { projectId }, error instanceof Error ? error : undefined);
               // エラーメッセージをDBに保存
               await db.updateProjectError(projectId, errorMessage);
             });
@@ -306,12 +309,12 @@ export const appRouter = router({
           .then(async () => {
             // 進捗を100%に更新
             await db.updateProjectProgress(input.projectId, 100, "ステップ生成が完了しました");
-            console.log(`[StepGenerator] Steps generated for project ${input.projectId}`);
+            logger.info("Steps generated successfully", { projectId: input.projectId });
           })
           .catch(async (error) => {
             // エラーメッセージを取得（ユーザーに表示するため）
             const errorMessage = error instanceof Error ? error.message : "AI解析中にエラーが発生しました";
-            console.error(`[StepGenerator] Error generating steps for project ${input.projectId}: ${errorMessage}`);
+            logger.error("Step generation failed", { projectId: input.projectId }, error instanceof Error ? error : undefined);
             // エラーメッセージをDBに保存
             await db.updateProjectError(input.projectId, errorMessage);
           });
