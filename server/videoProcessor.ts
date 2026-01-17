@@ -29,11 +29,17 @@ export async function processVideo(
 ): Promise<void> {
   const { threshold = 5.0, minInterval = 30, maxFrames = 100 } = options;
 
+  // 進捗: 処理開始
+  await db.updateProjectProgress(projectId, 0, "動画処理を開始しています...");
+
   // 一時ディレクトリを作成
   const tempDir = path.join("/tmp", `frames_${projectId}_${Date.now()}`);
   await fs.mkdir(tempDir, { recursive: true });
 
   try {
+    // 進捗: フレーム抽出開始
+    await db.updateProjectProgress(projectId, 10, "動画からフレームを抽出しています...");
+
     // Pythonスクリプトを実行してフレームを抽出
     const scriptPath = path.join(process.cwd(), "scripts", "extract_frames.py");
 
@@ -60,6 +66,9 @@ export async function processVideo(
       throw new Error(`フレーム情報のJSONパースに失敗しました: ${parseError instanceof Error ? parseError.message : parseError}`);
     }
     console.log(`[VideoProcessor] Extracted ${frames.length} frames`);
+
+    // 進捗: フレーム抽出完了
+    await db.updateProjectProgress(projectId, 30, `${frames.length}個のフレームを抽出しました`);
 
     // 各フレームをS3にアップロードしてDBに保存
     for (let i = 0; i < frames.length; i++) {
@@ -90,8 +99,15 @@ export async function processVideo(
         sortOrder: i,
       });
 
+      // 進捗: フレームアップロード（30% → 70%）
+      const uploadProgress = 30 + Math.floor((i + 1) / frames.length * 40);
+      await db.updateProjectProgress(projectId, uploadProgress, `フレームをアップロード中 (${i + 1}/${frames.length})`);
+
       console.log(`[VideoProcessor] Uploaded frame ${i + 1}/${frames.length}`);
     }
+
+    // 進捗: フレーム処理完了
+    await db.updateProjectProgress(projectId, 70, "フレームの処理が完了しました");
 
     console.log(`[VideoProcessor] Processing complete for project ${projectId}`);
   } finally {

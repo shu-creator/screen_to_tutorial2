@@ -8,9 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { Plus, Video, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
+import { Progress } from "@/components/ui/progress";
 
 export default function Projects() {
   const { user } = useAuth();
@@ -18,6 +19,53 @@ export default function Projects() {
   const [isUploading, setIsUploading] = useState(false);
   
   const { data: projects, isLoading, refetch } = trpc.project.list.useQuery();
+  const utils = trpc.useUtils();
+  const [pollingProjectIds, setPollingProjectIds] = useState<Set<number>>(new Set());
+  const [progressData, setProgressData] = useState<Map<number, { progress: number; message: string }>>(new Map());
+
+  // 処理中のプロジェクトを自動検出してポーリング開始
+  useEffect(() => {
+    if (projects) {
+      const processingIds = new Set(
+        projects
+          .filter(p => p.status === "processing")
+          .map(p => p.id)
+      );
+      setPollingProjectIds(processingIds);
+    }
+  }, [projects]);
+
+  // ポーリング処理（1秒間隔）
+  useEffect(() => {
+    if (pollingProjectIds.size === 0) return;
+
+    const interval = setInterval(async () => {
+      const projectIdArray = Array.from(pollingProjectIds);
+      for (const projectId of projectIdArray) {
+        try {
+          const progress = await utils.project.getProgress.fetch({ id: projectId });
+          setProgressData(prev => new Map(prev).set(projectId, {
+            progress: progress.progress,
+            message: progress.message,
+          }));
+
+          // 処理完了または失敗した場合はポーリング停止
+          if (progress.status === "completed" || progress.status === "failed") {
+            setPollingProjectIds(prev => {
+              const next = new Set(prev);
+              next.delete(projectId);
+              return next;
+            });
+            refetch(); // プロジェクト一覧を更新
+          }
+        } catch (error) {
+          console.error(`Failed to fetch progress for project ${projectId}:`, error);
+        }
+      }
+    }, 1000); // 1秒間隔
+
+    return () => clearInterval(interval);
+  }, [pollingProjectIds, refetch]);
   const createProjectMutation = trpc.project.create.useMutation();
   const processVideoMutation = trpc.project.processVideo.useMutation();
 
@@ -111,7 +159,7 @@ export default function Projects() {
       case "processing":
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">
-            <Clock className="h-3 w-3" />
+            <Loader2 className="h-3 w-3 animate-spin" />
             処理中
           </span>
         );
@@ -233,6 +281,19 @@ export default function Projects() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {project.status === "processing" && progressData.has(project.id) && (
+                      <div className="space-y-2 mb-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">
+                            {progressData.get(project.id)?.message || "処理中..."}
+                          </span>
+                          <span className="font-medium">
+                            {progressData.get(project.id)?.progress || 0}%
+                          </span>
+                        </div>
+                        <Progress value={progressData.get(project.id)?.progress || 0} className="h-2" />
+                      </div>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       作成日: {new Date(project.createdAt).toLocaleDateString("ja-JP")}
                     </p>

@@ -36,6 +36,8 @@ export const projects = mysqlTable("projects", {
   videoUrl: text("videoUrl").notNull(),
   videoKey: varchar("videoKey", { length: 512 }).notNull(),
   status: mysqlEnum("status", ["uploading", "processing", "completed", "failed"]).default("uploading").notNull(),
+  processingProgress: int("processingProgress").default(0), // 0-100の進捗率
+  processingMessage: text("processingMessage"), // 現在の処理ステップメッセージ
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

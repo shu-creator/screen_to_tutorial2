@@ -94,6 +94,9 @@ async function analyzeFrame(imageUrl: string, frameNumber: number): Promise<Step
 export async function generateStepsForProject(projectId: number): Promise<void> {
   console.log(`[StepGenerator] Starting step generation for project ${projectId}`);
 
+  // 進捗: AI解析開始
+  await db.updateProjectProgress(projectId, 70, "AIが画像を解析しています...");
+
   // プロジェクトのフレームを取得
   const frames = await db.getFramesByProjectId(projectId);
 
@@ -125,6 +128,10 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
         sortOrder: index,
       });
 
+      // 進捗: AI解析（70% → 90%）
+      const analysisProgress = 70 + Math.floor((index + 1) / frames.length * 20);
+      await db.updateProjectProgress(projectId, analysisProgress, `ステップを生成中 (${index + 1}/${frames.length})`);
+
       console.log(`[StepGenerator] Step ${index + 1} created: ${stepData.title}`);
     } catch (error) {
       // セキュリティ: エラーメッセージを制限
@@ -151,6 +158,9 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
     );
     await Promise.all(promises);
   }
+
+  // 進捗: ステップ生成完了
+  await db.updateProjectProgress(projectId, 90, "ステップの生成が完了しました");
 
   console.log(`[StepGenerator] Step generation complete for project ${projectId}`);
 }

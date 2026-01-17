@@ -122,3 +122,14 @@
 - ✅ リクエストボディサイズ制限: 50MBに設定済み
 
 詳細は `test_results_report.md` を参照してください。
+
+## 動画処理の進捗状況リアルタイム表示機能
+
+- [x] データベーススキーマに進捗状況フィールドを追加（processingProgress, processingMessage）
+- [x] サーバーサイドの進捗管理機能を実装（updateProjectProgress関数）
+- [x] videoProcessor.tsで各処理ステップごとに進捗を更新
+- [x] stepGenerator.tsでAI解析ステップごとに進捗を更新
+- [x] tRPCエンドポイントで進捗取得API（getProgress）を追加
+- [x] フロントエンドに進捗表示UI（プログレスバー、ステータスメッセージ）を実装
+- [x] ポーリング機能を実装（1秒間隔、処理完了時に自動停止）
+- [x] 動作確認とテスト（progress.test.tsで全テスト成功）

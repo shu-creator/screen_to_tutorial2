@@ -85,6 +85,21 @@ export const appRouter = router({
         return { success: true };
       }),
     
+    getProgress: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        // セキュリティ: ユーザーIDによる所有者チェック
+        const project = await db.getProjectById(input.id, ctx.user.id);
+        if (!project) {
+          throw new Error("プロジェクトが見つかりません");
+        }
+        return {
+          status: project.status,
+          progress: project.processingProgress ?? 0,
+          message: project.processingMessage ?? "",
+        };
+      }),
+    
     processVideo: protectedProcedure
       .input(z.object({
         projectId: z.number(),
@@ -103,6 +118,8 @@ export const appRouter = router({
           // 動画を処理（バックグラウンドで実行）
           processVideo(projectId, videoUrl, { threshold, minInterval, maxFrames })
             .then(async () => {
+              // 進捗を100%に更新
+              await db.updateProjectProgress(projectId, 100, "処理が完了しました");
               await db.updateProjectStatus(projectId, "completed");
             })
             .catch(async (error) => {
@@ -171,7 +188,9 @@ export const appRouter = router({
 
         // バックグラウンドでステップ生成を実行
         generateStepsForProject(input.projectId)
-          .then(() => {
+          .then(async () => {
+            // 進捗を100%に更新
+            await db.updateProjectProgress(input.projectId, 100, "ステップ生成が完了しました");
             console.log(`[StepGenerator] Steps generated for project ${input.projectId}`);
           })
           .catch((error) => {
