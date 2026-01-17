@@ -42,6 +42,12 @@ export function registerOAuthRoutes(app: Express) {
       });
 
       const cookieOptions = getSessionCookieOptions(req);
+      console.log("[OAuth] Setting cookie with options:", {
+        ...cookieOptions,
+        protocol: req.protocol,
+        xForwardedProto: req.headers["x-forwarded-proto"],
+        host: req.headers.host,
+      });
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
       // Redirect to dashboard after successful login
