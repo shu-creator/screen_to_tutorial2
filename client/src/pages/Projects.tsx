@@ -291,6 +291,7 @@ export default function Projects() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {isLoading ? (
