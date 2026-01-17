@@ -7,18 +7,51 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2 } from "lucide-react";
+import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
 import { Link, useParams } from "wouter";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function ProjectDetail() {
   const params = useParams<{ id: string }>();
   const projectId = parseInt(params.id || "0");
   
-  const { data: project, isLoading: projectLoading } = trpc.project.getById.useQuery({ id: projectId });
+  const { data: project, isLoading: projectLoading, refetch: refetchProject } = trpc.project.getById.useQuery({ id: projectId });
   const { data: frames, isLoading: framesLoading, refetch: refetchFrames } = trpc.frame.listByProject.useQuery({ projectId });
   const { data: steps, isLoading: stepsLoading, refetch: refetchSteps } = trpc.step.listByProject.useQuery({ projectId });
+  const utils = trpc.useUtils();
+  const [progressData, setProgressData] = useState<{ progress: number; message: string; errorMessage?: string | null } | null>(null);
+
+  // 処理中のプロジェクトの進捗をポーリング
+  useEffect(() => {
+    if (!project || (project.status !== "processing" && project.status !== "failed")) {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const progress = await utils.project.getProgress.fetch({ id: projectId });
+        setProgressData({
+          progress: progress.progress,
+          message: progress.message,
+          errorMessage: progress.errorMessage,
+        });
+
+        if (progress.status === "completed" || (progress.status === "failed" && progress.errorMessage)) {
+          clearInterval(interval);
+          refetchProject();
+          refetchFrames();
+          refetchSteps();
+        }
+      } catch (error) {
+        console.error("Failed to fetch progress:", error);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [project?.status, projectId, utils, refetchProject, refetchFrames, refetchSteps]);
   
   const generateStepsMutation = trpc.step.generate.useMutation();
   const updateStepMutation = trpc.step.update.useMutation();
@@ -106,7 +139,27 @@ export default function ProjectDetail() {
               </Button>
             </Link>
             <div>
-              <h1 className="text-3xl font-bold text-foreground">{project.title}</h1>
+              <div className="flex items-center gap-3 mb-2">
+                <h1 className="text-3xl font-bold text-foreground">{project.title}</h1>
+                {project.status === "processing" && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-yellow-100 text-yellow-700">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    処理中
+                  </span>
+                )}
+                {project.status === "completed" && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-green-100 text-green-700">
+                    <CheckCircle className="h-4 w-4" />
+                    完了
+                  </span>
+                )}
+                {project.status === "failed" && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-red-100 text-red-700">
+                    <XCircle className="h-4 w-4" />
+                    失敗
+                  </span>
+                )}
+              </div>
               <p className="text-muted-foreground mt-1">{project.description}</p>
             </div>
           </div>
@@ -121,6 +174,34 @@ export default function ProjectDetail() {
             </Button>
           </div>
         </div>
+
+        {/* 進捗表示 */}
+        {project.status === "processing" && progressData && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">処理中...</CardTitle>
+              <CardDescription>{progressData.message}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">進捗</span>
+                  <span className="font-medium">{progressData.progress}%</span>
+                </div>
+                <Progress value={progressData.progress} className="h-3" />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* エラー表示 */}
+        {project.status === "failed" && progressData?.errorMessage && (
+          <Alert variant="destructive">
+            <XCircle className="h-4 w-4" />
+            <AlertTitle>処理が失敗しました</AlertTitle>
+            <AlertDescription>{progressData.errorMessage}</AlertDescription>
+          </Alert>
+        )}
 
         {/* Tabs */}
         <Tabs defaultValue="frames" className="w-full">

@@ -136,6 +136,15 @@ export async function updateProjectProgress(id: number, progress: number, messag
   }).where(eq(projects.id, id));
 }
 
+export async function updateProjectError(id: number, errorMessage: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(projects).set({ 
+    status: "failed",
+    errorMessage: errorMessage 
+  }).where(eq(projects.id, id));
+}
+
 // Frame queries
 export async function createFrame(data: InsertFrame) {
   const db = await getDb();

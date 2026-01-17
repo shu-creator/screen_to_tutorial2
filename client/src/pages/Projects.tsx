@@ -21,14 +21,14 @@ export default function Projects() {
   const { data: projects, isLoading, refetch } = trpc.project.list.useQuery();
   const utils = trpc.useUtils();
   const [pollingProjectIds, setPollingProjectIds] = useState<Set<number>>(new Set());
-  const [progressData, setProgressData] = useState<Map<number, { progress: number; message: string }>>(new Map());
+  const [progressData, setProgressData] = useState<Map<number, { progress: number; message: string; errorMessage?: string | null }>>(new Map());
 
-  // 処理中のプロジェクトを自動検出してポーリング開始
+  // 処理中または失敗したプロジェクトを自動検出してポーリング開始
   useEffect(() => {
     if (projects) {
       const processingIds = new Set(
         projects
-          .filter(p => p.status === "processing")
+          .filter(p => p.status === "processing" || p.status === "failed")
           .map(p => p.id)
       );
       setPollingProjectIds(processingIds);
@@ -47,16 +47,25 @@ export default function Projects() {
           setProgressData(prev => new Map(prev).set(projectId, {
             progress: progress.progress,
             message: progress.message,
+            errorMessage: progress.errorMessage,
           }));
 
-          // 処理完了または失敗した場合はポーリング停止
-          if (progress.status === "completed" || progress.status === "failed") {
+          // 処理完了または失敗した場合はポーリング停止（失敗時はエラーメッセージを取得後）
+          if (progress.status === "completed") {
             setPollingProjectIds(prev => {
               const next = new Set(prev);
               next.delete(projectId);
               return next;
             });
             refetch(); // プロジェクト一覧を更新
+          } else if (progress.status === "failed" && progress.errorMessage) {
+            // 失敗時はエラーメッセージを取得したらポーリング停止
+            setPollingProjectIds(prev => {
+              const next = new Set(prev);
+              next.delete(projectId);
+              return next;
+            });
+            refetch();
           }
         } catch (error) {
           console.error(`Failed to fetch progress for project ${projectId}:`, error);
@@ -292,6 +301,14 @@ export default function Projects() {
                           </span>
                         </div>
                         <Progress value={progressData.get(project.id)?.progress || 0} className="h-2" />
+                      </div>
+                    )}
+                    {project.status === "failed" && progressData.has(project.id) && progressData.get(project.id)?.errorMessage && (
+                      <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-md">
+                        <p className="text-xs text-red-700 font-medium mb-1">エラー詳細:</p>
+                        <p className="text-xs text-red-600">
+                          {progressData.get(project.id)?.errorMessage}
+                        </p>
                       </div>
                     )}
                     <p className="text-xs text-muted-foreground">

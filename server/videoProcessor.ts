@@ -110,6 +110,33 @@ export async function processVideo(
     await db.updateProjectProgress(projectId, 70, "フレームの処理が完了しました");
 
     console.log(`[VideoProcessor] Processing complete for project ${projectId}`);
+  } catch (error) {
+    // エラーの種類を判定して適切なメッセージを生成
+    let errorMessage = "動画処理中にエラーが発生しました";
+    
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase();
+      
+      if (msg.includes("no such file") || msg.includes("enoent")) {
+        errorMessage = "動画ファイルが見つかりません。ファイルが削除されたか、アップロードが完了していない可能性があります。";
+      } else if (msg.includes("invalid") || msg.includes("corrupt") || msg.includes("decode")) {
+        errorMessage = "動画ファイルが破損しているか、対応していない形式です。MP4、MOV、AVI形式の動画を使用してください。";
+      } else if (msg.includes("timeout") || msg.includes("timed out")) {
+        errorMessage = "処理がタイムアウトしました。動画ファイルが大きすぎるか、複雑すぎる可能性があります。";
+      } else if (msg.includes("permission") || msg.includes("eacces")) {
+        errorMessage = "ファイルのアクセス権限がありません。サーバーの設定を確認してください。";
+      } else if (msg.includes("json") || msg.includes("parse")) {
+        errorMessage = "フレーム抽出スクリプトの出力が不正です。Python環境を確認してください。";
+      } else if (msg.includes("command failed") || msg.includes("python")) {
+        errorMessage = "フレーム抽出スクリプトの実行に失敗しました。OpenCVが正しくインストールされているか確認してください。";
+      } else {
+        // デフォルト: エラーメッセージの最初の100文字を含める
+        errorMessage = `動画処理中にエラーが発生しました: ${error.message.substring(0, 100)}`;
+      }
+    }
+    
+    console.error(`[VideoProcessor] Error: ${errorMessage}`);
+    throw new Error(errorMessage);
   } finally {
     // 一時ディレクトリをクリーンアップ
     try {

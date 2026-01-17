@@ -166,6 +166,35 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
 }
 
 /**
+ * エラーメッセージを生成（内部用）
+ */
+function generateErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "AI解析中に不明なエラーが発生しました";
+  }
+  
+  const msg = error.message.toLowerCase();
+  
+  if (msg.includes("rate limit") || msg.includes("429")) {
+    return "AI APIのレート制限に達しました。しばらく待ってから再度お試しください。";
+  } else if (msg.includes("quota") || msg.includes("insufficient")) {
+    return "AI APIの利用可能枠を超えました。APIキーの設定を確認してください。";
+  } else if (msg.includes("unauthorized") || msg.includes("401") || msg.includes("403")) {
+    return "AI APIの認証に失敗しました。APIキーが有効か確認してください。";
+  } else if (msg.includes("timeout") || msg.includes("timed out")) {
+    return "AI解析がタイムアウトしました。ネットワーク接続を確認してください。";
+  } else if (msg.includes("network") || msg.includes("fetch")) {
+    return "ネットワークエラーが発生しました。インターネット接続を確認してください。";
+  } else if (msg.includes("image") || msg.includes("url")) {
+    return "画像の読み込みに失敗しました。フレーム画像が破損している可能性があります。";
+  } else if (msg.includes("json") || msg.includes("parse")) {
+    return "AIからの応答の解析に失敗しました。再度お試しください。";
+  } else {
+    return `AI解析中にエラーが発生しました: ${error.message.substring(0, 100)}`;
+  }
+}
+
+/**
  * 単一のフレームを再分析してステップを更新
  */
 export async function regenerateStep(stepId: number, frameId: number): Promise<void> {

@@ -38,6 +38,7 @@ export const projects = mysqlTable("projects", {
   status: mysqlEnum("status", ["uploading", "processing", "completed", "failed"]).default("uploading").notNull(),
   processingProgress: int("processingProgress").default(0), // 0-100の進捗率
   processingMessage: text("processingMessage"), // 現在の処理ステップメッセージ
+  errorMessage: text("errorMessage"), // エラー発生時の詳細メッセージ
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

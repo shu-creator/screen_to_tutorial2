@@ -97,6 +97,7 @@ export const appRouter = router({
           status: project.status,
           progress: project.processingProgress ?? 0,
           message: project.processingMessage ?? "",
+          errorMessage: project.errorMessage ?? null,
         };
       }),
     
@@ -123,10 +124,11 @@ export const appRouter = router({
               await db.updateProjectStatus(projectId, "completed");
             })
             .catch(async (error) => {
-              // セキュリティ: エラーメッセージをサニタイズ
-              const safeErrorMsg = sanitizeError(error);
-              console.error(`[VideoProcessor] Error processing project ${projectId}: ${safeErrorMsg}`);
-              await db.updateProjectStatus(projectId, "failed");
+              // エラーメッセージを取得（ユーザーに表示するため）
+              const errorMessage = error instanceof Error ? error.message : "動画処理中にエラーが発生しました";
+              console.error(`[VideoProcessor] Error processing project ${projectId}: ${errorMessage}`);
+              // エラーメッセージをDBに保存
+              await db.updateProjectError(projectId, errorMessage);
             });
 
           return { success: true, message: "Processing started" };
@@ -193,10 +195,12 @@ export const appRouter = router({
             await db.updateProjectProgress(input.projectId, 100, "ステップ生成が完了しました");
             console.log(`[StepGenerator] Steps generated for project ${input.projectId}`);
           })
-          .catch((error) => {
-            // セキュリティ: エラーメッセージをサニタイズ
-            const safeErrorMsg = sanitizeError(error);
-            console.error(`[StepGenerator] Error generating steps for project ${input.projectId}: ${safeErrorMsg}`);
+          .catch(async (error) => {
+            // エラーメッセージを取得（ユーザーに表示するため）
+            const errorMessage = error instanceof Error ? error.message : "AI解析中にエラーが発生しました";
+            console.error(`[StepGenerator] Error generating steps for project ${input.projectId}: ${errorMessage}`);
+            // エラーメッセージをDBに保存
+            await db.updateProjectError(input.projectId, errorMessage);
           });
 
         return { success: true, message: "Step generation started" };
