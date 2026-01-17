@@ -22,6 +22,11 @@ export default function Projects() {
   const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{
+    phase: "reading" | "uploading" | "starting";
+    progress: number;
+    message: string;
+  } | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -295,11 +300,25 @@ export default function Projects() {
     }
 
     setIsUploading(true);
+    setUploadProgress({ phase: "reading", progress: 0, message: "ファイルを読み込み中..." });
 
     try {
       // ファイルをBase64エンコード（FileReaderを使用してバイナリ安全に）
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
+
+        // 読み込み進捗を追跡
+        reader.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const progress = Math.round((event.loaded / event.total) * 100);
+            setUploadProgress({
+              phase: "reading",
+              progress,
+              message: `ファイルを読み込み中... ${progress}%`,
+            });
+          }
+        };
+
         reader.onload = () => {
           const result = reader.result as string;
           // "data:video/mp4;base64,..." から base64部分のみを抽出
@@ -310,6 +329,9 @@ export default function Projects() {
         reader.readAsDataURL(videoFile);
       });
 
+      // アップロード中フェーズ
+      setUploadProgress({ phase: "uploading", progress: 0, message: "サーバーにアップロード中..." });
+
       // サーバーにアップロード（サーバー側でストレージにアップロード）
       const result = await createProjectMutation.mutateAsync({
         title,
@@ -318,6 +340,9 @@ export default function Projects() {
         fileName: videoFile.name,
         contentType: videoFile.type || "video/mp4",
       });
+
+      // 処理開始フェーズ
+      setUploadProgress({ phase: "starting", progress: 100, message: "処理を開始しています..." });
 
       toast.success("プロジェクトを作成しました");
       setIsDialogOpen(false);
@@ -350,6 +375,7 @@ export default function Projects() {
       toast.error(errorMessage);
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -541,10 +567,24 @@ export default function Projects() {
                     </CollapsibleContent>
                   </Collapsible>
                 </div>
-                <DialogFooter>
-                  <Button type="submit" disabled={isUploading}>
+                <DialogFooter className="flex-col gap-3">
+                  {uploadProgress && (
+                    <div className="w-full space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{uploadProgress.message}</span>
+                        {uploadProgress.phase === "reading" && (
+                          <span className="font-medium">{uploadProgress.progress}%</span>
+                        )}
+                      </div>
+                      <Progress
+                        value={uploadProgress.phase === "reading" ? uploadProgress.progress : 100}
+                        className="h-2"
+                      />
+                    </div>
+                  )}
+                  <Button type="submit" disabled={isUploading} className="w-full sm:w-auto">
                     {isUploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    作成
+                    {isUploading ? (uploadProgress?.phase === "reading" ? "読み込み中..." : uploadProgress?.phase === "uploading" ? "アップロード中..." : "処理開始中...") : "作成"}
                   </Button>
                 </DialogFooter>
               </form>
