@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +21,8 @@ export default function Projects() {
   const [isUploading, setIsUploading] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   
   const { data: projects, isLoading, refetch } = trpc.project.list.useQuery();
   const utils = trpc.useUtils();
@@ -81,6 +84,7 @@ export default function Projects() {
   const createProjectMutation = trpc.project.create.useMutation();
   const processVideoMutation = trpc.project.processVideo.useMutation();
   const deleteProjectMutation = trpc.project.delete.useMutation();
+  const bulkDeleteMutation = trpc.project.bulkDelete.useMutation();
 
   // エラーログエクスポート
   const handleExportErrorLogs = async (format: "json" | "csv") => {
@@ -120,6 +124,48 @@ export default function Projects() {
     }
   };
 
+  // 一括削除
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+
+    setIsDeleting(true);
+    try {
+      await bulkDeleteMutation.mutateAsync({ ids: Array.from(selectedIds) });
+      toast.success(`${selectedIds.size}件のプロジェクトを削除しました`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (error) {
+      console.error("一括削除エラー:", error);
+      toast.error("プロジェクトの削除に失敗しました");
+    } finally {
+      setIsDeleting(false);
+      setIsBulkDeleteOpen(false);
+    }
+  };
+
+  // チェックボックスの切り替え
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // 全選択/全解除
+  const toggleSelectAll = () => {
+    if (!projects) return;
+    if (selectedIds.size === projects.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(projects.map(p => p.id)));
+    }
+  };
+
   const handleCreateProject = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -149,14 +195,18 @@ export default function Projects() {
     setIsUploading(true);
 
     try {
-      // ファイルをBase64エンコード
-      const arrayBuffer = await videoFile.arrayBuffer();
-      const base64 = btoa(
-        new Uint8Array(arrayBuffer).reduce(
-          (data, byte) => data + String.fromCharCode(byte),
-          ""
-        )
-      );
+      // ファイルをBase64エンコード（FileReaderを使用してバイナリ安全に）
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // "data:video/mp4;base64,..." から base64部分のみを抽出
+          const base64Data = result.split(",")[1];
+          resolve(base64Data);
+        };
+        reader.onerror = () => reject(new Error("ファイルの読み込みに失敗しました"));
+        reader.readAsDataURL(videoFile);
+      });
 
       // サーバーにアップロード（サーバー側でストレージにアップロード）
       const result = await createProjectMutation.mutateAsync({
@@ -244,6 +294,25 @@ export default function Projects() {
             </p>
           </div>
           <div className="flex gap-2">
+            {selectedIds.size > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setIsBulkDeleteOpen(true)}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                {selectedIds.size}件削除
+              </Button>
+            )}
+            {projects && projects.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleSelectAll}
+              >
+                {selectedIds.size === projects.length ? "全解除" : "全選択"}
+              </Button>
+            )}
             {hasFailedProjects && (
               <div className="flex gap-1">
                 <Button variant="outline" size="sm" onClick={() => handleExportErrorLogs("json")}>
@@ -372,6 +441,19 @@ export default function Projects() {
                     </p>
                   </CardContent>
                 </Link>
+                <div
+                  className="absolute top-2 left-2 z-10"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  <Checkbox
+                    checked={selectedIds.has(project.id)}
+                    onCheckedChange={() => toggleSelect(project.id)}
+                    className="bg-background border-2"
+                  />
+                </div>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -424,6 +506,29 @@ export default function Projects() {
             >
               {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               削除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 一括削除確認ダイアログ */}
+      <AlertDialog open={isBulkDeleteOpen} onOpenChange={setIsBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{selectedIds.size}件のプロジェクトを削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              この操作は取り消せません。選択したプロジェクトとその関連データがすべて削除されます。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {selectedIds.size}件削除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
