@@ -6,8 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
+import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock, RefreshCw, Settings } from "lucide-react";
 import { Link, useParams } from "wouter";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
@@ -56,8 +58,32 @@ export default function ProjectDetail() {
   const generateStepsMutation = trpc.step.generate.useMutation();
   const updateStepMutation = trpc.step.update.useMutation();
   const deleteStepMutation = trpc.step.delete.useMutation();
+  const retryProjectMutation = trpc.project.retry.useMutation();
 
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
+  const [isRetryDialogOpen, setIsRetryDialogOpen] = useState(false);
+  const [retryParams, setRetryParams] = useState({
+    threshold: 5.0,
+    minInterval: 30,
+    maxFrames: 100,
+  });
+
+  // 再試行ハンドラー
+  const handleRetry = async () => {
+    try {
+      await retryProjectMutation.mutateAsync({
+        projectId,
+        threshold: retryParams.threshold,
+        minInterval: retryParams.minInterval,
+        maxFrames: retryParams.maxFrames,
+      });
+      toast.success("再処理を開始しました");
+      setIsRetryDialogOpen(false);
+      refetchProject();
+    } catch (error) {
+      toast.error("再処理の開始に失敗しました");
+    }
+  };
 
   const handleGenerateSteps = async () => {
     try {
@@ -194,12 +220,96 @@ export default function ProjectDetail() {
           </Card>
         )}
 
-        {/* エラー表示 */}
-        {project.status === "failed" && progressData?.errorMessage && (
+        {/* エラー表示と再試行ボタン */}
+        {project.status === "failed" && (
           <Alert variant="destructive">
             <XCircle className="h-4 w-4" />
             <AlertTitle>処理が失敗しました</AlertTitle>
-            <AlertDescription>{progressData.errorMessage}</AlertDescription>
+            <AlertDescription>
+              {progressData?.errorMessage || project.errorMessage || "処理中にエラーが発生しました"}
+            </AlertDescription>
+            <div className="mt-4">
+              <Dialog open={isRetryDialogOpen} onOpenChange={setIsRetryDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    パラメータを調整して再試行
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px]">
+                  <DialogHeader>
+                    <DialogTitle>
+                      <Settings className="h-5 w-5 inline mr-2" />
+                      処理パラメータの調整
+                    </DialogTitle>
+                    <DialogDescription>
+                      フレーム抽出のパラメータを調整して再処理できます。動画の特性に応じて最適な設定を選んでください。
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-6 py-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label>差分検知の閾値</Label>
+                        <span className="text-sm text-muted-foreground">{retryParams.threshold.toFixed(1)}</span>
+                      </div>
+                      <Slider
+                        value={[retryParams.threshold]}
+                        onValueChange={([value]) => setRetryParams(prev => ({ ...prev, threshold: value }))}
+                        min={1}
+                        max={20}
+                        step={0.5}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        低い値：より多くのフレームを抽出（細かい変化も検出）<br />
+                        高い値：大きな変化のみ抽出（フレーム数を削減）
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label>最小フレーム間隔</Label>
+                        <span className="text-sm text-muted-foreground">{retryParams.minInterval}フレーム</span>
+                      </div>
+                      <Slider
+                        value={[retryParams.minInterval]}
+                        onValueChange={([value]) => setRetryParams(prev => ({ ...prev, minInterval: value }))}
+                        min={10}
+                        max={120}
+                        step={5}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        連続するフレーム間の最小間隔。大きい値にすると重複が減ります。
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label>最大フレーム数</Label>
+                        <span className="text-sm text-muted-foreground">{retryParams.maxFrames}枚</span>
+                      </div>
+                      <Slider
+                        value={[retryParams.maxFrames]}
+                        onValueChange={([value]) => setRetryParams(prev => ({ ...prev, maxFrames: value }))}
+                        min={10}
+                        max={200}
+                        step={10}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        抽出するフレームの最大数。長い動画の場合は増やしてください。
+                      </p>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsRetryDialogOpen(false)}>
+                      キャンセル
+                    </Button>
+                    <Button onClick={handleRetry} disabled={retryProjectMutation.isPending}>
+                      {retryProjectMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      再処理を開始
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
           </Alert>
         )}
 

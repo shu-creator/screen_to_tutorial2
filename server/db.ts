@@ -208,3 +208,26 @@ export async function deleteStep(id: number, userId?: number) {
   }
   await db.delete(steps).where(eq(steps.id, id));
 }
+
+// 再試行機能用のヘルパー関数
+export async function deleteFramesByProjectId(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(frames).where(eq(frames.projectId, projectId));
+}
+
+export async function deleteStepsByProjectId(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(steps).where(eq(steps.projectId, projectId));
+}
+
+export async function clearProjectError(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(projects).set({
+    errorMessage: null,
+    processingProgress: 0,
+    processingMessage: null,
+  }).where(eq(projects.id, id));
+}
