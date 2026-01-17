@@ -52,40 +52,6 @@ export const appRouter = router({
         });
         return { projectId };
       }),
-
-    uploadVideo: protectedProcedure
-      .input(
-        z.object({
-          title: z.string(),
-          description: z.string().optional(),
-          fileName: z.string(),
-          fileData: z.string(),
-          mimeType: z.string(),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        const { storagePut } = await import("./storage");
-        const { nanoid } = await import("nanoid");
-
-        const fileBuffer = Buffer.from(input.fileData, "base64");
-        const fileKey = `projects/${ctx.user.id}/videos/${nanoid()}_${input.fileName}`;
-        const { url: videoUrl } = await storagePut(fileKey, fileBuffer, input.mimeType);
-
-        const projectId = await db.createProject({
-          userId: ctx.user.id,
-          title: input.title,
-          description: input.description,
-          videoUrl,
-          videoKey: fileKey,
-          status: "processing",
-        });
-
-        processVideo(projectId, videoUrl).catch((error) => {
-          console.error(`Failed to process video for project ${projectId}:`, error);
-        });
-
-        return { projectId, videoUrl };
-      }),
     
     updateStatus: protectedProcedure
       .input(z.object({
