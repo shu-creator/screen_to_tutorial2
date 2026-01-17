@@ -198,9 +198,8 @@ function generateErrorMessage(error: unknown): string {
  * 単一のフレームを再分析してステップを更新
  */
 export async function regenerateStep(stepId: number, frameId: number): Promise<void> {
-  // フレーム情報を取得
-  const frames = await db.getFramesByProjectId(0); // TODO: より効率的な方法でフレームを取得
-  const frame = frames.find((f) => f.id === frameId);
+  // フレーム情報を取得（所有者チェックはrouters.tsで実施済み）
+  const frame = await db.getFrameById(frameId);
 
   if (!frame) {
     throw new Error("フレームが見つかりません");

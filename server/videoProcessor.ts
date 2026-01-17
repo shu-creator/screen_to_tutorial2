@@ -8,6 +8,29 @@ import { nanoid } from "nanoid";
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * 一時ディレクトリをクリーンアップ（リトライ付き）
+ */
+async function cleanupTempDir(tempDir: string, context: string): Promise<void> {
+  const maxRetries = 3;
+  const retryDelay = 1000; // 1秒
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if (attempt < maxRetries) {
+        console.warn(`[${context}] Cleanup attempt ${attempt} failed, retrying in ${retryDelay}ms: ${tempDir}`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      } else {
+        console.error(`[${context}] Failed to cleanup temp dir after ${maxRetries} attempts: ${tempDir}`);
+        console.error(`[${context}] Manual cleanup may be required: rm -rf ${tempDir}`);
+      }
+    }
+  }
+}
+
 interface ExtractedFrame {
   frame_number: number;
   timestamp: number;
@@ -144,12 +167,8 @@ export async function processVideo(
     console.error(`[VideoProcessor] Error: ${errorMessage}`);
     throw new Error(errorMessage);
   } finally {
-    // 一時ディレクトリをクリーンアップ
-    try {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    } catch (err) {
-      console.error(`[VideoProcessor] Failed to cleanup temp dir: ${err}`);
-    }
+    // 一時ディレクトリをクリーンアップ（リトライ付き）
+    await cleanupTempDir(tempDir, "VideoProcessor");
   }
 }
 

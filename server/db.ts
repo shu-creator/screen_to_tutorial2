@@ -164,6 +164,44 @@ export async function getFramesByProjectId(projectId: number, userId?: number) {
   return db.select().from(frames).where(eq(frames.projectId, projectId)).orderBy(frames.sortOrder);
 }
 
+// フレームをIDで取得（所有者チェック付き）
+export async function getFrameById(id: number, userId?: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(frames).where(eq(frames.id, id)).limit(1);
+  if (result.length === 0) return undefined;
+
+  const frame = result[0];
+
+  // セキュリティ: userIdが指定された場合、プロジェクトの所有者チェック
+  if (userId !== undefined) {
+    const project = await getProjectById(frame.projectId, userId);
+    if (!project) return undefined;
+  }
+
+  return frame;
+}
+
+// ステップをIDで取得（所有者チェック付き）
+export async function getStepById(id: number, userId?: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(steps).where(eq(steps.id, id)).limit(1);
+  if (result.length === 0) return undefined;
+
+  const step = result[0];
+
+  // セキュリティ: userIdが指定された場合、プロジェクトの所有者チェック
+  if (userId !== undefined) {
+    const project = await getProjectById(step.projectId, userId);
+    if (!project) return undefined;
+  }
+
+  return step;
+}
+
 // Step queries
 export async function createStep(data: InsertStep) {
   const db = await getDb();

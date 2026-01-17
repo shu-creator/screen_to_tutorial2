@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, index } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -41,7 +41,10 @@ export const projects = mysqlTable("projects", {
   errorMessage: text("errorMessage"), // エラー発生時の詳細メッセージ
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("projects_userId_idx").on(table.userId),
+  statusIdx: index("projects_status_idx").on(table.status),
+}));
 
 export type Project = typeof projects.$inferSelect;
 export type InsertProject = typeof projects.$inferInsert;
@@ -59,7 +62,9 @@ export const frames = mysqlTable("frames", {
   diffScore: int("diffScore"), // difference score from previous frame
   sortOrder: int("sortOrder").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ({
+  projectIdIdx: index("frames_projectId_idx").on(table.projectId),
+}));
 
 export type Frame = typeof frames.$inferSelect;
 export type InsertFrame = typeof frames.$inferInsert;
@@ -80,7 +85,10 @@ export const steps = mysqlTable("steps", {
   sortOrder: int("sortOrder").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  projectIdIdx: index("steps_projectId_idx").on(table.projectId),
+  frameIdIdx: index("steps_frameId_idx").on(table.frameId),
+}));
 
 export type Step = typeof steps.$inferSelect;
 export type InsertStep = typeof steps.$inferInsert;
