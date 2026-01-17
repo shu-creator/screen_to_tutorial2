@@ -100,6 +100,82 @@ export const appRouter = router({
           errorMessage: project.errorMessage ?? null,
         };
       }),
+
+    // 再試行機能
+    retry: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        threshold: z.number().optional(),
+        minInterval: z.number().optional(),
+        maxFrames: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { projectId, threshold, minInterval, maxFrames } = input;
+
+        // セキュリティ: プロジェクトの所有者チェック
+        const project = await db.getProjectById(projectId, ctx.user.id);
+        if (!project) {
+          throw new Error("プロジェクトが見つかりません");
+        }
+
+        // 失敗またはアップロード状態のプロジェクトのみ再試行可能
+        if (project.status !== "failed" && project.status !== "uploading") {
+          throw new Error("このプロジェクトは再試行できません");
+        }
+
+        // 既存のフレームとステップを削除
+        await db.deleteFramesByProjectId(projectId);
+        await db.deleteStepsByProjectId(projectId);
+
+        // エラーメッセージをクリア
+        await db.clearProjectError(projectId);
+
+        // ステータスを処理中に更新
+        await db.updateProjectStatus(projectId, "processing");
+        await db.updateProjectProgress(projectId, 0, "再処理を開始しています...");
+
+        // 動画を処理（バックグラウンドで実行）
+        processVideo(projectId, project.videoUrl, { threshold, minInterval, maxFrames })
+          .then(async () => {
+            await db.updateProjectProgress(projectId, 100, "処理が完了しました");
+            await db.updateProjectStatus(projectId, "completed");
+          })
+          .catch(async (error) => {
+            const errorMessage = error instanceof Error ? error.message : "動画処理中にエラーが発生しました";
+            console.error(`[VideoProcessor] Retry error for project ${projectId}: ${errorMessage}`);
+            await db.updateProjectError(projectId, errorMessage);
+          });
+
+        return { success: true, message: "Retry started" };
+      }),
+
+    // エラーログのエクスポート（管理者向け）
+    exportErrorLogs: protectedProcedure
+      .input(z.object({ format: z.enum(["json", "csv"]) }))
+      .query(async ({ ctx, input }) => {
+        // 自分の失敗したプロジェクトのみ取得
+        const projects = await db.getProjectsByUserId(ctx.user.id);
+        const failedProjects = projects.filter(p => p.status === "failed");
+
+        const errorLogs = failedProjects.map(p => ({
+          projectId: p.id,
+          title: p.title,
+          status: p.status,
+          errorMessage: p.errorMessage || "不明なエラー",
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+        }));
+
+        if (input.format === "csv") {
+          const headers = "プロジェクトID,タイトル,ステータス,エラーメッセージ,作成日,更新日";
+          const rows = errorLogs.map(log =>
+            `${log.projectId},"${log.title}","${log.status}","${log.errorMessage}","${log.createdAt}","${log.updatedAt}"`
+          );
+          return { data: [headers, ...rows].join("\n"), format: "csv" };
+        }
+
+        return { data: JSON.stringify(errorLogs, null, 2), format: "json" };
+      }),
     
     processVideo: protectedProcedure
       .input(z.object({

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { Plus, Video, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { Plus, Video, Clock, CheckCircle, XCircle, Loader2, Download } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -77,6 +77,26 @@ export default function Projects() {
   }, [pollingProjectIds, refetch]);
   const createProjectMutation = trpc.project.create.useMutation();
   const processVideoMutation = trpc.project.processVideo.useMutation();
+
+  // エラーログエクスポート
+  const handleExportErrorLogs = async (format: "json" | "csv") => {
+    try {
+      const result = await utils.project.exportErrorLogs.fetch({ format });
+      const blob = new Blob([result.data], { type: format === "json" ? "application/json" : "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `error-logs.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`エラーログを${format.toUpperCase()}形式でエクスポートしました`);
+    } catch (error) {
+      toast.error("エラーログのエクスポートに失敗しました");
+    }
+  };
+
+  // 失敗したプロジェクトがあるかチェック
+  const hasFailedProjects = projects?.some(p => p.status === "failed") ?? false;
 
   const handleCreateProject = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -201,13 +221,26 @@ export default function Projects() {
               動画から自動でチュートリアルを生成します
             </p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                新規プロジェクト
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2">
+            {hasFailedProjects && (
+              <div className="flex gap-1">
+                <Button variant="outline" size="sm" onClick={() => handleExportErrorLogs("json")}>
+                  <Download className="h-4 w-4 mr-1" />
+                  JSON
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => handleExportErrorLogs("csv")}>
+                  <Download className="h-4 w-4 mr-1" />
+                  CSV
+                </Button>
+              </div>
+            )}
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  新規プロジェクト
+                </Button>
+              </DialogTrigger>
             <DialogContent className="sm:max-w-[525px]">
               <form onSubmit={handleCreateProject}>
                 <DialogHeader>
