@@ -82,7 +82,18 @@ export default function Projects() {
 
     } catch (error) {
       console.error("プロジェクト作成エラー:", error);
-      toast.error("プロジェクトの作成に失敗しました");
+      // エラーメッセージの詳細を表示
+      let errorMessage = "プロジェクトの作成に失敗しました";
+      if (error instanceof Error) {
+        if (error.message.includes("request entity too large") || error.message.includes("413")) {
+          errorMessage = "ファイルサイズが大きすぎます。サーバー制限を超えています。";
+        } else if (error.message.includes("network") || error.message.includes("fetch")) {
+          errorMessage = "ネットワークエラーが発生しました。接続を確認してください。";
+        } else if (error.message) {
+          errorMessage = `エラー: ${error.message}`;
+        }
+      }
+      toast.error(errorMessage);
     } finally {
       setIsUploading(false);
     }

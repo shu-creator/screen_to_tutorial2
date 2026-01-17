@@ -35,8 +35,9 @@ async function startServer() {
   app.set("trust proxy", 1);
 
   // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Base64エンコーディングは約33%のオーバーヘッドがあるため、500MBのファイルには約700MBが必要
+  app.use(express.json({ limit: "700mb" }));
+  app.use(express.urlencoded({ limit: "700mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API
