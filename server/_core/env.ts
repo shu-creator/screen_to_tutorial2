@@ -21,10 +21,10 @@ function validateEnvOnStartup(): void {
       );
     }
 
-    // JWT_SECRETの強度チェック
+    // JWT_SECRETの強度チェック（32文字未満は拒否）
     if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
-      console.warn(
-        "[Security] JWT_SECRET は32文字以上を推奨します"
+      throw new Error(
+        "JWT_SECRET は32文字以上が必須です（セキュリティ要件）"
       );
     }
   }
