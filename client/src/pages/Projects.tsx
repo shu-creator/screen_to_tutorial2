@@ -8,9 +8,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Slider } from "@/components/ui/slider";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { Plus, Video, Clock, CheckCircle, XCircle, Loader2, Download, Trash2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Plus, Video, Clock, CheckCircle, XCircle, Loader2, Download, Trash2, RefreshCw, Settings, Search, Filter, Copy, ChevronDown } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
@@ -23,11 +26,43 @@ export default function Projects() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
-  
+
+  // フィルタリング・検索
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // 詳細設定（新規プロジェクト用）
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
+  const [processingParams, setProcessingParams] = useState({
+    threshold: 5.0,
+    minInterval: 30,
+    maxFrames: 100,
+  });
+
+  // 削除取り消し用
+  const [deletedProject, setDeletedProject] = useState<{ id: number; title: string; timeout: NodeJS.Timeout } | null>(null);
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const { data: projects, isLoading, refetch } = trpc.project.list.useQuery();
   const utils = trpc.useUtils();
   const [pollingProjectIds, setPollingProjectIds] = useState<Set<number>>(new Set());
   const [progressData, setProgressData] = useState<Map<number, { progress: number; message: string; errorMessage?: string | null }>>(new Map());
+
+  // フィルタリングされたプロジェクト
+  const filteredProjects = useMemo(() => {
+    if (!projects) return [];
+    return projects.filter(p => {
+      // ステータスフィルター
+      if (statusFilter !== "all" && p.status !== statusFilter) return false;
+      // 検索クエリ
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        return p.title.toLowerCase().includes(query) ||
+               (p.description?.toLowerCase().includes(query) ?? false);
+      }
+      return true;
+    });
+  }, [projects, statusFilter, searchQuery]);
 
   // 処理中または失敗したプロジェクトを自動検出してポーリング開始
   useEffect(() => {
@@ -85,6 +120,8 @@ export default function Projects() {
   const processVideoMutation = trpc.project.processVideo.useMutation();
   const deleteProjectMutation = trpc.project.delete.useMutation();
   const bulkDeleteMutation = trpc.project.bulkDelete.useMutation();
+  const retryProjectMutation = trpc.project.retry.useMutation();
+  const duplicateProjectMutation = trpc.project.duplicate.useMutation();
 
   // エラーログエクスポート
   const handleExportErrorLogs = async (format: "json" | "csv") => {
@@ -141,6 +178,71 @@ export default function Projects() {
       setIsDeleting(false);
       setIsBulkDeleteOpen(false);
     }
+  };
+
+  // 再試行
+  const handleRetry = async (projectId: number) => {
+    try {
+      await retryProjectMutation.mutateAsync({ projectId });
+      toast.success("再処理を開始しました");
+      refetch();
+    } catch (error) {
+      console.error("再試行エラー:", error);
+      toast.error("再処理の開始に失敗しました");
+    }
+  };
+
+  // プロジェクト複製
+  const handleDuplicate = async (projectId: number) => {
+    try {
+      const result = await duplicateProjectMutation.mutateAsync({ projectId });
+      toast.success("プロジェクトを複製しました");
+      refetch();
+    } catch (error) {
+      console.error("複製エラー:", error);
+      toast.error("プロジェクトの複製に失敗しました");
+    }
+  };
+
+  // 削除取り消し機能付き削除
+  const handleDeleteWithUndo = async (projectId: number, projectTitle: string) => {
+    // 既存の取り消しタイマーをクリア
+    if (undoTimeoutRef.current) {
+      clearTimeout(undoTimeoutRef.current);
+    }
+
+    setDeletedProject({ id: projectId, title: projectTitle, timeout: setTimeout(() => {}, 0) });
+
+    // 30秒後に実際に削除
+    const timeout = setTimeout(async () => {
+      try {
+        await deleteProjectMutation.mutateAsync({ id: projectId });
+        setDeletedProject(null);
+        refetch();
+      } catch (error) {
+        console.error("削除エラー:", error);
+        toast.error("プロジェクトの削除に失敗しました");
+      }
+    }, 30000);
+
+    undoTimeoutRef.current = timeout;
+    setDeletedProject({ id: projectId, title: projectTitle, timeout });
+
+    toast.info(`「${projectTitle}」を削除します`, {
+      description: "30秒以内に取り消せます",
+      action: {
+        label: "元に戻す",
+        onClick: () => {
+          if (undoTimeoutRef.current) {
+            clearTimeout(undoTimeoutRef.current);
+            undoTimeoutRef.current = null;
+          }
+          setDeletedProject(null);
+          toast.success("削除を取り消しました");
+        },
+      },
+      duration: 30000,
+    });
   };
 
   // チェックボックスの切り替え
@@ -220,10 +322,13 @@ export default function Projects() {
       toast.success("プロジェクトを作成しました");
       setIsDialogOpen(false);
 
-      // 動画処理を開始
+      // 動画処理を開始（詳細設定のパラメータを使用）
       await processVideoMutation.mutateAsync({
         projectId: result.projectId,
         videoUrl: result.videoUrl,
+        threshold: processingParams.threshold,
+        minInterval: processingParams.minInterval,
+        maxFrames: processingParams.maxFrames,
       });
 
       toast.success("動画処理を開始しました");
@@ -293,7 +398,7 @@ export default function Projects() {
               動画から自動でチュートリアルを生成します
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             {selectedIds.size > 0 && (
               <Button
                 variant="destructive"
@@ -372,6 +477,69 @@ export default function Projects() {
                       MP4、MOV、AVI形式（最大500MB）
                     </p>
                   </div>
+
+                  {/* 詳細設定 */}
+                  <Collapsible open={advancedSettingsOpen} onOpenChange={setAdvancedSettingsOpen}>
+                    <CollapsibleTrigger asChild>
+                      <Button variant="ghost" type="button" className="w-full justify-between">
+                        <span className="flex items-center gap-2">
+                          <Settings className="h-4 w-4" />
+                          詳細設定
+                        </span>
+                        <ChevronDown className={`h-4 w-4 transition-transform ${advancedSettingsOpen ? "rotate-180" : ""}`} />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-4 pt-2">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm">差分検知の閾値</Label>
+                          <span className="text-sm text-muted-foreground">{processingParams.threshold.toFixed(1)}</span>
+                        </div>
+                        <Slider
+                          value={[processingParams.threshold]}
+                          onValueChange={([value]) => setProcessingParams(prev => ({ ...prev, threshold: value }))}
+                          min={1}
+                          max={20}
+                          step={0.5}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          低い値：より多くのフレームを抽出 / 高い値：大きな変化のみ抽出
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm">最小フレーム間隔</Label>
+                          <span className="text-sm text-muted-foreground">{processingParams.minInterval}フレーム</span>
+                        </div>
+                        <Slider
+                          value={[processingParams.minInterval]}
+                          onValueChange={([value]) => setProcessingParams(prev => ({ ...prev, minInterval: value }))}
+                          min={10}
+                          max={120}
+                          step={5}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          連続するフレーム間の最小間隔
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm">最大フレーム数</Label>
+                          <span className="text-sm text-muted-foreground">{processingParams.maxFrames}枚</span>
+                        </div>
+                        <Slider
+                          value={[processingParams.maxFrames]}
+                          onValueChange={([value]) => setProcessingParams(prev => ({ ...prev, maxFrames: value }))}
+                          min={10}
+                          max={200}
+                          step={10}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          抽出するフレームの最大数
+                        </p>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
                 <DialogFooter>
                   <Button type="submit" disabled={isUploading}>
@@ -384,6 +552,33 @@ export default function Projects() {
           </Dialog>
           </div>
         </div>
+
+        {/* フィルタリング・検索 */}
+        {projects && projects.length > 0 && (
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="プロジェクトを検索..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <Filter className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="ステータス" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">すべて</SelectItem>
+                <SelectItem value="processing">処理中</SelectItem>
+                <SelectItem value="completed">完了</SelectItem>
+                <SelectItem value="failed">失敗</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -399,9 +594,9 @@ export default function Projects() {
               </Card>
             ))}
           </div>
-        ) : projects && projects.length > 0 ? (
+        ) : filteredProjects && filteredProjects.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {projects.map((project) => (
+            {filteredProjects.map((project) => (
               <Card key={project.id} className="hover:shadow-lg transition-shadow h-full relative group">
                 <Link href={`/projects/${project.id}`} className="block">
                   <CardHeader>
@@ -454,21 +649,73 @@ export default function Projects() {
                     className="bg-background border-2"
                   />
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDeleteTargetId(project.id);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {/* アクションボタン群 */}
+                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* 失敗時のみ再試行ボタン表示 */}
+                  {project.status === "failed" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-primary"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleRetry(project.id);
+                      }}
+                      disabled={retryProjectMutation.isPending}
+                      title="再試行"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {/* 複製ボタン */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-primary"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDuplicate(project.id);
+                    }}
+                    disabled={duplicateProjectMutation.isPending}
+                    title="複製"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  {/* 削除ボタン（取り消し機能付き） */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteWithUndo(project.id, project.title);
+                    }}
+                    title="削除"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </Card>
             ))}
           </div>
+        ) : projects && projects.length > 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <Search className="h-16 w-16 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2 text-foreground">
+                検索結果がありません
+              </h3>
+              <p className="text-muted-foreground text-center mb-4">
+                フィルター条件を変更するか、検索キーワードを見直してください。
+              </p>
+              <Button variant="outline" onClick={() => { setSearchQuery(""); setStatusFilter("all"); }}>
+                フィルターをリセット
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
