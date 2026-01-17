@@ -8,6 +8,7 @@ import { processVideo } from "./videoProcessor";
 import { generateStepsForProject, regenerateStep } from "./stepGenerator";
 import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
+import { storagePut } from "./storage";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -38,25 +39,18 @@ export const appRouter = router({
       .input(z.object({
         title: z.string(),
         description: z.string().optional(),
-        videoData: z.string(),
-        videoFileName: z.string(),
-        videoMimeType: z.string(),
+        videoBase64: z.string(),
+        fileName: z.string(),
+        contentType: z.string(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { storagePut } = await import("./storage");
-        
-        // Base64デコード
-        const videoBuffer = Buffer.from(input.videoData, "base64");
-        
-        // S3にアップロード
-        const videoKey = `projects/${ctx.user.id}/videos/${Date.now()}_${input.videoFileName}`;
-        const { url: videoUrl } = await storagePut(
-          videoKey,
-          videoBuffer,
-          input.videoMimeType
-        );
-        
-        // プロジェクトを作成
+        // Base64からバッファに変換
+        const videoBuffer = Buffer.from(input.videoBase64, "base64");
+        const videoKey = `projects/${ctx.user.id}/videos/${Date.now()}_${input.fileName}`;
+
+        // ストレージにアップロード
+        const { url: videoUrl } = await storagePut(videoKey, videoBuffer, input.contentType);
+
         const projectId = await db.createProject({
           userId: ctx.user.id,
           title: input.title,
@@ -65,18 +59,7 @@ export const appRouter = router({
           videoKey,
           status: "uploading",
         });
-        
-        // バックグラウンドで動画処理を開始
-        processVideo(projectId, videoUrl)
-          .then(async () => {
-            await db.updateProjectStatus(projectId, "completed");
-          })
-          .catch(async (error) => {
-            console.error(`[VideoProcessor] Error processing project ${projectId}:`, error);
-            await db.updateProjectStatus(projectId, "failed");
-          });
-        
-        return { projectId };
+        return { projectId, videoUrl, videoKey };
       }),
     
     updateStatus: protectedProcedure

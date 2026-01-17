@@ -33,17 +33,10 @@ export default function Projects() {
       return;
     }
 
-    // ファイルサイズチェック (500MB制限)
-    const maxSize = 500 * 1024 * 1024; // 500MB
-    if (videoFile.size > maxSize) {
-      toast.error("動画ファイルのサイズは500MB以下にしてください");
-      return;
-    }
-
-    // ファイル形式チェック
-    const allowedTypes = ["video/mp4", "video/quicktime", "video/x-msvideo"];
-    if (!allowedTypes.includes(videoFile.type)) {
-      toast.error("MP4、MOV、AVI形式の動画ファイルのみアップロード可能です");
+    // ファイルサイズの制限（100MB）
+    const MAX_FILE_SIZE = 100 * 1024 * 1024;
+    if (videoFile.size > MAX_FILE_SIZE) {
+      toast.error("ファイルサイズは100MB以下にしてください");
       return;
     }
 
@@ -51,33 +44,34 @@ export default function Projects() {
 
     try {
       // ファイルをBase64エンコード
-      const videoBuffer = await videoFile.arrayBuffer();
-      const base64Video = btoa(
-        new Uint8Array(videoBuffer).reduce(
+      const arrayBuffer = await videoFile.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce(
           (data, byte) => data + String.fromCharCode(byte),
           ""
         )
       );
 
-      // サーバーにアップロード
-      const uploadResult = await createProjectMutation.mutateAsync({
+      // サーバーにアップロード（サーバー側でストレージにアップロード）
+      const result = await createProjectMutation.mutateAsync({
         title,
-        description: description || "",
-        videoData: base64Video,
-        videoFileName: videoFile.name,
-        videoMimeType: videoFile.type,
+        description: description || undefined,
+        videoBase64: base64,
+        fileName: videoFile.name,
+        contentType: videoFile.type || "video/mp4",
       });
 
-      toast.success("プロジェクトを作成しました。動画を処理中です...");
-      
-      // プロジェクト一覧を再取得
-      await refetch();
-      
-      // ダイアログを閉じる
+      toast.success("プロジェクトを作成しました");
       setIsDialogOpen(false);
-      
-      // フォームをリセット
-      (e.target as HTMLFormElement).reset();
+
+      // 動画処理を開始
+      await processVideoMutation.mutateAsync({
+        projectId: result.projectId,
+        videoUrl: result.videoUrl,
+      });
+
+      toast.success("動画処理を開始しました");
+      refetch();
 
     } catch (error) {
       console.error("プロジェクト作成エラー:", error);
