@@ -231,3 +231,24 @@ export async function clearProjectError(id: number) {
     processingMessage: null,
   }).where(eq(projects.id, id));
 }
+
+// プロジェクト削除（関連データも全て削除）
+export async function deleteProject(id: number, userId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // セキュリティ: userIdが指定された場合、所有者チェック
+  if (userId !== undefined) {
+    const project = await getProjectById(id, userId);
+    if (!project) {
+      throw new Error("プロジェクトが見つからないか、削除権限がありません");
+    }
+  }
+
+  // 関連データを削除（順序重要: 外部キー制約）
+  await deleteStepsByProjectId(id);
+  await deleteFramesByProjectId(id);
+
+  // プロジェクト本体を削除
+  await db.delete(projects).where(eq(projects.id, id));
+}

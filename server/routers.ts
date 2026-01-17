@@ -176,7 +176,16 @@ export const appRouter = router({
 
         return { data: JSON.stringify(errorLogs, null, 2), format: "json" };
       }),
-    
+
+    // プロジェクト削除
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        // セキュリティ: ユーザーIDによる所有者チェック
+        await db.deleteProject(input.id, ctx.user.id);
+        return { success: true };
+      }),
+
     processVideo: protectedProcedure
       .input(z.object({
         projectId: z.number(),
