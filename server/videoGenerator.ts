@@ -10,6 +10,29 @@ import { transcribeAudio } from "./_core/voiceTranscription";
 const execFileAsync = promisify(execFile);
 
 /**
+ * 一時ディレクトリをクリーンアップ（リトライ付き）
+ */
+async function cleanupTempDir(tempDir: string, context: string): Promise<void> {
+  const maxRetries = 3;
+  const retryDelay = 1000; // 1秒
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if (attempt < maxRetries) {
+        console.warn(`[${context}] Cleanup attempt ${attempt} failed, retrying in ${retryDelay}ms: ${tempDir}`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      } else {
+        console.error(`[${context}] Failed to cleanup temp dir after ${maxRetries} attempts: ${tempDir}`);
+        console.error(`[${context}] Manual cleanup may be required: rm -rf ${tempDir}`);
+      }
+    }
+  }
+}
+
+/**
  * テキストから音声を生成（TTS）
  * 注: この実装は簡略化されています。実際にはManusのTTS APIまたは外部サービスを使用する必要があります
  */
@@ -185,11 +208,7 @@ export async function generateVideo(projectId: number): Promise<string> {
 
     return videoUrl;
   } finally {
-    // 一時ディレクトリをクリーンアップ
-    try {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    } catch (err) {
-      console.error(`[VideoGenerator] Failed to cleanup temp dir: ${err}`);
-    }
+    // 一時ディレクトリをクリーンアップ（リトライ付き）
+    await cleanupTempDir(tempDir, "VideoGenerator");
   }
 }

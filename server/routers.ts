@@ -57,8 +57,25 @@ export const appRouter = router({
         contentType: z.string(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // Base64からバッファに変換
-        const videoBuffer = Buffer.from(input.videoBase64, "base64");
+        // Base64からバッファに変換（検証付き）
+        let videoBuffer: Buffer;
+        try {
+          videoBuffer = Buffer.from(input.videoBase64, "base64");
+          // Base64デコード結果の妥当性チェック
+          if (videoBuffer.length === 0) {
+            throw new Error("空のファイルです");
+          }
+          // 極端に大きなファイルの拒否（700MB上限）
+          const MAX_SIZE = 700 * 1024 * 1024;
+          if (videoBuffer.length > MAX_SIZE) {
+            throw new Error("ファイルサイズが大きすぎます");
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message.includes("ファイル")) {
+            throw error;
+          }
+          throw new Error("無効な動画データです。ファイルが破損している可能性があります。");
+        }
         const videoKey = `projects/${ctx.user.id}/videos/${Date.now()}_${input.fileName}`;
 
         // ストレージにアップロード
@@ -304,7 +321,17 @@ export const appRouter = router({
     
     regenerate: protectedProcedure
       .input(z.object({ stepId: z.number(), frameId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        // セキュリティ: ステップの所有者チェック
+        const step = await db.getStepById(input.stepId, ctx.user.id);
+        if (!step) {
+          throw new Error("ステップが見つかりません");
+        }
+        // セキュリティ: フレームの所有者チェック
+        const frame = await db.getFrameById(input.frameId, ctx.user.id);
+        if (!frame) {
+          throw new Error("フレームが見つかりません");
+        }
         await regenerateStep(input.stepId, input.frameId);
         return { success: true };
       }),
