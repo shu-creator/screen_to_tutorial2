@@ -186,6 +186,17 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // 一括削除
+    bulkDelete: protectedProcedure
+      .input(z.object({ ids: z.array(z.number()) }))
+      .mutation(async ({ ctx, input }) => {
+        // セキュリティ: 各プロジェクトの所有者チェックを行いながら削除
+        for (const id of input.ids) {
+          await db.deleteProject(id, ctx.user.id);
+        }
+        return { success: true, deletedCount: input.ids.length };
+      }),
+
     processVideo: protectedProcedure
       .input(z.object({
         projectId: z.number(),
