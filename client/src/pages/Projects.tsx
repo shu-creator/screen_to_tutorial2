@@ -3,11 +3,12 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { Plus, Video, Clock, CheckCircle, XCircle, Loader2, Download } from "lucide-react";
+import { Plus, Video, Clock, CheckCircle, XCircle, Loader2, Download, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -17,6 +18,8 @@ export default function Projects() {
   const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const { data: projects, isLoading, refetch } = trpc.project.list.useQuery();
   const utils = trpc.useUtils();
@@ -77,6 +80,7 @@ export default function Projects() {
   }, [pollingProjectIds, refetch]);
   const createProjectMutation = trpc.project.create.useMutation();
   const processVideoMutation = trpc.project.processVideo.useMutation();
+  const deleteProjectMutation = trpc.project.delete.useMutation();
 
   // エラーログエクスポート
   const handleExportErrorLogs = async (format: "json" | "csv") => {
@@ -97,6 +101,24 @@ export default function Projects() {
 
   // 失敗したプロジェクトがあるかチェック
   const hasFailedProjects = projects?.some(p => p.status === "failed") ?? false;
+
+  // プロジェクト削除
+  const handleDeleteProject = async () => {
+    if (!deleteTargetId) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteProjectMutation.mutateAsync({ id: deleteTargetId });
+      toast.success("プロジェクトを削除しました");
+      refetch();
+    } catch (error) {
+      console.error("プロジェクト削除エラー:", error);
+      toast.error("プロジェクトの削除に失敗しました");
+    } finally {
+      setIsDeleting(false);
+      setDeleteTargetId(null);
+    }
+  };
 
   const handleCreateProject = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -311,8 +333,8 @@ export default function Projects() {
         ) : projects && projects.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {projects.map((project) => (
-              <Link key={project.id} href={`/projects/${project.id}`}>
-                <Card className="hover:shadow-lg transition-shadow cursor-pointer h-full">
+              <Card key={project.id} className="hover:shadow-lg transition-shadow h-full relative group">
+                <Link href={`/projects/${project.id}`} className="block">
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <Video className="h-10 w-10 text-primary" />
@@ -349,8 +371,20 @@ export default function Projects() {
                       作成日: {new Date(project.createdAt).toLocaleDateString("ja-JP")}
                     </p>
                   </CardContent>
-                </Card>
-              </Link>
+                </Link>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDeleteTargetId(project.id);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </Card>
             ))}
           </div>
         ) : (
@@ -371,6 +405,29 @@ export default function Projects() {
           </Card>
         )}
       </div>
+
+      {/* 削除確認ダイアログ */}
+      <AlertDialog open={deleteTargetId !== null} onOpenChange={(open) => !open && setDeleteTargetId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>プロジェクトを削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              この操作は取り消せません。プロジェクトに関連するすべてのデータ（フレーム、ステップなど）が削除されます。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteProject}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              削除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }
