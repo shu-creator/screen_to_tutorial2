@@ -89,6 +89,7 @@ async function analyzeFrame(imageUrl: string, frameNumber: number): Promise<Step
 
 /**
  * プロジェクトの全フレームを分析してステップを生成
+ * パフォーマンス改善: バッチ処理による並列化（並列度を制限してレート制限を回避）
  */
 export async function generateStepsForProject(projectId: number): Promise<void> {
   console.log(`[StepGenerator] Starting step generation for project ${projectId}`);
@@ -102,12 +103,13 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
 
   console.log(`[StepGenerator] Analyzing ${frames.length} frames`);
 
-  // 各フレームを分析してステップを生成
-  for (let i = 0; i < frames.length; i++) {
-    const frame = frames[i];
+  // 並列度を制限（APIレート制限を回避）
+  const BATCH_SIZE = 3;
 
+  // フレームを分析する関数
+  const analyzeAndCreateStep = async (frame: typeof frames[0], index: number) => {
     try {
-      console.log(`[StepGenerator] Analyzing frame ${i + 1}/${frames.length}`);
+      console.log(`[StepGenerator] Analyzing frame ${index + 1}/${frames.length}`);
 
       // AIで画像を分析
       const stepData = await analyzeFrame(frame.imageUrl, frame.frameNumber);
@@ -120,23 +122,34 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
         operation: stepData.operation,
         description: stepData.description,
         narration: stepData.narration,
-        sortOrder: i,
+        sortOrder: index,
       });
 
-      console.log(`[StepGenerator] Step ${i + 1} created: ${stepData.title}`);
+      console.log(`[StepGenerator] Step ${index + 1} created: ${stepData.title}`);
     } catch (error) {
-      console.error(`[StepGenerator] Error analyzing frame ${frame.id}:`, error);
+      // セキュリティ: エラーメッセージを制限
+      const errorMsg = error instanceof Error ? error.message.substring(0, 100) : "Unknown error";
+      console.error(`[StepGenerator] Error analyzing frame ${frame.id}: ${errorMsg}`);
       // エラーが発生してもスキップして続行
       await db.createStep({
         frameId: frame.id,
         projectId,
-        title: `ステップ ${i + 1}`,
+        title: `ステップ ${index + 1}`,
         operation: "操作を分析できませんでした",
         description: "このステップの詳細は手動で編集してください。",
         narration: "",
-        sortOrder: i,
+        sortOrder: index,
       });
     }
+  };
+
+  // バッチ処理で並列実行
+  for (let i = 0; i < frames.length; i += BATCH_SIZE) {
+    const batch = frames.slice(i, i + BATCH_SIZE);
+    const promises = batch.map((frame, batchIndex) =>
+      analyzeAndCreateStep(frame, i + batchIndex)
+    );
+    await Promise.all(promises);
   }
 
   console.log(`[StepGenerator] Step generation complete for project ${projectId}`);

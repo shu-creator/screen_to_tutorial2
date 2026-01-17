@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import fs from "fs/promises";
@@ -7,7 +7,7 @@ import * as db from "./db";
 import { nanoid } from "nanoid";
 import { transcribeAudio } from "./_core/voiceTranscription";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * テキストから音声を生成（TTS）
@@ -19,11 +19,20 @@ async function generateAudio(text: string, outputPath: string): Promise<void> {
   // ここでは、プレースホルダーとして空の音声ファイルを作成します
   
   console.log(`[VideoGenerator] TTS for text: "${text.substring(0, 50)}..."`);
-  
+
   // 無音の音声ファイルを生成（実装のプレースホルダー）
   // 実際の実装では、外部TTSサービスを呼び出します
   const duration = Math.max(3, Math.floor(text.length / 10)); // テキスト長から推定時間
-  await execAsync(`ffmpeg -f lavfi -i anullsrc=r=44100:cl=mono -t ${duration} -q:a 9 -acodec libmp3lame "${outputPath}"`);
+
+  // セキュリティ: execFileを使用してコマンドインジェクションを防止
+  await execFileAsync("ffmpeg", [
+    "-f", "lavfi",
+    "-i", "anullsrc=r=44100:cl=mono",
+    "-t", duration.toString(),
+    "-q:a", "9",
+    "-acodec", "libmp3lame",
+    outputPath,
+  ]);
 }
 
 /**
@@ -122,14 +131,31 @@ export async function generateVideo(projectId: number): Promise<string> {
       
       if (audioPath) {
         // 音声がある場合、音声の長さに合わせて画像を表示
-        await execAsync(
-          `ffmpeg -loop 1 -i "${imagePath}" -i "${audioPath}" -c:v libx264 -tune stillimage -c:a aac -b:a 192k -pix_fmt yuv420p -shortest "${segmentPath}"`
-        );
+        // セキュリティ: execFileを使用してコマンドインジェクションを防止
+        await execFileAsync("ffmpeg", [
+          "-loop", "1",
+          "-i", imagePath,
+          "-i", audioPath,
+          "-c:v", "libx264",
+          "-tune", "stillimage",
+          "-c:a", "aac",
+          "-b:a", "192k",
+          "-pix_fmt", "yuv420p",
+          "-shortest",
+          segmentPath,
+        ]);
       } else {
         // 音声がない場合、デフォルトで5秒間表示
-        await execAsync(
-          `ffmpeg -loop 1 -i "${imagePath}" -c:v libx264 -t 5 -pix_fmt yuv420p -vf scale=1920:1080 "${segmentPath}"`
-        );
+        // セキュリティ: execFileを使用してコマンドインジェクションを防止
+        await execFileAsync("ffmpeg", [
+          "-loop", "1",
+          "-i", imagePath,
+          "-c:v", "libx264",
+          "-t", "5",
+          "-pix_fmt", "yuv420p",
+          "-vf", "scale=1920:1080",
+          segmentPath,
+        ]);
       }
 
       videoSegments.push(segmentPath);
@@ -141,7 +167,14 @@ export async function generateVideo(projectId: number): Promise<string> {
     await fs.writeFile(concatListPath, concatContent);
 
     const finalVideoPath = path.join(tempDir, "final_video.mp4");
-    await execAsync(`ffmpeg -f concat -safe 0 -i "${concatListPath}" -c copy "${finalVideoPath}"`);
+    // セキュリティ: execFileを使用してコマンドインジェクションを防止
+    await execFileAsync("ffmpeg", [
+      "-f", "concat",
+      "-safe", "0",
+      "-i", concatListPath,
+      "-c", "copy",
+      finalVideoPath,
+    ]);
 
     // S3にアップロード
     const videoBuffer = await fs.readFile(finalVideoPath);

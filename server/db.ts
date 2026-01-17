@@ -103,9 +103,20 @@ export async function getProjectsByUserId(userId: number) {
   return db.select().from(projects).where(eq(projects.userId, userId)).orderBy(desc(projects.createdAt));
 }
 
-export async function getProjectById(id: number) {
+export async function getProjectById(id: number, userId?: number) {
   const db = await getDb();
   if (!db) return undefined;
+  // セキュリティ: userIdが指定された場合、所有者チェックを行う
+  if (userId !== undefined) {
+    const result = await db.select().from(projects)
+      .where(eq(projects.id, id))
+      .limit(1);
+    const project = result[0];
+    if (project && project.userId !== userId) {
+      return undefined; // 他のユーザーのプロジェクトにはアクセス不可
+    }
+    return project;
+  }
   const result = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
   return result[0];
 }
@@ -124,9 +135,14 @@ export async function createFrame(data: InsertFrame) {
   return result[0].insertId;
 }
 
-export async function getFramesByProjectId(projectId: number) {
+export async function getFramesByProjectId(projectId: number, userId?: number) {
   const db = await getDb();
   if (!db) return [];
+  // セキュリティ: userIdが指定された場合、プロジェクトの所有者チェックを行う
+  if (userId !== undefined) {
+    const project = await getProjectById(projectId, userId);
+    if (!project) return []; // プロジェクトが見つからないか、所有者が異なる場合は空配列
+  }
   return db.select().from(frames).where(eq(frames.projectId, projectId)).orderBy(frames.sortOrder);
 }
 
@@ -138,20 +154,39 @@ export async function createStep(data: InsertStep) {
   return result[0].insertId;
 }
 
-export async function getStepsByProjectId(projectId: number) {
+export async function getStepsByProjectId(projectId: number, userId?: number) {
   const db = await getDb();
   if (!db) return [];
+  // セキュリティ: userIdが指定された場合、プロジェクトの所有者チェックを行う
+  if (userId !== undefined) {
+    const project = await getProjectById(projectId, userId);
+    if (!project) return []; // プロジェクトが見つからないか、所有者が異なる場合は空配列
+  }
   return db.select().from(steps).where(eq(steps.projectId, projectId)).orderBy(steps.sortOrder);
 }
 
-export async function updateStep(id: number, data: Partial<InsertStep>) {
+export async function updateStep(id: number, data: Partial<InsertStep>, userId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // セキュリティ: userIdが指定された場合、ステップの所有者チェックを行う
+  if (userId !== undefined) {
+    const step = await db.select().from(steps).where(eq(steps.id, id)).limit(1);
+    if (step.length === 0) throw new Error("Step not found");
+    const project = await getProjectById(step[0].projectId, userId);
+    if (!project) throw new Error("Unauthorized");
+  }
   await db.update(steps).set(data).where(eq(steps.id, id));
 }
 
-export async function deleteStep(id: number) {
+export async function deleteStep(id: number, userId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // セキュリティ: userIdが指定された場合、ステップの所有者チェックを行う
+  if (userId !== undefined) {
+    const step = await db.select().from(steps).where(eq(steps.id, id)).limit(1);
+    if (step.length === 0) throw new Error("Step not found");
+    const project = await getProjectById(step[0].projectId, userId);
+    if (!project) throw new Error("Unauthorized");
+  }
   await db.delete(steps).where(eq(steps.id, id));
 }
