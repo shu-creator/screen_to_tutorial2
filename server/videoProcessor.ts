@@ -20,7 +20,7 @@ interface ExtractedFrame {
  */
 export async function processVideo(
   projectId: number,
-  videoPath: string,
+  videoUrl: string,
   options: {
     threshold?: number;
     minInterval?: number;
@@ -32,6 +32,12 @@ export async function processVideo(
   // 一時ディレクトリを作成
   const tempDir = path.join("/tmp", `frames_${projectId}_${Date.now()}`);
   await fs.mkdir(tempDir, { recursive: true });
+
+  // 動画をダウンロード（URLの場合）
+  const videoPath = path.join(tempDir, "video.mp4");
+  console.log(`[VideoProcessor] Downloading video from: ${videoUrl}`);
+  await downloadFile(videoUrl, videoPath);
+  console.log(`[VideoProcessor] Video downloaded to: ${videoPath}`);
 
   try {
     // Pythonスクリプトを実行してフレームを抽出
