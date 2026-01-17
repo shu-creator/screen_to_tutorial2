@@ -217,6 +217,29 @@ export const appRouter = router({
         return { success: true, deletedCount: input.ids.length };
       }),
 
+    // プロジェクト複製
+    duplicate: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        // セキュリティ: プロジェクトの所有者チェック
+        const project = await db.getProjectById(input.projectId, ctx.user.id);
+        if (!project) {
+          throw new Error("プロジェクトが見つかりません");
+        }
+
+        // 新しいプロジェクトを作成（タイトルに「(コピー)」を付加）
+        const newProjectId = await db.createProject({
+          userId: ctx.user.id,
+          title: `${project.title} (コピー)`,
+          description: project.description,
+          videoUrl: project.videoUrl,
+          videoKey: project.videoKey,
+          status: "uploading", // 新規作成として扱う
+        });
+
+        return { success: true, projectId: newProjectId };
+      }),
+
     processVideo: protectedProcedure
       .input(z.object({
         projectId: z.number(),

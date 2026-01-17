@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock, RefreshCw, Settings } from "lucide-react";
+import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock, RefreshCw, Settings, Play, Film } from "lucide-react";
 import { Link, useParams } from "wouter";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
@@ -324,6 +324,10 @@ export default function ProjectDetail() {
               <FileText className="h-4 w-4 mr-2" />
               ステップ ({steps?.length || 0})
             </TabsTrigger>
+            <TabsTrigger value="preview">
+              <Play className="h-4 w-4 mr-2" />
+              プレビュー
+            </TabsTrigger>
           </TabsList>
 
           {/* Frames Tab */}
@@ -487,6 +491,120 @@ export default function ProjectDetail() {
                     <Wand2 className="h-4 w-4 mr-2" />
                     AIでステップを生成
                   </Button>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Preview Tab */}
+          <TabsContent value="preview" className="space-y-4">
+            <div className="grid gap-6 lg:grid-cols-2">
+              {/* 元動画 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Film className="h-5 w-5" />
+                    元動画
+                  </CardTitle>
+                  <CardDescription>
+                    アップロードされた画面録画
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {project.videoUrl ? (
+                    <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+                      <video
+                        src={project.videoUrl}
+                        controls
+                        className="w-full h-full object-contain"
+                        preload="metadata"
+                      >
+                        お使いのブラウザは動画再生に対応していません。
+                      </video>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center aspect-video bg-muted rounded-lg">
+                      <Film className="h-12 w-12 text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">動画がありません</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* チュートリアル動画（生成後） */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Play className="h-5 w-5" />
+                    チュートリアル動画
+                  </CardTitle>
+                  <CardDescription>
+                    AIが生成した解説動画
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {project.status === "completed" && steps && steps.length > 0 ? (
+                    <div className="space-y-4">
+                      <div className="flex flex-col items-center justify-center aspect-video bg-muted rounded-lg">
+                        <Wand2 className="h-12 w-12 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground mb-4">
+                          動画を生成する準備ができました
+                        </p>
+                        <Button variant="outline" disabled>
+                          <Download className="h-4 w-4 mr-2" />
+                          動画を生成
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground text-center">
+                        ステップ {steps.length}件の解説動画を生成できます
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center aspect-video bg-muted rounded-lg">
+                      <Loader2 className="h-12 w-12 text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">
+                        {project.status === "processing" ? "処理中..." : "ステップを生成してください"}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* スライドプレビュー（フレームのスライドショー） */}
+            {frames && frames.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">フレームギャラリー</CardTitle>
+                  <CardDescription>
+                    抽出されたキーフレーム一覧（{frames.length}枚）
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                    {frames.slice(0, 12).map((frame, index) => (
+                      <div
+                        key={frame.id}
+                        className="relative aspect-video bg-muted rounded overflow-hidden group cursor-pointer"
+                      >
+                        <img
+                          src={frame.imageUrl}
+                          alt={`Frame ${frame.frameNumber}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="text-white text-xs font-medium">
+                            {Math.floor(frame.timestamp / 1000)}秒
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    {frames.length > 12 && (
+                      <div className="flex items-center justify-center aspect-video bg-muted rounded text-sm text-muted-foreground">
+                        +{frames.length - 12}枚
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )}
