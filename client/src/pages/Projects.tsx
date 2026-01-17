@@ -11,7 +11,6 @@ import { Plus, Video, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react"
 import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
-import { storagePut } from "server/storage";
 
 export default function Projects() {
   const { user } = useAuth();
@@ -34,33 +33,51 @@ export default function Projects() {
       return;
     }
 
+    // ファイルサイズチェック (500MB制限)
+    const maxSize = 500 * 1024 * 1024; // 500MB
+    if (videoFile.size > maxSize) {
+      toast.error("動画ファイルのサイズは500MB以下にしてください");
+      return;
+    }
+
+    // ファイル形式チェック
+    const allowedTypes = ["video/mp4", "video/quicktime", "video/x-msvideo"];
+    if (!allowedTypes.includes(videoFile.type)) {
+      toast.error("MP4、MOV、AVI形式の動画ファイルのみアップロード可能です");
+      return;
+    }
+
     setIsUploading(true);
 
     try {
-      // S3に動画をアップロード
+      // ファイルをBase64エンコード
       const videoBuffer = await videoFile.arrayBuffer();
-      const videoKey = `projects/${user?.id}/videos/${Date.now()}_${videoFile.name}`;
-      
-      // storagePutはサーバーサイド関数なので、直接呼び出せません
-      // 代わりに、ファイルをBase64エンコードしてサーバーに送信する必要があります
-      // ここでは簡略化のため、URLを生成する処理をスキップします
-      
-      toast.error("動画アップロード機能は現在開発中です。サーバーサイドでの実装が必要です。");
-      setIsUploading(false);
-      return;
+      const base64Video = btoa(
+        new Uint8Array(videoBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          ""
+        )
+      );
 
-      // TODO: 実際の実装では、以下のようにサーバーサイドでアップロードを行う
-      // const result = await createProjectMutation.mutateAsync({
-      //   title,
-      //   description,
-      //   videoUrl: uploadedUrl,
-      //   videoKey: videoKey,
-      // });
+      // サーバーにアップロード
+      const uploadResult = await createProjectMutation.mutateAsync({
+        title,
+        description: description || "",
+        videoData: base64Video,
+        videoFileName: videoFile.name,
+        videoMimeType: videoFile.type,
+      });
+
+      toast.success("プロジェクトを作成しました。動画を処理中です...");
       
-      // await processVideoMutation.mutateAsync({
-      //   projectId: result.projectId,
-      //   videoUrl: uploadedUrl,
-      // });
+      // プロジェクト一覧を再取得
+      await refetch();
+      
+      // ダイアログを閉じる
+      setIsDialogOpen(false);
+      
+      // フォームをリセット
+      (e.target as HTMLFormElement).reset();
 
     } catch (error) {
       console.error("プロジェクト作成エラー:", error);

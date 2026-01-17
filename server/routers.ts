@@ -38,18 +38,44 @@ export const appRouter = router({
       .input(z.object({
         title: z.string(),
         description: z.string().optional(),
-        videoUrl: z.string(),
-        videoKey: z.string(),
+        videoData: z.string(),
+        videoFileName: z.string(),
+        videoMimeType: z.string(),
       }))
       .mutation(async ({ ctx, input }) => {
+        const { storagePut } = await import("./storage");
+        
+        // Base64デコード
+        const videoBuffer = Buffer.from(input.videoData, "base64");
+        
+        // S3にアップロード
+        const videoKey = `projects/${ctx.user.id}/videos/${Date.now()}_${input.videoFileName}`;
+        const { url: videoUrl } = await storagePut(
+          videoKey,
+          videoBuffer,
+          input.videoMimeType
+        );
+        
+        // プロジェクトを作成
         const projectId = await db.createProject({
           userId: ctx.user.id,
           title: input.title,
           description: input.description,
-          videoUrl: input.videoUrl,
-          videoKey: input.videoKey,
+          videoUrl,
+          videoKey,
           status: "uploading",
         });
+        
+        // バックグラウンドで動画処理を開始
+        processVideo(projectId, videoUrl)
+          .then(async () => {
+            await db.updateProjectStatus(projectId, "completed");
+          })
+          .catch(async (error) => {
+            console.error(`[VideoProcessor] Error processing project ${projectId}:`, error);
+            await db.updateProjectStatus(projectId, "failed");
+          });
+        
         return { projectId };
       }),
     
