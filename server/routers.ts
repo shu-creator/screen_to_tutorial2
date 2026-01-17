@@ -10,6 +10,18 @@ import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
 import { storagePut } from "./storage";
 
+// セキュリティ: エラーメッセージからセンシティブ情報を除去
+function sanitizeError(error: unknown): string {
+  if (error instanceof Error) {
+    // スタックトレースやファイルパスを含まないメッセージのみを返す
+    const message = error.message;
+    // ファイルパスを除去
+    const sanitized = message.replace(/\/[\w\/.-]+/g, "[path]");
+    return sanitized.substring(0, 200); // 長すぎるメッセージを切り詰め
+  }
+  return "Unknown error";
+}
+
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
@@ -31,8 +43,9 @@ export const appRouter = router({
     
     getById: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .query(async ({ input }) => {
-        return db.getProjectById(input.id);
+      .query(async ({ ctx, input }) => {
+        // セキュリティ: ユーザーIDによる所有者チェック
+        return db.getProjectById(input.id, ctx.user.id);
       }),
     
     create: protectedProcedure
@@ -93,10 +106,12 @@ export const appRouter = router({
               await db.updateProjectStatus(projectId, "completed");
             })
             .catch(async (error) => {
-              console.error(`[VideoProcessor] Error processing project ${projectId}:`, error);
+              // セキュリティ: エラーメッセージをサニタイズ
+              const safeErrorMsg = sanitizeError(error);
+              console.error(`[VideoProcessor] Error processing project ${projectId}: ${safeErrorMsg}`);
               await db.updateProjectStatus(projectId, "failed");
             });
-          
+
           return { success: true, message: "Processing started" };
         } catch (error) {
           await db.updateProjectStatus(projectId, "failed");
@@ -108,18 +123,20 @@ export const appRouter = router({
   frame: router({
     listByProject: protectedProcedure
       .input(z.object({ projectId: z.number() }))
-      .query(async ({ input }) => {
-        return db.getFramesByProjectId(input.projectId);
+      .query(async ({ ctx, input }) => {
+        // セキュリティ: ユーザーIDによる所有者チェック
+        return db.getFramesByProjectId(input.projectId, ctx.user.id);
       }),
   }),
-  
+
   step: router({
     listByProject: protectedProcedure
       .input(z.object({ projectId: z.number() }))
-      .query(async ({ input }) => {
-        return db.getStepsByProjectId(input.projectId);
+      .query(async ({ ctx, input }) => {
+        // セキュリティ: ユーザーIDによる所有者チェック
+        return db.getStepsByProjectId(input.projectId, ctx.user.id);
       }),
-    
+
     update: protectedProcedure
       .input(z.object({
         id: z.number(),
@@ -128,31 +145,41 @@ export const appRouter = router({
         description: z.string().optional(),
         narration: z.string().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
-        await db.updateStep(id, data);
+        // セキュリティ: ユーザーIDによる所有者チェック
+        await db.updateStep(id, data, ctx.user.id);
         return { success: true };
       }),
-    
+
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await db.deleteStep(input.id);
+      .mutation(async ({ ctx, input }) => {
+        // セキュリティ: ユーザーIDによる所有者チェック
+        await db.deleteStep(input.id, ctx.user.id);
         return { success: true };
       }),
     
     generate: protectedProcedure
       .input(z.object({ projectId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        // セキュリティ: プロジェクトの所有者チェック
+        const project = await db.getProjectById(input.projectId, ctx.user.id);
+        if (!project) {
+          throw new Error("プロジェクトが見つかりません");
+        }
+
         // バックグラウンドでステップ生成を実行
         generateStepsForProject(input.projectId)
           .then(() => {
             console.log(`[StepGenerator] Steps generated for project ${input.projectId}`);
           })
           .catch((error) => {
-            console.error(`[StepGenerator] Error generating steps:`, error);
+            // セキュリティ: エラーメッセージをサニタイズ
+            const safeErrorMsg = sanitizeError(error);
+            console.error(`[StepGenerator] Error generating steps for project ${input.projectId}: ${safeErrorMsg}`);
           });
-        
+
         return { success: true, message: "Step generation started" };
       }),
     
@@ -167,23 +194,38 @@ export const appRouter = router({
   slide: router({
     generate: protectedProcedure
       .input(z.object({ projectId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        // セキュリティ: プロジェクトの所有者チェック
+        const project = await db.getProjectById(input.projectId, ctx.user.id);
+        if (!project) {
+          throw new Error("プロジェクトが見つかりません");
+        }
         const slideUrl = await generateSlides(input.projectId);
         return { success: true, slideUrl };
       }),
   }),
-  
+
   video: router({
     generateAudio: protectedProcedure
       .input(z.object({ projectId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        // セキュリティ: プロジェクトの所有者チェック
+        const project = await db.getProjectById(input.projectId, ctx.user.id);
+        if (!project) {
+          throw new Error("プロジェクトが見つかりません");
+        }
         await generateAudioForProject(input.projectId);
         return { success: true };
       }),
-    
+
     generate: protectedProcedure
       .input(z.object({ projectId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        // セキュリティ: プロジェクトの所有者チェック
+        const project = await db.getProjectById(input.projectId, ctx.user.id);
+        if (!project) {
+          throw new Error("プロジェクトが見つかりません");
+        }
         const videoUrl = await generateVideo(input.projectId);
         return { success: true, videoUrl };
       }),

@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import fs from "fs/promises";
@@ -6,7 +6,7 @@ import { storagePut } from "./storage";
 import * as db from "./db";
 import { nanoid } from "nanoid";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 interface ExtractedFrame {
   frame_number: number;
@@ -36,23 +36,41 @@ export async function processVideo(
   try {
     // Pythonスクリプトを実行してフレームを抽出
     const scriptPath = path.join(process.cwd(), "scripts", "extract_frames.py");
-    const command = `python3 ${scriptPath} "${videoPath}" "${tempDir}" ${threshold} ${minInterval} ${maxFrames}`;
 
-    console.log(`[VideoProcessor] Executing: ${command}`);
-    const { stdout, stderr } = await execAsync(command);
+    // セキュリティ: execFileを使用してコマンドインジェクションを防止
+    console.log(`[VideoProcessor] Executing: python3 ${scriptPath} with args`);
+    const { stdout, stderr } = await execFileAsync("python3", [
+      scriptPath,
+      videoPath,
+      tempDir,
+      threshold.toString(),
+      minInterval.toString(),
+      maxFrames.toString(),
+    ]);
 
     if (stderr) {
       console.log(`[VideoProcessor] stderr: ${stderr}`);
     }
 
-    // 抽出されたフレーム情報をパース
-    const frames: ExtractedFrame[] = JSON.parse(stdout);
+    // 抽出されたフレーム情報をパース（エラーハンドリング付き）
+    let frames: ExtractedFrame[];
+    try {
+      frames = JSON.parse(stdout);
+    } catch (parseError) {
+      throw new Error(`フレーム情報のJSONパースに失敗しました: ${parseError instanceof Error ? parseError.message : parseError}`);
+    }
     console.log(`[VideoProcessor] Extracted ${frames.length} frames`);
 
     // 各フレームをS3にアップロードしてDBに保存
     for (let i = 0; i < frames.length; i++) {
       const frame = frames[i];
-      const framePath = path.join(tempDir, frame.filename);
+
+      // セキュリティ: パストラバーサル対策
+      const sanitizedFilename = path.basename(frame.filename);
+      if (sanitizedFilename !== frame.filename || sanitizedFilename.includes("..")) {
+        throw new Error(`不正なファイル名が検出されました: ${frame.filename}`);
+      }
+      const framePath = path.join(tempDir, sanitizedFilename);
 
       // 画像ファイルを読み込み
       const imageBuffer = await fs.readFile(framePath);
