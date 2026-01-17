@@ -33,10 +33,17 @@ export default function Projects() {
       return;
     }
 
-    // ファイルサイズの制限（100MB）
-    const MAX_FILE_SIZE = 100 * 1024 * 1024;
+    // ファイルサイズチェック (500MB制限)
+    const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
     if (videoFile.size > MAX_FILE_SIZE) {
-      toast.error("ファイルサイズは100MB以下にしてください");
+      toast.error("ファイルサイズは500MB以下にしてください");
+      return;
+    }
+
+    // ファイル形式チェック
+    const allowedTypes = ["video/mp4", "video/quicktime", "video/x-msvideo"];
+    if (!allowedTypes.includes(videoFile.type)) {
+      toast.error("MP4、MOV、AVI形式の動画ファイルのみアップロード可能です");
       return;
     }
 
@@ -166,11 +173,11 @@ export default function Projects() {
                       id="video"
                       name="video"
                       type="file"
-                      accept="video/mp4,video/quicktime"
+                      accept="video/mp4,video/quicktime,video/x-msvideo"
                       required
                     />
                     <p className="text-xs text-muted-foreground">
-                      対応形式: MP4, MOV
+                      MP4、MOV、AVI形式（最大500MB）
                     </p>
                   </div>
                 </div>
