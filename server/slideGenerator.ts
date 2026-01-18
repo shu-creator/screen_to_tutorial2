@@ -1,28 +1,45 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { getProjectById, getStepsByProjectId, getFramesByProjectId } from "./db";
 
+const execFileAsync = promisify(execFile);
+
 // スライドのテキスト制限
-const MAX_OPERATION_CHARS = 60;  // 操作: 1行に収まる文字数
-const MAX_DETAIL_CHARS = 120;    // 詳細: 約5行分（18文字/行 × 約7行の安全マージン）
+const MAX_OPERATION_CHARS = 60;
+const MAX_DETAIL_CHARS = 120;
+const MAX_TOC_ITEMS_PER_SLIDE = 8; // 目次1ページあたりの項目数
 
 // カラー定義（プロフェッショナルなパレット）
 const COLORS = {
   primary: "2563EB",      // Blue-600
   primaryDark: "1D4ED8",  // Blue-700
+  primaryLight: "60A5FA", // Blue-400
   text: "1F2937",         // Gray-800
   textMuted: "6B7280",    // Gray-500
   accent: "3B82F6",       // Blue-500
+  highlight: "F59E0B",    // Amber-500 (ハイライト用)
+  highlightRing: "EF4444", // Red-500 (リング用)
   white: "FFFFFF",
   lightBg: "F3F4F6",      // Gray-100
 };
+
+// ハイライトの種類
+type HighlightType = "rect" | "ring" | "arrow" | "none";
+
+// ROI設定
+interface ROIConfig {
+  enabled: boolean;
+  zoomFactor: number; // 1.0 = no zoom, 1.5 = 150% zoom
+  focusArea: "center" | "top" | "bottom" | "left" | "right";
+}
 
 /**
  * テキストを指定文字数で切り詰め、省略記号を追加
  */
 function truncateText(text: string, maxLength: number): string {
   if (!text) return "";
-  // 絵文字を除去
   const cleanText = removeEmojis(text);
   if (cleanText.length <= maxLength) return cleanText;
   return cleanText.substring(0, maxLength - 1) + "…";
@@ -32,25 +49,20 @@ function truncateText(text: string, maxLength: number): string {
  * 絵文字を除去
  */
 function removeEmojis(text: string): string {
-  // 一般的な絵文字パターンを除去（ES5互換）
   return text
-    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "") // サロゲートペア（絵文字）
-    .replace(/[\u2600-\u27BF]/g, "") // その他の記号
-    .replace(/[\u2300-\u23FF]/g, "") // その他の技術記号
-    .replace(/[\u2B50-\u2B55]/g, "") // 星など
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
+    .replace(/[\u2600-\u27BF]/g, "")
+    .replace(/[\u2300-\u23FF]/g, "")
+    .replace(/[\u2B50-\u2B55]/g, "")
     .trim();
 }
 
 /**
  * 「状態説明」文を「指示」文に変換
- * 例: 「画面が表示されています」→「画面を確認する」
  */
 function convertToInstructionStyle(text: string): string {
   if (!text) return "";
-
   let result = text;
-
-  // 状態説明パターンを指示形式に変換
   const patterns: [RegExp, string][] = [
     [/が表示されています[。]?$/g, "を確認する"],
     [/されています[。]?$/g, "する"],
@@ -60,11 +72,9 @@ function convertToInstructionStyle(text: string): string {
     [/しましょう[。]?$/g, "する"],
     [/してください[。]?$/g, "する"],
   ];
-
   for (const [pattern, replacement] of patterns) {
     result = result.replace(pattern, replacement);
   }
-
   return result;
 }
 
@@ -78,20 +88,17 @@ function buildNotesText(step: {
   narration?: string | null;
 }): string {
   const parts: string[] = [];
-
   parts.push(`【${step.title}】`);
   parts.push("");
   parts.push(`操作: ${step.operation}`);
   parts.push("");
   parts.push(`詳細:`);
   parts.push(step.description);
-
   if (step.narration) {
     parts.push("");
     parts.push(`ナレーション:`);
     parts.push(step.narration);
   }
-
   return parts.join("\n");
 }
 
@@ -105,26 +112,311 @@ function createTempFilePath(prefix: string, extension: string): string {
 }
 
 /**
+ * ffmpegで画像のサイズを取得
+ */
+async function getImageDimensions(imagePath: string): Promise<{ width: number; height: number }> {
+  try {
+    const { stdout } = await execFileAsync("ffprobe", [
+      "-v", "quiet",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height",
+      "-of", "csv=p=0",
+      imagePath,
+    ], { timeout: 10000 });
+
+    const [width, height] = stdout.trim().split(",").map(Number);
+    return { width: width || 1920, height: height || 1080 };
+  } catch (error) {
+    console.error("[SlideGenerator] Failed to get image dimensions:", error);
+    return { width: 1920, height: 1080 };
+  }
+}
+
+/**
+ * ffmpegでROIクロップを実行
+ * 画像の中央部分を拡大してクロップ
+ */
+async function cropImageToROI(
+  inputPath: string,
+  outputPath: string,
+  config: ROIConfig
+): Promise<string> {
+  if (!config.enabled || config.zoomFactor <= 1.0) {
+    // クロップ不要の場合はコピー
+    await fs.copyFile(inputPath, outputPath);
+    return outputPath;
+  }
+
+  try {
+    const { width, height } = await getImageDimensions(inputPath);
+
+    // クロップサイズを計算（zoomFactor分小さくクロップ）
+    const cropWidth = Math.floor(width / config.zoomFactor);
+    const cropHeight = Math.floor(height / config.zoomFactor);
+
+    // クロップ位置を計算
+    let cropX = Math.floor((width - cropWidth) / 2);
+    let cropY = Math.floor((height - cropHeight) / 2);
+
+    // フォーカスエリアに応じて調整
+    switch (config.focusArea) {
+      case "top":
+        cropY = 0;
+        break;
+      case "bottom":
+        cropY = height - cropHeight;
+        break;
+      case "left":
+        cropX = 0;
+        break;
+      case "right":
+        cropX = width - cropWidth;
+        break;
+      // "center"はデフォルト
+    }
+
+    // ffmpegでクロップして元のサイズにスケール
+    await execFileAsync("ffmpeg", [
+      "-y",
+      "-i", inputPath,
+      "-vf", `crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},scale=${width}:${height}`,
+      "-q:v", "2",
+      outputPath,
+    ], { timeout: 30000 });
+
+    return outputPath;
+  } catch (error) {
+    console.error("[SlideGenerator] ROI crop failed, using original:", error);
+    await fs.copyFile(inputPath, outputPath);
+    return outputPath;
+  }
+}
+
+/**
+ * スライドにハイライトを追加
+ */
+function addHighlightToSlide(
+  slide: any,
+  highlightType: HighlightType,
+  imageX: number,
+  imageY: number,
+  imageW: number,
+  imageH: number
+): void {
+  if (highlightType === "none") return;
+
+  // ハイライト位置（画像の中央下部にフォーカス）
+  const highlightX = imageX + imageW * 0.3;
+  const highlightY = imageY + imageH * 0.4;
+  const highlightW = imageW * 0.4;
+  const highlightH = imageH * 0.3;
+
+  switch (highlightType) {
+    case "rect":
+      // 矩形ハイライト（枠線のみ）
+      slide.addShape("rect", {
+        x: highlightX,
+        y: highlightY,
+        w: highlightW,
+        h: highlightH,
+        fill: { type: "none" },
+        line: { color: COLORS.highlight, width: 3, dashType: "solid" },
+        rectRadius: 0.05,
+      });
+      break;
+
+    case "ring":
+      // リング（楕円）ハイライト
+      const ringCenterX = imageX + imageW * 0.5;
+      const ringCenterY = imageY + imageH * 0.5;
+      const ringW = imageW * 0.25;
+      const ringH = imageH * 0.2;
+      slide.addShape("ellipse", {
+        x: ringCenterX - ringW / 2,
+        y: ringCenterY - ringH / 2,
+        w: ringW,
+        h: ringH,
+        fill: { type: "none" },
+        line: { color: COLORS.highlightRing, width: 4, dashType: "solid" },
+      });
+      break;
+
+    case "arrow":
+      // 矢印（右上から中央へ）
+      const arrowStartX = imageX + imageW * 0.85;
+      const arrowStartY = imageY + imageH * 0.15;
+      const arrowEndX = imageX + imageW * 0.55;
+      const arrowEndY = imageY + imageH * 0.45;
+      slide.addShape("line", {
+        x: arrowStartX,
+        y: arrowStartY,
+        w: arrowEndX - arrowStartX,
+        h: arrowEndY - arrowStartY,
+        line: { color: COLORS.highlight, width: 3, endArrowType: "triangle" },
+      });
+      break;
+  }
+}
+
+/**
+ * 目次スライドを作成
+ */
+function createTableOfContentsSlides(
+  pptx: any,
+  steps: Array<{ title: string; sortOrder: number }>,
+  projectTitle: string
+): void {
+  const totalSteps = steps.length;
+  const totalTocSlides = Math.ceil(totalSteps / MAX_TOC_ITEMS_PER_SLIDE);
+
+  for (let tocPage = 0; tocPage < totalTocSlides; tocPage++) {
+    const slide = pptx.addSlide();
+    slide.background = { color: COLORS.white };
+
+    // 上部のアクセントバー
+    slide.addShape("rect", {
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 0.08,
+      fill: { color: COLORS.primary },
+    });
+
+    // 目次タイトル
+    const tocTitle = totalTocSlides > 1
+      ? `目次 (${tocPage + 1}/${totalTocSlides})`
+      : "目次";
+
+    slide.addText(tocTitle, {
+      x: 0.5,
+      y: 0.3,
+      w: 9.0,
+      h: 0.6,
+      fontSize: 28,
+      bold: true,
+      color: COLORS.text,
+    });
+
+    // 区切り線
+    slide.addShape("rect", {
+      x: 0.5,
+      y: 0.95,
+      w: 9.0,
+      h: 0.02,
+      fill: { color: COLORS.lightBg },
+    });
+
+    // 目次項目
+    const startIdx = tocPage * MAX_TOC_ITEMS_PER_SLIDE;
+    const endIdx = Math.min(startIdx + MAX_TOC_ITEMS_PER_SLIDE, totalSteps);
+    const itemHeight = 0.55;
+
+    for (let i = startIdx; i < endIdx; i++) {
+      const step = steps[i];
+      const yPos = 1.2 + (i - startIdx) * itemHeight;
+
+      // ステップ番号（円形バッジ）
+      slide.addShape("ellipse", {
+        x: 0.5,
+        y: yPos,
+        w: 0.4,
+        h: 0.4,
+        fill: { color: COLORS.primary },
+      });
+
+      slide.addText(`${step.sortOrder + 1}`, {
+        x: 0.5,
+        y: yPos,
+        w: 0.4,
+        h: 0.4,
+        fontSize: 12,
+        bold: true,
+        color: COLORS.white,
+        align: "center",
+        valign: "middle",
+      });
+
+      // ステップタイトル
+      slide.addText(truncateText(step.title, 50), {
+        x: 1.0,
+        y: yPos + 0.05,
+        w: 8.0,
+        h: 0.35,
+        fontSize: 14,
+        color: COLORS.text,
+        valign: "middle",
+      });
+    }
+  }
+}
+
+/**
+ * 進捗表示を追加（例: 7/21）
+ */
+function addProgressIndicator(
+  slide: any,
+  currentStep: number,
+  totalSteps: number
+): void {
+  // 右下に進捗表示
+  slide.addText(`${currentStep}/${totalSteps}`, {
+    x: 8.8,
+    y: 5.2,
+    w: 1.0,
+    h: 0.3,
+    fontSize: 12,
+    color: COLORS.textMuted,
+    align: "right",
+    valign: "middle",
+  });
+
+  // プログレスバー（小さなバー）
+  const progressWidth = 1.5;
+  const progressHeight = 0.06;
+  const progressX = 8.3;
+  const progressY = 5.15;
+  const filledWidth = (currentStep / totalSteps) * progressWidth;
+
+  // 背景バー
+  slide.addShape("rect", {
+    x: progressX,
+    y: progressY,
+    w: progressWidth,
+    h: progressHeight,
+    fill: { color: COLORS.lightBg },
+    rectRadius: 0.03,
+  });
+
+  // 進捗バー
+  if (filledWidth > 0) {
+    slide.addShape("rect", {
+      x: progressX,
+      y: progressY,
+      w: filledWidth,
+      h: progressHeight,
+      fill: { color: COLORS.primary },
+      rectRadius: 0.03,
+    });
+  }
+}
+
+/**
  * スライドを生成してS3にアップロードし、URLを返す
  */
 export async function generateSlides(projectId: number): Promise<string> {
   console.log(`[SlideGenerator] Starting slide generation for project ${projectId}`);
 
-  // 動的インポートでPptxGenJSを読み込む
   const PptxGenJSModule = await import("pptxgenjs");
   const PptxGenJS = PptxGenJSModule.default;
 
-  // 一時ファイルのリスト（最後にまとめて削除）
   const tempFilesToDelete: string[] = [];
 
   try {
-    // プロジェクト情報を取得
     const project = await getProjectById(projectId);
     if (!project) {
       throw new Error(`Project ${projectId} not found`);
     }
 
-    // ステップとフレームを取得
     const steps = await getStepsByProjectId(projectId);
     const frames = await getFramesByProjectId(projectId);
 
@@ -134,20 +426,18 @@ export async function generateSlides(projectId: number): Promise<string> {
 
     console.log(`[SlideGenerator] Creating slides for ${steps.length} steps`);
 
-    // PptxGenJSインスタンスを作成
     const pptx = new PptxGenJS();
     pptx.author = "Screen Recording Tutorial Generator";
     pptx.title = project.title;
-
-    // デフォルトのスライドサイズ（16:9）
     pptx.defineLayout({ name: "LAYOUT_16x9", width: 10, height: 5.625 });
     pptx.layout = "LAYOUT_16x9";
 
-    // タイトルスライド
+    const totalSteps = steps.length;
+
+    // === タイトルスライド ===
     const titleSlide = pptx.addSlide();
     titleSlide.background = { color: COLORS.primary };
 
-    // タイトルスライドのアクセント装飾（左側のバー）
     titleSlide.addShape("rect", {
       x: 0,
       y: 0,
@@ -181,8 +471,7 @@ export async function generateSlides(projectId: number): Promise<string> {
       });
     }
 
-    // ステップ数の表示
-    titleSlide.addText(`全${steps.length}ステップ`, {
+    titleSlide.addText(`全${totalSteps}ステップ`, {
       x: 0.5,
       y: 4.5,
       w: 9.0,
@@ -192,8 +481,22 @@ export async function generateSlides(projectId: number): Promise<string> {
       align: "center",
     });
 
-    // 各ステップのスライドを作成
-    for (const step of steps) {
+    // === 目次スライド ===
+    createTableOfContentsSlides(pptx, steps, project.title);
+
+    // === 各ステップのスライド ===
+    // ROI設定（デフォルト: 1.2倍ズーム、中央フォーカス）
+    const roiConfig: ROIConfig = {
+      enabled: true,
+      zoomFactor: 1.2,
+      focusArea: "center",
+    };
+
+    // ハイライトタイプをステップごとにローテーション
+    const highlightTypes: HighlightType[] = ["rect", "ring", "arrow", "none"];
+
+    for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+      const step = steps[stepIndex];
       const slide = pptx.addSlide();
       slide.background = { color: COLORS.white };
 
@@ -206,7 +509,7 @@ export async function generateSlides(projectId: number): Promise<string> {
         fill: { color: COLORS.primary },
       });
 
-      // ステップ番号バッジ（左上）
+      // ステップ番号バッジ
       slide.addShape("rect", {
         x: 0.3,
         y: 0.25,
@@ -232,7 +535,7 @@ export async function generateSlides(projectId: number): Promise<string> {
       slide.addText(truncateText(step.title, 40), {
         x: 1.2,
         y: 0.2,
-        w: 8.3,
+        w: 7.0,
         h: 0.45,
         fontSize: 22,
         bold: true,
@@ -240,10 +543,11 @@ export async function generateSlides(projectId: number): Promise<string> {
         valign: "middle",
       });
 
-      // 対応するフレームを取得
+      // 進捗表示
+      addProgressIndicator(slide, stepIndex + 1, totalSteps);
+
       const frame = frames.find((f) => f.id === step.frameId);
 
-      // レイアウト: 左側に大きな画像、右側に操作・詳細
       const imageX = 0.3;
       const imageY = 0.8;
       const imageW = 6.2;
@@ -255,7 +559,6 @@ export async function generateSlides(projectId: number): Promise<string> {
 
       if (frame) {
         try {
-          // 画像をダウンロードして一時ファイルに保存
           console.log(`[SlideGenerator] Fetching image for step ${step.sortOrder + 1}: ${frame.imageUrl}`);
           const response = await fetch(frame.imageUrl);
           if (!response.ok) {
@@ -266,7 +569,12 @@ export async function generateSlides(projectId: number): Promise<string> {
           await fs.writeFile(tempImagePath, imageBuffer);
           tempFilesToDelete.push(tempImagePath);
 
-          // 画像の背景（軽いシャドウ効果）
+          // ROIクロップを適用
+          const croppedImagePath = createTempFilePath(`frame_${frame.id}_cropped`, ".jpg");
+          await cropImageToROI(tempImagePath, croppedImagePath, roiConfig);
+          tempFilesToDelete.push(croppedImagePath);
+
+          // 画像の背景
           slide.addShape("rect", {
             x: imageX - 0.05,
             y: imageY - 0.05,
@@ -278,7 +586,7 @@ export async function generateSlides(projectId: number): Promise<string> {
 
           // スライドに画像を追加
           slide.addImage({
-            path: tempImagePath,
+            path: croppedImagePath,
             x: imageX,
             y: imageY,
             w: imageW,
@@ -286,10 +594,13 @@ export async function generateSlides(projectId: number): Promise<string> {
             sizing: { type: "contain", w: imageW, h: imageH },
           });
 
-          console.log(`[SlideGenerator] Added image for step ${step.sortOrder + 1}`);
+          // ハイライトを追加（3ステップごとにタイプを変更）
+          const highlightType = highlightTypes[stepIndex % highlightTypes.length];
+          addHighlightToSlide(slide, highlightType, imageX, imageY, imageW, imageH);
+
+          console.log(`[SlideGenerator] Added image for step ${step.sortOrder + 1} with highlight: ${highlightType}`);
         } catch (error) {
           console.error(`[SlideGenerator] Error adding image for frame ${frame.id}:`, error);
-          // 画像の追加に失敗した場合、プレースホルダーを表示
           slide.addShape("rect", {
             x: imageX,
             y: imageY,
@@ -330,7 +641,6 @@ export async function generateSlides(projectId: number): Promise<string> {
         color: COLORS.primary,
       });
 
-      // 操作内容（指示形式に変換、切り詰め）
       const operationText = truncateText(
         convertToInstructionStyle(step.operation),
         MAX_OPERATION_CHARS
@@ -356,7 +666,6 @@ export async function generateSlides(projectId: number): Promise<string> {
         color: COLORS.primary,
       });
 
-      // 詳細内容（切り詰め、全文はノートへ）
       const detailText = truncateText(
         convertToInstructionStyle(step.description),
         MAX_DETAIL_CHARS
@@ -371,7 +680,7 @@ export async function generateSlides(projectId: number): Promise<string> {
         valign: "top",
       });
 
-      // ノートに全文を追加（切り詰めなし）
+      // ノートに全文を追加
       const notesText = buildNotesText(step);
       slide.addNotes(notesText);
     }
