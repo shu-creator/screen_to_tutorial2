@@ -39,6 +39,191 @@ interface ExtractedFrame {
 }
 
 /**
+ * ffmpegを使って動画情報を取得
+ */
+async function getVideoInfo(videoPath: string): Promise<{ duration: number; fps: number }> {
+  const { stdout } = await execFileAsync("ffprobe", [
+    "-v", "quiet",
+    "-print_format", "json",
+    "-show_format",
+    "-show_streams",
+    videoPath,
+  ], { timeout: 30000 });
+
+  const info = JSON.parse(stdout);
+  const videoStream = info.streams?.find((s: { codec_type: string }) => s.codec_type === "video");
+
+  const duration = parseFloat(info.format?.duration || "0");
+  let fps = 30; // デフォルト値
+
+  if (videoStream?.r_frame_rate) {
+    const [num, den] = videoStream.r_frame_rate.split("/").map(Number);
+    if (den > 0) fps = num / den;
+  }
+
+  return { duration, fps };
+}
+
+/**
+ * ffmpegを使ってシーン検出でキーフレームを抽出
+ */
+async function extractFramesWithFFmpeg(
+  videoPath: string,
+  outputDir: string,
+  options: {
+    threshold: number;
+    minInterval: number;
+    maxFrames: number;
+  }
+): Promise<ExtractedFrame[]> {
+  const { threshold, minInterval, maxFrames } = options;
+
+  // 動画情報を取得
+  const { duration, fps } = await getVideoInfo(videoPath);
+  console.log(`[VideoProcessor] Video info: duration=${duration}s, fps=${fps}`);
+
+  // シーン検出の閾値を変換（0-100 → 0-1）
+  const sceneThreshold = Math.max(0.01, Math.min(0.5, threshold / 100));
+
+  // 最小間隔を秒に変換
+  const minIntervalSec = minInterval / fps;
+
+  // シーン検出でフレームを抽出
+  // select フィルターで scene 検出し、フレームを出力
+  const selectFilter = `select='gt(scene,${sceneThreshold})',showinfo`;
+
+  console.log(`[VideoProcessor] Running ffmpeg with scene detection threshold: ${sceneThreshold}`);
+
+  try {
+    // まずシーン検出を実行してタイムスタンプを取得
+    const { stderr: sceneOutput } = await execFileAsync("ffmpeg", [
+      "-i", videoPath,
+      "-vf", selectFilter,
+      "-vsync", "vfr",
+      "-f", "null",
+      "-",
+    ], { timeout: 300000, maxBuffer: 50 * 1024 * 1024 });
+
+    // showinfo出力からタイムスタンプを抽出
+    const timestamps: number[] = [0]; // 最初のフレームは常に含める
+    const lines = sceneOutput.split("\n");
+
+    for (const line of lines) {
+      const ptsTimeMatch = line.match(/pts_time:(\d+\.?\d*)/);
+      if (ptsTimeMatch) {
+        const time = parseFloat(ptsTimeMatch[1]);
+        const lastTime = timestamps[timestamps.length - 1];
+
+        // 最小間隔をチェック
+        if (time - lastTime >= minIntervalSec) {
+          timestamps.push(time);
+
+          if (timestamps.length >= maxFrames) {
+            console.log(`[VideoProcessor] Reached max frames limit: ${maxFrames}`);
+            break;
+          }
+        }
+      }
+    }
+
+    console.log(`[VideoProcessor] Found ${timestamps.length} scene changes`);
+
+    // タイムスタンプが少ない場合、定期的なフレームを追加
+    if (timestamps.length < 5 && duration > 0) {
+      console.log(`[VideoProcessor] Few scenes detected, adding regular interval frames`);
+      const interval = Math.max(2, duration / Math.min(maxFrames, 20)); // 2秒間隔以上
+      for (let t = interval; t < duration - 1; t += interval) {
+        if (!timestamps.some(ts => Math.abs(ts - t) < minIntervalSec)) {
+          timestamps.push(t);
+        }
+        if (timestamps.length >= maxFrames) break;
+      }
+      timestamps.sort((a, b) => a - b);
+    }
+
+    // 各タイムスタンプでフレームを抽出
+    const frames: ExtractedFrame[] = [];
+
+    for (let i = 0; i < timestamps.length && i < maxFrames; i++) {
+      const timestamp = timestamps[i];
+      const filename = `frame_${String(i).padStart(6, "0")}.jpg`;
+      const outputPath = path.join(outputDir, filename);
+
+      await execFileAsync("ffmpeg", [
+        "-ss", timestamp.toString(),
+        "-i", videoPath,
+        "-vframes", "1",
+        "-q:v", "2",
+        "-y",
+        outputPath,
+      ], { timeout: 30000 });
+
+      frames.push({
+        frame_number: Math.round(timestamp * fps),
+        timestamp: Math.round(timestamp * 1000), // ミリ秒
+        filename,
+        diff_score: Math.round(sceneThreshold * 100),
+      });
+
+      console.log(`[VideoProcessor] Extracted frame ${i + 1}/${timestamps.length} at ${timestamp.toFixed(2)}s`);
+    }
+
+    return frames;
+  } catch (error) {
+    console.error(`[VideoProcessor] FFmpeg error:`, error);
+
+    // フォールバック: 定期的なフレーム抽出
+    console.log(`[VideoProcessor] Falling back to regular interval extraction`);
+    return extractFramesAtIntervals(videoPath, outputDir, duration, fps, maxFrames, minInterval);
+  }
+}
+
+/**
+ * フォールバック: 定期的な間隔でフレームを抽出
+ */
+async function extractFramesAtIntervals(
+  videoPath: string,
+  outputDir: string,
+  duration: number,
+  fps: number,
+  maxFrames: number,
+  minInterval: number
+): Promise<ExtractedFrame[]> {
+  const minIntervalSec = minInterval / fps;
+  const interval = Math.max(minIntervalSec, duration / maxFrames);
+  const frames: ExtractedFrame[] = [];
+
+  for (let t = 0; t < duration && frames.length < maxFrames; t += interval) {
+    const filename = `frame_${String(frames.length).padStart(6, "0")}.jpg`;
+    const outputPath = path.join(outputDir, filename);
+
+    try {
+      await execFileAsync("ffmpeg", [
+        "-ss", t.toString(),
+        "-i", videoPath,
+        "-vframes", "1",
+        "-q:v", "2",
+        "-y",
+        outputPath,
+      ], { timeout: 30000 });
+
+      frames.push({
+        frame_number: Math.round(t * fps),
+        timestamp: Math.round(t * 1000),
+        filename,
+        diff_score: 0,
+      });
+
+      console.log(`[VideoProcessor] Extracted frame ${frames.length} at ${t.toFixed(2)}s`);
+    } catch (err) {
+      console.warn(`[VideoProcessor] Failed to extract frame at ${t}s:`, err);
+    }
+  }
+
+  return frames;
+}
+
+/**
  * 動画からキーフレームを抽出し、S3にアップロードしてDBに保存
  */
 export async function processVideo(
@@ -76,70 +261,18 @@ export async function processVideo(
     // 進捗: フレーム抽出開始
     await db.updateProjectProgress(projectId, 10, "動画からフレームを抽出しています...");
 
-    // Pythonスクリプトを実行してフレームを抽出
-    const scriptPath = path.join(process.cwd(), "scripts", "extract_frames.py");
-    console.log(`[VideoProcessor] Script path: ${scriptPath}`);
-    console.log(`[VideoProcessor] CWD: ${process.cwd()}`);
+    // ffmpegでフレームを抽出
+    console.log(`[VideoProcessor] Extracting frames with ffmpeg...`);
+    const frames = await extractFramesWithFFmpeg(videoPath, tempDir, {
+      threshold,
+      minInterval,
+      maxFrames,
+    });
 
-    // スクリプトファイルの存在確認
-    try {
-      await fs.access(scriptPath);
-    } catch {
-      throw new Error(`Pythonスクリプトが見つかりません: ${scriptPath}`);
+    if (frames.length === 0) {
+      throw new Error("フレームを抽出できませんでした。動画ファイルが正しいか確認してください。");
     }
 
-    // セキュリティ: execFileを使用してコマンドインジェクションを防止
-    console.log(`[VideoProcessor] Executing: python3 ${scriptPath} with args: ${videoPath} ${tempDir} ${threshold} ${minInterval} ${maxFrames}`);
-
-    let stdout: string;
-    let stderr: string;
-    try {
-      const result = await execFileAsync("python3", [
-        scriptPath,
-        videoPath,
-        tempDir,
-        threshold.toString(),
-        minInterval.toString(),
-        maxFrames.toString(),
-      ], { timeout: 300000, maxBuffer: 10 * 1024 * 1024 }); // 5分のタイムアウト、10MB バッファ
-      stdout = result.stdout;
-      stderr = result.stderr;
-    } catch (execError: unknown) {
-      // execFileAsyncのエラーにはstdout/stderrが含まれることがある
-      const err = execError as { stderr?: string; stdout?: string; message?: string; code?: number };
-      const errorStderr = err.stderr || '';
-      const errorStdout = err.stdout || '';
-      const errorMessage = err.message || 'Unknown error';
-      const exitCode = err.code;
-
-      console.error(`[VideoProcessor] Python script failed:`);
-      console.error(`[VideoProcessor] Exit code: ${exitCode}`);
-      console.error(`[VideoProcessor] stderr: ${errorStderr}`);
-      console.error(`[VideoProcessor] stdout: ${errorStdout}`);
-      console.error(`[VideoProcessor] message: ${errorMessage}`);
-
-      // より詳細なエラーメッセージを生成
-      let detailMessage = errorStderr || errorMessage;
-      if (detailMessage.includes('ModuleNotFoundError') || detailMessage.includes('No module named')) {
-        throw new Error(`Python依存パッケージが不足しています: ${detailMessage.substring(0, 200)}`);
-      } else if (detailMessage.includes('cv2') || detailMessage.includes('opencv')) {
-        throw new Error(`OpenCVエラー: ${detailMessage.substring(0, 200)}`);
-      } else {
-        throw new Error(`Pythonスクリプトエラー (code ${exitCode}): ${detailMessage.substring(0, 300)}`);
-      }
-    }
-
-    if (stderr) {
-      console.log(`[VideoProcessor] stderr: ${stderr}`);
-    }
-
-    // 抽出されたフレーム情報をパース（エラーハンドリング付き）
-    let frames: ExtractedFrame[];
-    try {
-      frames = JSON.parse(stdout);
-    } catch (parseError) {
-      throw new Error(`フレーム情報のJSONパースに失敗しました: ${parseError instanceof Error ? parseError.message : parseError}`);
-    }
     console.log(`[VideoProcessor] Extracted ${frames.length} frames`);
 
     // 進捗: フレーム抽出完了
@@ -204,11 +337,8 @@ export async function processVideo(
         errorMessage = "処理がタイムアウトしました。動画ファイルが大きすぎるか、複雑すぎる可能性があります。";
       } else if (msg.includes("permission") || msg.includes("eacces")) {
         errorMessage = "ファイルのアクセス権限がありません。サーバーの設定を確認してください。";
-      } else if (msg.includes("json") || msg.includes("parse")) {
-        errorMessage = "フレーム抽出スクリプトの出力が不正です。Python環境を確認してください。";
-      } else if (msg.includes("command failed") || msg.includes("python") || msg.includes("spawn")) {
-        // より詳細なエラー情報を含める
-        errorMessage = `フレーム抽出スクリプトの実行に失敗しました: ${error.message.substring(0, 150)}`;
+      } else if (msg.includes("ffmpeg") || msg.includes("ffprobe")) {
+        errorMessage = `ffmpegエラー: ${error.message.substring(0, 150)}`;
       } else {
         // デフォルト: エラーメッセージの最初の150文字を含める
         errorMessage = `動画処理中にエラーが発生しました: ${error.message.substring(0, 150)}`;
