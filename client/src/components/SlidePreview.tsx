@@ -194,13 +194,13 @@ export function SlidePreview({
         {/* Main Content */}
         <div className="flex-1 flex overflow-hidden min-h-0">
           {/* Image Section - Takes most of the space */}
-          <div className="flex-1 flex items-center justify-center bg-neutral-900 p-2 relative">
+          <div className="flex-1 flex items-center justify-center bg-neutral-900 p-0 relative">
             {currentFrame ? (
               <img
                 src={currentFrame.imageUrl}
                 alt={`ステップ ${currentSlide + 1}`}
-                className="max-w-full max-h-full object-contain"
-                style={{ maxHeight: 'calc(100% - 16px)' }}
+                className="w-full h-full object-contain"
+                style={{ maxWidth: '100%', maxHeight: '100%' }}
               />
             ) : (
               <div className="text-white/50 text-sm">画像がありません</div>

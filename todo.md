@@ -145,3 +145,32 @@
 - [x] フロントエンドのプロジェクト一覧ページにエラーメッセージ表示を追加
 - [x] フロントエンドのプロジェクト詳細ページにエラーメッセージ表示を追加
 - [x] 動作確認とテスト（error.test.tsで全テスト成功）
+
+## 動画アップロード後のOpenCVエラー修正
+
+- [ ] サーバーログとエラー詳細を調査
+- [ ] Python環境とOpenCVのインストール状況を確認
+- [ ] フレーム抽出スクリプトの実行環境を修正
+- [ ] 動画アップロードで再テスト
+
+## NumPyとPython 3.13の互換性問題修正
+
+- [x] Python環境とNumPyのバージョンを確認（Python 3.11, NumPy 2.4.1）
+- [x] NumPyを再インストール（--force-reinstallで破損を修復）
+- [x] requirements.txtを作成（numpy>=2.4.0, opencv-python-headless>=4.8.0）
+- [ ] 動画アップロードで動作確認
+
+## 解説動画の音声追加とスライドプレビュー改善
+
+- [x] 解説動画に音声が含まれない原因を調査（Manus Forge APIがTTS未対応）
+- [ ] TTS APIの代替案を実装（OpenAI API直接呼び出しまたは別のTTSサービス）
+- [x] スライドプレビューの画像サイズを拡大（パディング削除、w-full h-fullに変更）
+- [ ] 動作確認とテスト
+
+## OpenAI API直接呼び出しでTTS機能を実装
+
+- [x] OPENAI_API_KEYの入力をユーザーに依頼（webdev_request_secretsで完了）
+- [x] ENV設定にOPENAI_API_KEYを追加（env.tsに追加）
+- [x] TTS実装をOpenAI API直接呼び出しに変更（generateSpeechWithOpenAI関数追加）
+- [x] フォールバック機能を実装（OpenAI → Manus Forge → 無音）
+- [x] 動作確認とテスト（tts.test.tsでテスト成功）

@@ -48,6 +48,84 @@ export type TTSError = {
 const MAX_TEXT_LENGTH = 4096;
 
 /**
+ * Generate speech using OpenAI API directly
+ * @param options - TTS options
+ * @returns Audio buffer or error
+ */
+async function generateSpeechWithOpenAI(
+  options: TTSOptions
+): Promise<TTSResponse | TTSError> {
+  try {
+    const { text, voice = "nova", model = "tts-1", speed = 1.0, format = "mp3" } = options;
+
+    // Validate input
+    if (!text || text.trim().length === 0) {
+      return {
+        error: "Text is required",
+        code: "GENERATION_FAILED",
+        details: "Empty text provided",
+      };
+    }
+
+    if (text.length > MAX_TEXT_LENGTH) {
+      return {
+        error: `Text exceeds maximum length of ${MAX_TEXT_LENGTH} characters`,
+        code: "TEXT_TOO_LONG",
+        details: `Text length: ${text.length} characters`,
+      };
+    }
+
+    if (speed < 0.25 || speed > 4.0) {
+      return {
+        error: "Speed must be between 0.25 and 4.0",
+        code: "GENERATION_FAILED",
+        details: `Invalid speed: ${speed}`,
+      };
+    }
+
+    // Call OpenAI TTS API
+    const response = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ENV.openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        input: text,
+        voice,
+        speed,
+        response_format: format,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      return {
+        error: "OpenAI TTS generation failed",
+        code: "GENERATION_FAILED",
+        details: `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`,
+      };
+    }
+
+    // Return audio buffer
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
+    const contentType = getContentType(format);
+
+    return {
+      audioBuffer,
+      contentType,
+    };
+  } catch (error) {
+    return {
+      error: "OpenAI TTS generation failed",
+      code: "SERVICE_ERROR",
+      details: error instanceof Error ? error.message : "An unexpected error occurred",
+    };
+  }
+}
+
+/**
  * Generate speech from text using OpenAI TTS API
  *
  * @param options - TTS options
@@ -57,19 +135,22 @@ export async function generateSpeech(
   options: TTSOptions
 ): Promise<TTSResponse | TTSError> {
   try {
-    // Step 1: Validate environment configuration
-    if (!ENV.forgeApiUrl) {
+    // Step 1: Try OpenAI API first if key is available
+    if (ENV.openaiApiKey) {
+      const openaiResult = await generateSpeechWithOpenAI(options);
+      if (!('error' in openaiResult)) {
+        console.log('[TTS] Successfully generated speech using OpenAI API');
+        return openaiResult;
+      }
+      console.warn('[TTS] OpenAI API failed, falling back to Manus Forge:', openaiResult.details);
+    }
+
+    // Step 2: Fallback to Manus Forge API
+    if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
       return {
         error: "TTS service is not configured",
         code: "SERVICE_ERROR",
-        details: "BUILT_IN_FORGE_API_URL is not set",
-      };
-    }
-    if (!ENV.forgeApiKey) {
-      return {
-        error: "TTS service authentication is missing",
-        code: "SERVICE_ERROR",
-        details: "BUILT_IN_FORGE_API_KEY is not set",
+        details: "Neither OPENAI_API_KEY nor BUILT_IN_FORGE_API_KEY is set",
       };
     }
 
