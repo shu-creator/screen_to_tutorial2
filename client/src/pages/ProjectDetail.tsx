@@ -477,15 +477,28 @@ export default function ProjectDetail() {
     }
   };
 
-  // ファイルダウンロードヘルパー
-  const downloadFile = (url: string, filename: string) => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.target = "_blank";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  // ファイルダウンロードヘルパー（CORS問題を回避）
+  const downloadFile = async (url: string, filename: string) => {
+    try {
+      // fetchでファイルを取得し、Blobとしてダウンロード
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      // Blob URLを解放
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error('Download failed:', error);
+      // フォールバック: 直接リンクを開く
+      window.open(url, '_blank');
+    }
   };
 
   if (projectLoading) {

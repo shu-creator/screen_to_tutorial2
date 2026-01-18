@@ -384,13 +384,22 @@ export const appRouter = router({
     generate: protectedProcedure
       .input(z.object({ projectId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        // セキュリティ: プロジェクトの所有者チェック
-        const project = await db.getProjectById(input.projectId, ctx.user.id);
-        if (!project) {
-          throw new Error("プロジェクトが見つかりません");
+        try {
+          console.log(`[Router] Starting slide generation for project ${input.projectId}`);
+          // セキュリティ: プロジェクトの所有者チェック
+          const project = await db.getProjectById(input.projectId, ctx.user.id);
+          if (!project) {
+            console.error(`[Router] Project ${input.projectId} not found for user ${ctx.user.id}`);
+            throw new Error("プロジェクトが見つかりません");
+          }
+          console.log(`[Router] Project found, calling generateSlides...`);
+          const slideUrl = await generateSlides(input.projectId);
+          console.log(`[Router] Slide generation successful: ${slideUrl}`);
+          return { success: true, slideUrl };
+        } catch (error) {
+          console.error(`[Router] Slide generation error:`, error);
+          throw error;
         }
-        const slideUrl = await generateSlides(input.projectId);
-        return { success: true, slideUrl };
       }),
   }),
 
