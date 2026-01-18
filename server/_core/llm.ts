@@ -211,8 +211,8 @@ const normalizeToolChoice = (
 
 const resolveApiUrl = () =>
   ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/responses`
+    : "https://forge.manus.im/v1/responses";
 
 const assertApiKey = () => {
   if (!ENV.forgeApiKey) {
@@ -279,9 +279,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     response_format,
   } = params;
 
+  // Responses API形式でペイロードを構築
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
-    messages: messages.map(normalizeMessage),
+    model: "gpt-5-mini",
+    input: messages.map(normalizeMessage),
   };
 
   if (tools && tools.length > 0) {
@@ -296,10 +297,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
-  }
+  payload.max_output_tokens = 32768;
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
@@ -308,8 +306,22 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     output_schema,
   });
 
+  // Responses APIのtext形式を設定
   if (normalizedResponseFormat) {
-    payload.response_format = normalizedResponseFormat;
+    if (normalizedResponseFormat.type === "json_schema") {
+      payload.text = {
+        format: {
+          type: "json_schema",
+          name: normalizedResponseFormat.json_schema.name,
+          schema: normalizedResponseFormat.json_schema.schema,
+          strict: normalizedResponseFormat.json_schema.strict ?? true,
+        },
+      };
+    } else if (normalizedResponseFormat.type === "json_object") {
+      payload.text = {
+        format: { type: "json_object" },
+      };
+    }
   }
 
   const response = await fetch(resolveApiUrl(), {
@@ -328,5 +340,63 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     );
   }
 
-  return (await response.json()) as InvokeResult;
+  // Responses APIのレスポンスをChat Completions形式に変換
+  const responsesApiResult = await response.json();
+  return convertResponsesToChatCompletions(responsesApiResult);
+}
+
+/**
+ * Responses APIのレスポンスをChat Completions形式に変換
+ */
+function convertResponsesToChatCompletions(responsesResult: {
+  id: string;
+  created_at?: number;
+  model: string;
+  output?: Array<{
+    type: string;
+    content?: Array<{ type: string; text?: string }>;
+  }>;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+  };
+}): InvokeResult {
+  // outputからテキストコンテンツを抽出
+  let content = "";
+  if (responsesResult.output) {
+    for (const item of responsesResult.output) {
+      if (item.type === "message" && item.content) {
+        for (const c of item.content) {
+          if (c.type === "output_text" && c.text) {
+            content += c.text;
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    id: responsesResult.id,
+    created: responsesResult.created_at ?? Date.now(),
+    model: responsesResult.model,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content,
+        },
+        finish_reason: "stop",
+      },
+    ],
+    usage: responsesResult.usage
+      ? {
+          prompt_tokens: responsesResult.usage.input_tokens,
+          completion_tokens: responsesResult.usage.output_tokens,
+          total_tokens:
+            responsesResult.usage.input_tokens +
+            responsesResult.usage.output_tokens,
+        }
+      : undefined,
+  };
 }

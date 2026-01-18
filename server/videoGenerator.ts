@@ -11,6 +11,30 @@ import { createTempFilePath, createTempDir, safeTempFileDelete, safeTempDirDelet
 const execFileAsync = promisify(execFile);
 
 /**
+ * ffprobeを使用して音声ファイルの長さ（秒）を取得
+ */
+async function getAudioDuration(audioPath: string): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync("ffprobe", [
+      "-v", "quiet",
+      "-show_entries", "format=duration",
+      "-of", "csv=p=0",
+      audioPath,
+    ], { timeout: 30000 });
+
+    const duration = parseFloat(stdout.trim());
+    if (isNaN(duration) || duration <= 0) {
+      console.warn(`[VideoGenerator] Invalid audio duration: ${stdout}, using default 5s`);
+      return 5;
+    }
+    return duration;
+  } catch (error) {
+    console.error("[VideoGenerator] Failed to get audio duration:", error);
+    return 5; // デフォルト5秒
+  }
+}
+
+/**
  * テキストから音声を生成（TTS）
  * OpenAI TTS API を使用して実際の音声を生成
  */
@@ -25,7 +49,7 @@ async function generateAudio(
   const result = await generateSpeechForLongText({
     text,
     voice,
-    model: "tts-1",
+    model: "gpt-4o-mini-tts",
     speed: 1.0,
     format: "mp3",
   });
@@ -150,9 +174,14 @@ export async function generateVideo(projectId: number): Promise<string> {
 
       // 画像と音声を組み合わせて動画セグメントを作成
       const segmentPath = path.join(tempDir, `segment_${step.id}.mp4`);
-      
+
       if (audioPath) {
-        // 音声がある場合、音声の長さに合わせて画像を表示
+        // 音声の正確な長さを取得
+        const audioDuration = await getAudioDuration(audioPath);
+        console.log(`[VideoGenerator] Step ${step.id} audio duration: ${audioDuration}s`);
+
+        // 音声がある場合、音声の正確な長さに合わせて画像を表示
+        // -t で明示的に長さを指定し、音声と映像のズレを防止
         // セキュリティ: execFileを使用してコマンドインジェクションを防止
         await execFileAsync("ffmpeg", [
           "-loop", "1",
@@ -162,8 +191,11 @@ export async function generateVideo(projectId: number): Promise<string> {
           "-tune", "stillimage",
           "-c:a", "aac",
           "-b:a", "192k",
+          "-ar", "44100",  // サンプルレートを統一
           "-pix_fmt", "yuv420p",
-          "-shortest",
+          "-t", audioDuration.toFixed(3),  // 音声の正確な長さを使用
+          "-r", "30",  // フレームレートを固定
+          "-vsync", "cfr",  // 一定フレームレートで同期
           segmentPath,
         ]);
       } else {
@@ -175,6 +207,7 @@ export async function generateVideo(projectId: number): Promise<string> {
           "-c:v", "libx264",
           "-t", "5",
           "-pix_fmt", "yuv420p",
+          "-r", "30",  // フレームレートを固定
           "-vf", "scale=1920:1080",
           segmentPath,
         ]);
@@ -190,13 +223,21 @@ export async function generateVideo(projectId: number): Promise<string> {
 
     const finalVideoPath = path.join(tempDir, "final_video.mp4");
     // セキュリティ: execFileを使用してコマンドインジェクションを防止
+    // 再エンコードで音声同期を確保（-c copyだとズレが発生する場合がある）
     await execFileAsync("ffmpeg", [
       "-f", "concat",
       "-safe", "0",
       "-i", concatListPath,
-      "-c", "copy",
+      "-c:v", "libx264",
+      "-c:a", "aac",
+      "-b:a", "192k",
+      "-ar", "44100",
+      "-r", "30",
+      "-vsync", "cfr",
+      "-async", "1",  // 音声同期を強制
+      "-pix_fmt", "yuv420p",
       finalVideoPath,
-    ]);
+    ], { timeout: 600000 });  // 10分のタイムアウト
 
     // S3にアップロード
     const videoBuffer = await fs.readFile(finalVideoPath);
