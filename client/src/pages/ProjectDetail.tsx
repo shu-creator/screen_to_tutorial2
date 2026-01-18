@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock, RefreshCw, Settings, Play, Film, GripVertical } from "lucide-react";
+import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock, RefreshCw, Settings, Play, Film, GripVertical, Presentation, Volume2, Pause } from "lucide-react";
 import { Link, useParams } from "wouter";
 import { toast } from "sonner";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -32,6 +32,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { SlidePreview } from "@/components/SlidePreview";
 
 // ソート可能なステップカードコンポーネント
 type StepData = {
@@ -41,6 +42,7 @@ type StepData = {
   operation: string;
   description: string;
   narration: string | null;
+  audioUrl: string | null;
 };
 
 type FrameData = {
@@ -57,6 +59,8 @@ function SortableStepCard({
   onToggleEdit,
   onUpdate,
   onDelete,
+  onRegenerate,
+  isRegenerating,
   frame,
 }: {
   step: StepData;
@@ -65,6 +69,8 @@ function SortableStepCard({
   onToggleEdit: () => void;
   onUpdate: (id: number, data: Partial<StepData>) => void;
   onDelete: (id: number) => void;
+  onRegenerate: (stepId: number, frameId: number) => void;
+  isRegenerating: boolean;
   frame?: FrameData;
 }) {
   const {
@@ -145,9 +151,19 @@ function SortableStepCard({
                   </CardDescription>
                   <p className="text-sm text-foreground mt-2">{step.description}</p>
                   {step.narration && (
-                    <p className="text-sm text-muted-foreground mt-2 italic">
-                      🎙️ {step.narration}
-                    </p>
+                    <div className="mt-2 space-y-2">
+                      <p className="text-sm text-muted-foreground italic">
+                        🎙️ {step.narration}
+                      </p>
+                      {step.audioUrl && (
+                        <audio
+                          src={step.audioUrl}
+                          controls
+                          className="h-8 w-full max-w-xs"
+                          preload="none"
+                        />
+                      )}
+                    </div>
                   )}
                 </>
               )}
@@ -163,21 +179,44 @@ function SortableStepCard({
               />
             </div>
           )}
-          <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onToggleEdit}
-            >
-              {isEditing ? "完了" : "編集"}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onDelete(step.id)}
-            >
-              削除
-            </Button>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onToggleEdit}
+              >
+                {isEditing ? "完了" : "編集"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onDelete(step.id)}
+              >
+                削除
+              </Button>
+            </div>
+            {frame && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onRegenerate(step.id, step.frameId)}
+                disabled={isRegenerating}
+                className="w-full"
+              >
+                {isRegenerating ? (
+                  <>
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    再生成中...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    AIで再生成
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -248,7 +287,11 @@ export default function ProjectDetail() {
   const updateStepMutation = trpc.step.update.useMutation();
   const deleteStepMutation = trpc.step.delete.useMutation();
   const reorderStepsMutation = trpc.step.reorder.useMutation();
+  const regenerateStepMutation = trpc.step.regenerate.useMutation();
   const retryProjectMutation = trpc.project.retry.useMutation();
+
+  // ステップ再生成中の状態
+  const [regeneratingStepId, setRegeneratingStepId] = useState<number | null>(null);
   const generateSlidesMutation = trpc.slide.generate.useMutation();
   const generateAudioMutation = trpc.video.generateAudio.useMutation();
   const generateVideoMutation = trpc.video.generate.useMutation();
@@ -294,6 +337,7 @@ export default function ProjectDetail() {
 
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
   const [isRetryDialogOpen, setIsRetryDialogOpen] = useState(false);
+  const [isSlidePreviewOpen, setIsSlidePreviewOpen] = useState(false);
   const [isGeneratingSlides, setIsGeneratingSlides] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState<string>("nova");
@@ -361,6 +405,19 @@ export default function ProjectDetail() {
       refetchSteps();
     } catch (error) {
       toast.error("ステップの削除に失敗しました");
+    }
+  };
+
+  const handleRegenerateStep = async (stepId: number, frameId: number) => {
+    setRegeneratingStepId(stepId);
+    try {
+      await regenerateStepMutation.mutateAsync({ stepId, frameId });
+      toast.success("ステップをAIで再生成しました");
+      refetchSteps();
+    } catch (error) {
+      toast.error("ステップの再生成に失敗しました");
+    } finally {
+      setRegeneratingStepId(null);
     }
   };
 
@@ -707,6 +764,8 @@ export default function ProjectDetail() {
                         onToggleEdit={() => setEditingStepId(editingStepId === step.id ? null : step.id)}
                         onUpdate={handleUpdateStep}
                         onDelete={handleDeleteStep}
+                        onRegenerate={handleRegenerateStep}
+                        isRegenerating={regeneratingStepId === step.id}
                         frame={frames?.find((f) => f.id === step.frameId)}
                       />
                     ))}
@@ -855,7 +914,33 @@ export default function ProjectDetail() {
               </Card>
             </div>
 
-            {/* スライドプレビュー（フレームのスライドショー） */}
+            {/* スライドプレビュー（ステップをスライドショー形式で表示） */}
+            {steps && steps.length > 0 && frames && frames.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Presentation className="h-5 w-5" />
+                    スライドプレビュー
+                  </CardTitle>
+                  <CardDescription>
+                    生成されたチュートリアルをスライドショー形式でプレビュー
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col items-center gap-4">
+                    <p className="text-sm text-muted-foreground text-center">
+                      {steps.length}枚のステップをインタラクティブなスライドショーで確認できます
+                    </p>
+                    <Button onClick={() => setIsSlidePreviewOpen(true)}>
+                      <Presentation className="h-4 w-4 mr-2" />
+                      スライドプレビューを開く
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* フレームギャラリー */}
             {frames && frames.length > 0 && (
               <Card>
                 <CardHeader>
@@ -895,6 +980,16 @@ export default function ProjectDetail() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* スライドプレビューダイアログ */}
+      {steps && frames && (
+        <SlidePreview
+          steps={steps}
+          frames={frames}
+          isOpen={isSlidePreviewOpen}
+          onClose={() => setIsSlidePreviewOpen(false)}
+        />
+      )}
     </DashboardLayout>
   );
 }
