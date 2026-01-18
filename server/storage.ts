@@ -54,10 +54,16 @@ function toFormData(
   contentType: string,
   fileName: string
 ): FormData {
-  const blob =
-    typeof data === "string"
-      ? new Blob([data], { type: contentType })
-      : new Blob([data as any], { type: contentType });
+  // Convert binary data to ArrayBuffer which Blob accepts without type issues
+  let blobPart: BlobPart;
+  if (typeof data === "string") {
+    blobPart = data;
+  } else {
+    // For Buffer or Uint8Array, copy to new ArrayBuffer
+    const bytes = new Uint8Array(data);
+    blobPart = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  }
+  const blob = new Blob([blobPart], { type: contentType });
   const form = new FormData();
   form.append("file", blob, fileName || "file");
   return form;
