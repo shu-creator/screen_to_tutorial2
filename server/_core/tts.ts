@@ -22,7 +22,7 @@
 import { ENV } from "./env";
 
 export type TTSVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
-export type TTSModel = "tts-1" | "tts-1-hd";
+export type TTSModel = "tts-1" | "tts-1-hd" | "gpt-4o-mini-tts";
 export type TTSFormat = "mp3" | "opus" | "aac" | "flac";
 
 export type TTSOptions = {
@@ -155,7 +155,7 @@ export async function generateSpeech(
     }
 
     // Step 2: Validate input
-    const { text, voice = "nova", model = "tts-1", speed = 1.0, format = "mp3" } = options;
+    const { text, voice = "nova", model = "gpt-4o-mini-tts", speed = 1.0, format = "mp3" } = options;
 
     if (!text || text.trim().length === 0) {
       return {
