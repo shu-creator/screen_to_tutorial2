@@ -6,31 +6,9 @@ import { storagePut } from "./storage";
 import * as db from "./db";
 import { nanoid } from "nanoid";
 import { generateSpeech, generateSpeechForLongText, type TTSVoice } from "./_core/tts";
+import { createTempFilePath, createTempDir, safeTempFileDelete, safeTempDirDelete } from "./tempFileManager";
 
 const execFileAsync = promisify(execFile);
-
-/**
- * 一時ディレクトリをクリーンアップ（リトライ付き）
- */
-async function cleanupTempDir(tempDir: string, context: string): Promise<void> {
-  const maxRetries = 3;
-  const retryDelay = 1000; // 1秒
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      await fs.rm(tempDir, { recursive: true, force: true });
-      return;
-    } catch (err) {
-      if (attempt < maxRetries) {
-        console.warn(`[${context}] Cleanup attempt ${attempt} failed, retrying in ${retryDelay}ms: ${tempDir}`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      } else {
-        console.error(`[${context}] Failed to cleanup temp dir after ${maxRetries} attempts: ${tempDir}`);
-        console.error(`[${context}] Manual cleanup may be required: rm -rf ${tempDir}`);
-      }
-    }
-  }
-}
 
 /**
  * テキストから音声を生成（TTS）
@@ -100,7 +78,7 @@ export async function generateAudioForProject(
 
     try {
       // 一時ファイルに音声を生成
-      const tempAudioPath = path.join("/tmp", `audio_${step.id}_${Date.now()}.mp3`);
+      const tempAudioPath = createTempFilePath(`audio_${step.id}`, ".mp3");
       await generateAudio(step.narration, tempAudioPath, voice);
 
       // S3にアップロード
@@ -115,7 +93,7 @@ export async function generateAudioForProject(
       });
 
       // 一時ファイルを削除
-      await fs.unlink(tempAudioPath).catch(() => {});
+      await safeTempFileDelete(tempAudioPath, "VideoGenerator");
 
       console.log(`[VideoGenerator] Audio generated for step ${step.id}`);
     } catch (error) {
@@ -145,8 +123,7 @@ export async function generateVideo(projectId: number): Promise<string> {
   }
 
   // 一時ディレクトリを作成
-  const tempDir = path.join("/tmp", `video_${projectId}_${Date.now()}`);
-  await fs.mkdir(tempDir, { recursive: true });
+  const tempDir = await createTempDir(`video_${projectId}`);
 
   try {
     // 各ステップの画像と音声をダウンロード
@@ -231,6 +208,6 @@ export async function generateVideo(projectId: number): Promise<string> {
     return videoUrl;
   } finally {
     // 一時ディレクトリをクリーンアップ（リトライ付き）
-    await cleanupTempDir(tempDir, "VideoGenerator");
+    await safeTempDirDelete(tempDir, "VideoGenerator");
   }
 }

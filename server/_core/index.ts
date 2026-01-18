@@ -1,5 +1,5 @@
 import "dotenv/config";
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -7,6 +7,9 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { uploadRouter } from "../uploadRoute";
+import { sdk } from "./sdk";
+import type { MaybeAuthenticatedRequest } from "../types";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -40,6 +43,21 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "700mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+
+  // Authentication middleware for upload routes
+  const authenticateUpload = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      (req as MaybeAuthenticatedRequest).user = user;
+      next();
+    } catch (error) {
+      res.status(401).json({ error: "認証が必要です" });
+    }
+  };
+
+  // File upload API (multipart/form-data)
+  app.use("/api/upload", authenticateUpload, uploadRouter);
+
   // tRPC API
   app.use(
     "/api/trpc",

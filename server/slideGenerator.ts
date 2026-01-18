@@ -3,7 +3,7 @@ import * as db from "./db";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import fs from "fs/promises";
-import path from "path";
+import { createTempFilePath, safeTempFileDelete } from "./tempFileManager";
 
 /**
  * プロジェクトのステップからPowerPointスライドを生成
@@ -94,7 +94,7 @@ export async function generateSlides(projectId: number): Promise<string> {
         // 画像をダウンロードして一時ファイルに保存
         const response = await fetch(frame.imageUrl);
         const imageBuffer = Buffer.from(await response.arrayBuffer());
-        const tempImagePath = path.join("/tmp", `frame_${frame.id}_${Date.now()}.jpg`);
+        const tempImagePath = createTempFilePath(`frame_${frame.id}`, ".jpg");
         await fs.writeFile(tempImagePath, imageBuffer);
 
         // スライドに画像を追加
@@ -108,7 +108,7 @@ export async function generateSlides(projectId: number): Promise<string> {
         });
 
         // 一時ファイルを削除
-        await fs.unlink(tempImagePath).catch(() => {});
+        await safeTempFileDelete(tempImagePath, "SlideGenerator");
       } catch (error) {
         console.error(`[SlideGenerator] Error adding image for frame ${frame.id}:`, error);
       }
@@ -141,7 +141,7 @@ export async function generateSlides(projectId: number): Promise<string> {
   }
 
   // 一時ファイルに保存
-  const tempPptxPath = path.join("/tmp", `slides_${projectId}_${Date.now()}.pptx`);
+  const tempPptxPath = createTempFilePath(`slides_${projectId}`, ".pptx");
   await pptx.writeFile({ fileName: tempPptxPath });
 
   // S3にアップロード
@@ -154,7 +154,7 @@ export async function generateSlides(projectId: number): Promise<string> {
   );
 
   // 一時ファイルを削除
-  await fs.unlink(tempPptxPath).catch(() => {});
+  await safeTempFileDelete(tempPptxPath, "SlideGenerator");
 
   console.log(`[SlideGenerator] Slide generation complete: ${pptxUrl}`);
 

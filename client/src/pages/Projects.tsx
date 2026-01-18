@@ -23,7 +23,7 @@ export default function Projects() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
-    phase: "reading" | "uploading" | "starting";
+    phase: "uploading" | "starting";
     progress: number;
     message: string;
   } | null>(null);
@@ -275,10 +275,10 @@ export default function Projects() {
 
   const handleCreateProject = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const title = formData.get("title") as string;
-    const description = formData.get("description") as string;
-    const videoFile = formData.get("video") as File;
+    const formDataEl = new FormData(e.currentTarget);
+    const title = formDataEl.get("title") as string;
+    const description = formDataEl.get("description") as string;
+    const videoFile = formDataEl.get("video") as File;
 
     if (!videoFile) {
       toast.error("動画ファイルを選択してください");
@@ -300,45 +300,65 @@ export default function Projects() {
     }
 
     setIsUploading(true);
-    setUploadProgress({ phase: "reading", progress: 0, message: "ファイルを読み込み中..." });
+    setUploadProgress({ phase: "uploading", progress: 0, message: "アップロードを開始..." });
 
     try {
-      // ファイルをBase64エンコード（FileReaderを使用してバイナリ安全に）
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
+      // マルチパートアップロード用のFormDataを作成
+      const uploadFormData = new FormData();
+      uploadFormData.append("title", title);
+      if (description) {
+        uploadFormData.append("description", description);
+      }
+      uploadFormData.append("video", videoFile);
 
-        // 読み込み進捗を追跡
-        reader.onprogress = (event) => {
+      // XMLHttpRequestを使用してアップロード進捗を追跡
+      const result = await new Promise<{ projectId: number; videoUrl: string; videoKey: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        // アップロード進捗を追跡
+        xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
             const progress = Math.round((event.loaded / event.total) * 100);
             setUploadProgress({
-              phase: "reading",
+              phase: "uploading",
               progress,
-              message: `ファイルを読み込み中... ${progress}%`,
+              message: `アップロード中... ${progress}%`,
             });
           }
         };
 
-        reader.onload = () => {
-          const result = reader.result as string;
-          // "data:video/mp4;base64,..." から base64部分のみを抽出
-          const base64Data = result.split(",")[1];
-          resolve(base64Data);
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response);
+            } catch {
+              reject(new Error("サーバーからの応答を解析できませんでした"));
+            }
+          } else {
+            try {
+              const errorResponse = JSON.parse(xhr.responseText);
+              reject(new Error(errorResponse.error || `アップロードエラー: ${xhr.status}`));
+            } catch {
+              reject(new Error(`アップロードエラー: ${xhr.status}`));
+            }
+          }
         };
-        reader.onerror = () => reject(new Error("ファイルの読み込みに失敗しました"));
-        reader.readAsDataURL(videoFile);
-      });
 
-      // アップロード中フェーズ
-      setUploadProgress({ phase: "uploading", progress: 0, message: "サーバーにアップロード中..." });
+        xhr.onerror = () => {
+          reject(new Error("ネットワークエラーが発生しました"));
+        };
 
-      // サーバーにアップロード（サーバー側でストレージにアップロード）
-      const result = await createProjectMutation.mutateAsync({
-        title,
-        description: description || undefined,
-        videoBase64: base64,
-        fileName: videoFile.name,
-        contentType: videoFile.type || "video/mp4",
+        xhr.ontimeout = () => {
+          reject(new Error("アップロードがタイムアウトしました"));
+        };
+
+        // タイムアウトを5分に設定
+        xhr.timeout = 5 * 60 * 1000;
+
+        xhr.open("POST", "/api/upload/video");
+        xhr.withCredentials = true; // Cookie認証を送信
+        xhr.send(uploadFormData);
       });
 
       // 処理開始フェーズ
@@ -572,19 +592,19 @@ export default function Projects() {
                     <div className="w-full space-y-2">
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">{uploadProgress.message}</span>
-                        {uploadProgress.phase === "reading" && (
+                        {uploadProgress.phase === "uploading" && (
                           <span className="font-medium">{uploadProgress.progress}%</span>
                         )}
                       </div>
                       <Progress
-                        value={uploadProgress.phase === "reading" ? uploadProgress.progress : 100}
+                        value={uploadProgress.phase === "uploading" ? uploadProgress.progress : 100}
                         className="h-2"
                       />
                     </div>
                   )}
                   <Button type="submit" disabled={isUploading} className="w-full sm:w-auto">
                     {isUploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    {isUploading ? (uploadProgress?.phase === "reading" ? "読み込み中..." : uploadProgress?.phase === "uploading" ? "アップロード中..." : "処理開始中...") : "作成"}
+                    {isUploading ? (uploadProgress?.phase === "uploading" ? "アップロード中..." : "処理開始中...") : "作成"}
                   </Button>
                 </DialogFooter>
               </form>
