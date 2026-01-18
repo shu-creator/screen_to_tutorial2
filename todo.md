@@ -174,3 +174,10 @@
 - [x] TTS実装をOpenAI API直接呼び出しに変更（generateSpeechWithOpenAI関数追加）
 - [x] フォールバック機能を実装（OpenAI → Manus Forge → 無音）
 - [x] 動作確認とテスト（tts.test.tsでテスト成功）
+
+## Responses API移行によるステップ生成の不具合修正
+
+- [x] LLM APIのペイロードフォーマットを確認（Responses API形式が正しいか）
+- [x] ステップ生成のAI解析が正常に動作するか確認
+- [x] 必要に応じてChat Completions APIに戻す
+- [x] 動作確認とテスト

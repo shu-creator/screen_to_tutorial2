@@ -211,8 +211,8 @@ const normalizeToolChoice = (
 
 const resolveApiUrl = () =>
   ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/responses`
-    : "https://forge.manus.im/v1/responses";
+    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
+    : "https://forge.manus.im/v1/chat/completions";
 
 const assertApiKey = () => {
   if (!ENV.forgeApiKey) {
@@ -279,10 +279,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     response_format,
   } = params;
 
-  // Responses API形式でペイロードを構築
+  // Chat Completions API形式でペイロードを構築
   const payload: Record<string, unknown> = {
-    model: "gpt-5-mini",
-    input: messages.map(normalizeMessage),
+    model: "gemini-2.5-flash",
+    messages: messages.map(normalizeMessage),
   };
 
   if (tools && tools.length > 0) {
@@ -306,22 +306,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     output_schema,
   });
 
-  // Responses APIのtext形式を設定
+  // response_formatを設定
   if (normalizedResponseFormat) {
-    if (normalizedResponseFormat.type === "json_schema") {
-      payload.text = {
-        format: {
-          type: "json_schema",
-          name: normalizedResponseFormat.json_schema.name,
-          schema: normalizedResponseFormat.json_schema.schema,
-          strict: normalizedResponseFormat.json_schema.strict ?? true,
-        },
-      };
-    } else if (normalizedResponseFormat.type === "json_object") {
-      payload.text = {
-        format: { type: "json_object" },
-      };
-    }
+    payload.response_format = normalizedResponseFormat;
   }
 
   const response = await fetch(resolveApiUrl(), {
@@ -340,9 +327,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     );
   }
 
-  // Responses APIのレスポンスをChat Completions形式に変換
-  const responsesApiResult = await response.json();
-  return convertResponsesToChatCompletions(responsesApiResult);
+  // Chat Completions APIのレスポンスをそのまま返す
+  return await response.json();
 }
 
 /**
