@@ -9,12 +9,181 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock, RefreshCw, Settings, Play, Film } from "lucide-react";
+import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock, RefreshCw, Settings, Play, Film, GripVertical } from "lucide-react";
 import { Link, useParams } from "wouter";
 import { toast } from "sonner";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+// ソート可能なステップカードコンポーネント
+type StepData = {
+  id: number;
+  frameId: number;
+  title: string;
+  operation: string;
+  description: string;
+  narration: string | null;
+};
+
+type FrameData = {
+  id: number;
+  imageUrl: string;
+  frameNumber: number;
+  timestamp: number;
+};
+
+function SortableStepCard({
+  step,
+  index,
+  isEditing,
+  onToggleEdit,
+  onUpdate,
+  onDelete,
+  frame,
+}: {
+  step: StepData;
+  index: number;
+  isEditing: boolean;
+  onToggleEdit: () => void;
+  onUpdate: (id: number, data: Partial<StepData>) => void;
+  onDelete: (id: number) => void;
+  frame?: FrameData;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: step.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <Card ref={setNodeRef} style={style} className={isDragging ? "shadow-lg" : ""}>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex gap-4 flex-1">
+            {/* ドラッグハンドル */}
+            <button
+              {...attributes}
+              {...listeners}
+              className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
+              aria-label="ドラッグして並び替え"
+            >
+              <GripVertical className="h-5 w-5" />
+            </button>
+            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
+              {index + 1}
+            </div>
+            <div className="flex-1">
+              {isEditing ? (
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor={`title-${step.id}`}>タイトル</Label>
+                    <Input
+                      id={`title-${step.id}`}
+                      defaultValue={step.title}
+                      onBlur={(e) => onUpdate(step.id, { title: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`operation-${step.id}`}>操作</Label>
+                    <Input
+                      id={`operation-${step.id}`}
+                      defaultValue={step.operation}
+                      onBlur={(e) => onUpdate(step.id, { operation: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`description-${step.id}`}>説明</Label>
+                    <Textarea
+                      id={`description-${step.id}`}
+                      defaultValue={step.description}
+                      rows={3}
+                      onBlur={(e) => onUpdate(step.id, { description: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`narration-${step.id}`}>ナレーション</Label>
+                    <Textarea
+                      id={`narration-${step.id}`}
+                      defaultValue={step.narration || ""}
+                      rows={2}
+                      onBlur={(e) => onUpdate(step.id, { narration: e.target.value })}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <CardTitle>{step.title}</CardTitle>
+                  <CardDescription className="mt-2">
+                    <strong>操作:</strong> {step.operation}
+                  </CardDescription>
+                  <p className="text-sm text-foreground mt-2">{step.description}</p>
+                  {step.narration && (
+                    <p className="text-sm text-muted-foreground mt-2 italic">
+                      🎙️ {step.narration}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          {/* フレームプレビュー */}
+          {frame && !isEditing && (
+            <div className="flex-shrink-0 w-40 aspect-video bg-muted rounded overflow-hidden">
+              <img
+                src={frame.imageUrl}
+                alt={`ステップ ${index + 1} のフレーム`}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggleEdit}
+            >
+              {isEditing ? "完了" : "編集"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onDelete(step.id)}
+            >
+              削除
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+    </Card>
+  );
+}
 
 export default function ProjectDetail() {
   const params = useParams<{ id: string }>();
@@ -26,13 +195,18 @@ export default function ProjectDetail() {
   const utils = trpc.useUtils();
   const [progressData, setProgressData] = useState<{ progress: number; message: string; errorMessage?: string | null } | null>(null);
 
-  // 処理中のプロジェクトの進捗をポーリング
+  // 指数バックオフ付きポーリング用の状態
+  const pollingIntervalRef = useRef(1000);
+  const pollingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 処理中のプロジェクトの進捗をポーリング（指数バックオフ付き）
   useEffect(() => {
     if (!project || (project.status !== "processing" && project.status !== "failed")) {
+      pollingIntervalRef.current = 1000; // Reset interval
       return;
     }
 
-    const interval = setInterval(async () => {
+    const poll = async () => {
       try {
         const progress = await utils.project.getProgress.fetch({ id: projectId });
         setProgressData({
@@ -41,28 +215,82 @@ export default function ProjectDetail() {
           errorMessage: progress.errorMessage,
         });
 
+        // 成功時はインターバルをリセット
+        pollingIntervalRef.current = 1000;
+
         if (progress.status === "completed" || (progress.status === "failed" && progress.errorMessage)) {
-          clearInterval(interval);
           refetchProject();
           refetchFrames();
           refetchSteps();
+          return; // ポーリング終了
         }
       } catch (error) {
         console.error("Failed to fetch progress:", error);
+        // エラー時は指数バックオフ（最大30秒）
+        pollingIntervalRef.current = Math.min(pollingIntervalRef.current * 1.5, 30000);
       }
-    }, 1000);
 
-    return () => clearInterval(interval);
+      // 次のポーリングをスケジュール
+      pollingTimeoutRef.current = setTimeout(poll, pollingIntervalRef.current);
+    };
+
+    // 初回ポーリング開始
+    pollingTimeoutRef.current = setTimeout(poll, pollingIntervalRef.current);
+
+    return () => {
+      if (pollingTimeoutRef.current) {
+        clearTimeout(pollingTimeoutRef.current);
+      }
+    };
   }, [project?.status, projectId, utils, refetchProject, refetchFrames, refetchSteps]);
   
   const generateStepsMutation = trpc.step.generate.useMutation();
   const updateStepMutation = trpc.step.update.useMutation();
   const deleteStepMutation = trpc.step.delete.useMutation();
+  const reorderStepsMutation = trpc.step.reorder.useMutation();
   const retryProjectMutation = trpc.project.retry.useMutation();
   const generateSlidesMutation = trpc.slide.generate.useMutation();
   const generateAudioMutation = trpc.video.generateAudio.useMutation();
   const generateVideoMutation = trpc.video.generate.useMutation();
   const { data: availableVoices } = trpc.video.getVoices.useQuery();
+
+  // DnD センサー設定
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // 8px以上動かさないとドラッグ開始しない
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // ドラッグ終了時のハンドラー
+  const handleDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      const { active, over } = event;
+
+      if (over && active.id !== over.id && steps) {
+        const oldIndex = steps.findIndex((s) => s.id === active.id);
+        const newIndex = steps.findIndex((s) => s.id === over.id);
+
+        if (oldIndex !== -1 && newIndex !== -1) {
+          const newOrder = arrayMove(steps, oldIndex, newIndex);
+          const stepIds = newOrder.map((s) => s.id);
+
+          try {
+            await reorderStepsMutation.mutateAsync({ projectId, stepIds });
+            refetchSteps();
+            toast.success("ステップの順序を更新しました");
+          } catch (error) {
+            toast.error("順序の更新に失敗しました");
+          }
+        }
+      }
+    },
+    [steps, projectId, reorderStepsMutation, refetchSteps]
+  );
 
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
   const [isRetryDialogOpen, setIsRetryDialogOpen] = useState(false);
@@ -460,90 +688,31 @@ export default function ProjectDetail() {
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
             ) : steps && steps.length > 0 ? (
-              <div className="space-y-4">
-                {steps.map((step, index) => (
-                  <Card key={step.id}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="flex gap-4 flex-1">
-                          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
-                            {index + 1}
-                          </div>
-                          <div className="flex-1">
-                            {editingStepId === step.id ? (
-                              <div className="space-y-4">
-                                <div>
-                                  <Label htmlFor={`title-${step.id}`}>タイトル</Label>
-                                  <Input
-                                    id={`title-${step.id}`}
-                                    defaultValue={step.title}
-                                    onBlur={(e) => handleUpdateStep(step.id, { title: e.target.value })}
-                                  />
-                                </div>
-                                <div>
-                                  <Label htmlFor={`operation-${step.id}`}>操作</Label>
-                                  <Input
-                                    id={`operation-${step.id}`}
-                                    defaultValue={step.operation}
-                                    onBlur={(e) => handleUpdateStep(step.id, { operation: e.target.value })}
-                                  />
-                                </div>
-                                <div>
-                                  <Label htmlFor={`description-${step.id}`}>説明</Label>
-                                  <Textarea
-                                    id={`description-${step.id}`}
-                                    defaultValue={step.description}
-                                    rows={3}
-                                    onBlur={(e) => handleUpdateStep(step.id, { description: e.target.value })}
-                                  />
-                                </div>
-                                <div>
-                                  <Label htmlFor={`narration-${step.id}`}>ナレーション</Label>
-                                  <Textarea
-                                    id={`narration-${step.id}`}
-                                    defaultValue={step.narration || ""}
-                                    rows={2}
-                                    onBlur={(e) => handleUpdateStep(step.id, { narration: e.target.value })}
-                                  />
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                <CardTitle>{step.title}</CardTitle>
-                                <CardDescription className="mt-2">
-                                  <strong>操作:</strong> {step.operation}
-                                </CardDescription>
-                                <p className="text-sm text-foreground mt-2">{step.description}</p>
-                                {step.narration && (
-                                  <p className="text-sm text-muted-foreground mt-2 italic">
-                                    🎙️ {step.narration}
-                                  </p>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditingStepId(editingStepId === step.id ? null : step.id)}
-                          >
-                            {editingStepId === step.id ? "完了" : "編集"}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteStep(step.id)}
-                          >
-                            削除
-                          </Button>
-                        </div>
-                      </div>
-                    </CardHeader>
-                  </Card>
-                ))}
-              </div>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={steps.map((s) => s.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-4">
+                    {steps.map((step, index) => (
+                      <SortableStepCard
+                        key={step.id}
+                        step={step}
+                        index={index}
+                        isEditing={editingStepId === step.id}
+                        onToggleEdit={() => setEditingStepId(editingStepId === step.id ? null : step.id)}
+                        onUpdate={handleUpdateStep}
+                        onDelete={handleDeleteStep}
+                        frame={frames?.find((f) => f.id === step.frameId)}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
             ) : (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12">

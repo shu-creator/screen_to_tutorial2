@@ -13,10 +13,11 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { Plus, Video, Clock, CheckCircle, XCircle, Loader2, Download, Trash2, RefreshCw, Settings, Search, Filter, Copy, ChevronDown } from "lucide-react";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
+import { useProgressPolling } from "@/hooks/useExponentialBackoff";
 
 export default function Projects() {
   const { user } = useAuth();
@@ -81,46 +82,50 @@ export default function Projects() {
     }
   }, [projects]);
 
-  // ポーリング処理（1秒間隔）
-  useEffect(() => {
-    if (pollingProjectIds.size === 0) return;
+  // ポーリング用コールバック
+  const fetchProgress = useCallback(
+    (id: number) => utils.project.getProgress.fetch({ id }),
+    [utils]
+  );
 
-    const interval = setInterval(async () => {
-      const projectIdArray = Array.from(pollingProjectIds);
-      for (const projectId of projectIdArray) {
-        try {
-          const progress = await utils.project.getProgress.fetch({ id: projectId });
-          setProgressData(prev => new Map(prev).set(projectId, {
-            progress: progress.progress,
-            message: progress.message,
-            errorMessage: progress.errorMessage,
-          }));
+  const handleProgress = useCallback(
+    (id: number, data: { progress: number; message: string; errorMessage?: string | null; status: string }) => {
+      setProgressData(prev => new Map(prev).set(id, {
+        progress: data.progress,
+        message: data.message,
+        errorMessage: data.errorMessage,
+      }));
+    },
+    []
+  );
 
-          // 処理完了または失敗した場合はポーリング停止（失敗時はエラーメッセージを取得後）
-          if (progress.status === "completed") {
-            setPollingProjectIds(prev => {
-              const next = new Set(prev);
-              next.delete(projectId);
-              return next;
-            });
-            refetch(); // プロジェクト一覧を更新
-          } else if (progress.status === "failed" && progress.errorMessage) {
-            // 失敗時はエラーメッセージを取得したらポーリング停止
-            setPollingProjectIds(prev => {
-              const next = new Set(prev);
-              next.delete(projectId);
-              return next;
-            });
-            refetch();
-          }
-        } catch (error) {
-          console.error(`Failed to fetch progress for project ${projectId}:`, error);
-        }
-      }
-    }, 1000); // 1秒間隔
+  const handleComplete = useCallback(
+    (id: number) => {
+      setPollingProjectIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      refetch();
+    },
+    [refetch]
+  );
 
-    return () => clearInterval(interval);
-  }, [pollingProjectIds, refetch]);
+  const isProgressComplete = useCallback(
+    (data: { status: string; errorMessage?: string | null }) =>
+      data.status === "completed" || (data.status === "failed" && !!data.errorMessage),
+    []
+  );
+
+  // 指数バックオフ付きポーリング（初期1秒、最大30秒）
+  useProgressPolling(
+    fetchProgress,
+    pollingProjectIds,
+    handleProgress,
+    handleComplete,
+    isProgressComplete,
+    { initialInterval: 1000, maxInterval: 30000, multiplier: 1.5 }
+  );
   const createProjectMutation = trpc.project.create.useMutation();
   const processVideoMutation = trpc.project.processVideo.useMutation();
   const deleteProjectMutation = trpc.project.delete.useMutation();

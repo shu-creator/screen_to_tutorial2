@@ -1,4 +1,4 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, projects, InsertProject, frames, InsertFrame, steps, InsertStep } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -245,6 +245,23 @@ export async function deleteStep(id: number, userId?: number) {
     if (!project) throw new Error("Unauthorized");
   }
   await db.delete(steps).where(eq(steps.id, id));
+}
+
+/**
+ * ステップの並び順を更新
+ * @param projectId プロジェクトID
+ * @param stepIds 新しい順序でのステップID配列
+ */
+export async function reorderSteps(projectId: number, stepIds: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // 各ステップのsortOrderを更新
+  for (let i = 0; i < stepIds.length; i++) {
+    await db.update(steps)
+      .set({ sortOrder: i })
+      .where(and(eq(steps.id, stepIds[i]), eq(steps.projectId, projectId)));
+  }
 }
 
 // 再試行機能用のヘルパー関数
