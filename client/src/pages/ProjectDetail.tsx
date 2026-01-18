@@ -340,6 +340,10 @@ export default function ProjectDetail() {
   const [isSlidePreviewOpen, setIsSlidePreviewOpen] = useState(false);
   const [isGeneratingSlides, setIsGeneratingSlides] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+  const [videoGenerationProgress, setVideoGenerationProgress] = useState<{
+    progress: number;
+    message: string;
+  } | null>(null);
   const [selectedVoice, setSelectedVoice] = useState<string>("nova");
   const [slideUrl, setSlideUrl] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -440,25 +444,36 @@ export default function ProjectDetail() {
   // 動画生成（音声生成 → 動画結合）
   const handleGenerateVideo = async () => {
     setIsGeneratingVideo(true);
+    setVideoGenerationProgress({ progress: 0, message: "動画生成を開始しています..." });
     try {
       // 1. 音声を生成
-      toast.info("音声を生成中...");
+      setVideoGenerationProgress({ progress: 10, message: "ナレーション音声を生成中..." });
       await generateAudioMutation.mutateAsync({
         projectId,
         voice: selectedVoice as "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer",
       });
 
+      // 音声生成後にステップを再取得（audioUrlを更新するため）
+      setVideoGenerationProgress({ progress: 50, message: "音声生成完了。動画を生成中..." });
+      await refetchSteps();
+
       // 2. 動画を生成
-      toast.info("動画を生成中...");
+      setVideoGenerationProgress({ progress: 60, message: "フレームと音声を結合中..." });
       const result = await generateVideoMutation.mutateAsync({ projectId });
+
+      setVideoGenerationProgress({ progress: 90, message: "動画をアップロード中..." });
       setVideoUrl(result.videoUrl);
+
+      setVideoGenerationProgress({ progress: 100, message: "完了しました" });
       toast.success("動画を生成しました");
+
       // 自動ダウンロード
       downloadFile(result.videoUrl, `${project?.title || "tutorial"}.mp4`);
     } catch (error) {
       toast.error("動画の生成に失敗しました");
     } finally {
       setIsGeneratingVideo(false);
+      setVideoGenerationProgress(null);
     }
   };
 
@@ -863,41 +878,61 @@ export default function ProjectDetail() {
                     </div>
                   ) : project.status === "completed" && steps && steps.length > 0 ? (
                     <div className="space-y-4">
-                      <div className="flex flex-col items-center justify-center aspect-video bg-muted rounded-lg">
-                        <Wand2 className="h-12 w-12 text-muted-foreground mb-2" />
-                        <p className="text-sm text-muted-foreground mb-4">
-                          動画を生成する準備ができました
-                        </p>
-                        {/* 音声選択 */}
-                        <div className="flex flex-col items-center gap-3 mb-4">
-                          <Label className="text-sm text-muted-foreground">ナレーション音声を選択</Label>
-                          <select
-                            value={selectedVoice}
-                            onChange={(e) => setSelectedVoice(e.target.value)}
-                            className="px-3 py-2 border rounded-md bg-background text-sm"
-                          >
-                            {availableVoices?.map((voice) => (
-                              <option key={voice.id} value={voice.id}>
-                                {voice.name} - {voice.description}
-                              </option>
-                            )) || (
-                              <>
-                                <option value="nova">Nova - 女性的で明るい声（推奨）</option>
-                                <option value="alloy">Alloy - 中性的で落ち着いた声</option>
-                                <option value="echo">Echo - 男性的で深みのある声</option>
-                                <option value="fable">Fable - イギリス英語風の声</option>
-                                <option value="onyx">Onyx - 男性的で力強い声</option>
-                                <option value="shimmer">Shimmer - 女性的で柔らかい声</option>
-                              </>
-                            )}
-                          </select>
+                      {isGeneratingVideo && videoGenerationProgress ? (
+                        /* 動画生成中の進捗表示 */
+                        <div className="flex flex-col items-center justify-center aspect-video bg-muted rounded-lg p-6">
+                          <Loader2 className="h-12 w-12 text-primary mb-4 animate-spin" />
+                          <p className="text-sm font-medium mb-2">
+                            {videoGenerationProgress.message}
+                          </p>
+                          <div className="w-full max-w-xs space-y-2">
+                            <Progress value={videoGenerationProgress.progress} className="h-3" />
+                            <p className="text-xs text-muted-foreground text-center">
+                              {videoGenerationProgress.progress}%
+                            </p>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-4">
+                            しばらくお待ちください...
+                          </p>
                         </div>
-                        <Button onClick={handleGenerateVideo} disabled={isGeneratingVideo}>
-                          {isGeneratingVideo && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                          <Wand2 className="h-4 w-4 mr-2" />
-                          動画を生成
-                        </Button>
-                      </div>
+                      ) : (
+                        /* 動画生成ボタン */
+                        <div className="flex flex-col items-center justify-center aspect-video bg-muted rounded-lg">
+                          <Wand2 className="h-12 w-12 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground mb-4">
+                            動画を生成する準備ができました
+                          </p>
+                          {/* 音声選択 */}
+                          <div className="flex flex-col items-center gap-3 mb-4">
+                            <Label className="text-sm text-muted-foreground">ナレーション音声を選択</Label>
+                            <select
+                              value={selectedVoice}
+                              onChange={(e) => setSelectedVoice(e.target.value)}
+                              className="px-3 py-2 border rounded-md bg-background text-sm"
+                            >
+                              {availableVoices?.map((voice) => (
+                                <option key={voice.id} value={voice.id}>
+                                  {voice.name} - {voice.description}
+                                </option>
+                              )) || (
+                                <>
+                                  <option value="nova">Nova - 女性的で明るい声（推奨）</option>
+                                  <option value="alloy">Alloy - 中性的で落ち着いた声</option>
+                                  <option value="echo">Echo - 男性的で深みのある声</option>
+                                  <option value="fable">Fable - イギリス英語風の声</option>
+                                  <option value="onyx">Onyx - 男性的で力強い声</option>
+                                  <option value="shimmer">Shimmer - 女性的で柔らかい声</option>
+                                </>
+                              )}
+                            </select>
+                          </div>
+                          <Button onClick={handleGenerateVideo} disabled={isGeneratingVideo}>
+                            {isGeneratingVideo && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                            <Wand2 className="h-4 w-4 mr-2" />
+                            動画を生成
+                          </Button>
+                        </div>
+                      )}
                       <p className="text-xs text-muted-foreground text-center">
                         ステップ {steps.length}件の解説動画を生成できます
                       </p>
