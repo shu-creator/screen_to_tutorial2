@@ -9,6 +9,7 @@ import { processVideo } from "./videoProcessor";
 import { generateStepsForProject, regenerateStep } from "./stepGenerator";
 import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
+import { getAvailableVoices, type TTSVoice } from "./_core/tts";
 import { storagePut } from "./storage";
 
 const logger = createLogger("Router");
@@ -378,15 +379,23 @@ export const appRouter = router({
   }),
 
   video: router({
+    // 利用可能な音声一覧を取得
+    getVoices: protectedProcedure.query(() => {
+      return getAvailableVoices();
+    }),
+
     generateAudio: protectedProcedure
-      .input(z.object({ projectId: z.number() }))
+      .input(z.object({
+        projectId: z.number(),
+        voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         // セキュリティ: プロジェクトの所有者チェック
         const project = await db.getProjectById(input.projectId, ctx.user.id);
         if (!project) {
           throw new Error("プロジェクトが見つかりません");
         }
-        await generateAudioForProject(input.projectId);
+        await generateAudioForProject(input.projectId, input.voice as TTSVoice);
         return { success: true };
       }),
 

@@ -5,7 +5,7 @@ import fs from "fs/promises";
 import { storagePut } from "./storage";
 import * as db from "./db";
 import { nanoid } from "nanoid";
-import { transcribeAudio } from "./_core/voiceTranscription";
+import { generateSpeech, generateSpeechForLongText, type TTSVoice } from "./_core/tts";
 
 const execFileAsync = promisify(execFile);
 
@@ -34,35 +34,57 @@ async function cleanupTempDir(tempDir: string, context: string): Promise<void> {
 
 /**
  * テキストから音声を生成（TTS）
- * 注: この実装は簡略化されています。実際にはManusのTTS APIまたは外部サービスを使用する必要があります
+ * OpenAI TTS API を使用して実際の音声を生成
  */
-async function generateAudio(text: string, outputPath: string): Promise<void> {
-  // TODO: 実際のTTS実装
-  // Manusには組み込みのTTS機能がないため、外部サービス（Google Cloud TTS、Amazon Polly等）を使用する必要があります
-  // ここでは、プレースホルダーとして空の音声ファイルを作成します
-  
+async function generateAudio(
+  text: string,
+  outputPath: string,
+  voice: TTSVoice = "nova"
+): Promise<void> {
   console.log(`[VideoGenerator] TTS for text: "${text.substring(0, 50)}..."`);
 
-  // 無音の音声ファイルを生成（実装のプレースホルダー）
-  // 実際の実装では、外部TTSサービスを呼び出します
-  const duration = Math.max(3, Math.floor(text.length / 10)); // テキスト長から推定時間
+  // OpenAI TTS API を使用して音声を生成
+  const result = await generateSpeechForLongText({
+    text,
+    voice,
+    model: "tts-1",
+    speed: 1.0,
+    format: "mp3",
+  });
 
-  // セキュリティ: execFileを使用してコマンドインジェクションを防止
-  await execFileAsync("ffmpeg", [
-    "-f", "lavfi",
-    "-i", "anullsrc=r=44100:cl=mono",
-    "-t", duration.toString(),
-    "-q:a", "9",
-    "-acodec", "libmp3lame",
-    outputPath,
-  ]);
+  if ("error" in result) {
+    console.error(`[VideoGenerator] TTS error: ${result.error}`);
+    console.error(`[VideoGenerator] Details: ${result.details}`);
+
+    // TTS が失敗した場合、フォールバックとして無音ファイルを生成
+    console.log("[VideoGenerator] Falling back to silent audio");
+    const duration = Math.max(3, Math.floor(text.length / 10));
+    await execFileAsync("ffmpeg", [
+      "-f", "lavfi",
+      "-i", "anullsrc=r=44100:cl=mono",
+      "-t", duration.toString(),
+      "-q:a", "9",
+      "-acodec", "libmp3lame",
+      outputPath,
+    ]);
+    return;
+  }
+
+  // 音声ファイルを出力パスに保存
+  await fs.writeFile(outputPath, result.audioBuffer);
+  console.log(`[VideoGenerator] TTS audio saved: ${outputPath}`);
 }
 
 /**
  * プロジェクトの全ステップから音声を生成
+ * @param projectId プロジェクトID
+ * @param voice 使用する音声（デフォルト: nova）
  */
-export async function generateAudioForProject(projectId: number): Promise<void> {
-  console.log(`[VideoGenerator] Starting audio generation for project ${projectId}`);
+export async function generateAudioForProject(
+  projectId: number,
+  voice: TTSVoice = "nova"
+): Promise<void> {
+  console.log(`[VideoGenerator] Starting audio generation for project ${projectId} with voice: ${voice}`);
 
   const steps = await db.getStepsByProjectId(projectId);
 
@@ -79,7 +101,7 @@ export async function generateAudioForProject(projectId: number): Promise<void> 
     try {
       // 一時ファイルに音声を生成
       const tempAudioPath = path.join("/tmp", `audio_${step.id}_${Date.now()}.mp3`);
-      await generateAudio(step.narration, tempAudioPath);
+      await generateAudio(step.narration, tempAudioPath, voice);
 
       // S3にアップロード
       const audioBuffer = await fs.readFile(tempAudioPath);
