@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, X, Maximize2, Minimize2, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Maximize2, Minimize2, Volume2, VolumeX, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useState, useRef } from "react";
 
 type StepData = {
@@ -39,6 +39,7 @@ export function SlidePreview({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [autoPlay, setAutoPlay] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showPanel, setShowPanel] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Reset slide when opening
@@ -110,6 +111,8 @@ export function SlidePreview({
         goToPrev();
       } else if (e.key === "Escape") {
         onClose();
+      } else if (e.key === "p" || e.key === "P") {
+        setShowPanel((prev) => !prev);
       }
     };
 
@@ -140,113 +143,130 @@ export function SlidePreview({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[95vw] w-full max-h-[95vh] h-full p-0 gap-0">
+      <DialogContent className="max-w-[98vw] w-full max-h-[95vh] h-[90vh] p-0 gap-0 flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b bg-background">
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">
-              {currentSlide + 1} / {steps.length}
-            </span>
-            <h2 className="font-semibold truncate">{currentStep.title}</h2>
+        <div className="flex items-center justify-between px-4 py-2 border-b bg-background shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-bold">
+              {currentSlide + 1}
+            </div>
+            <div>
+              <h2 className="font-semibold text-sm truncate max-w-[200px] sm:max-w-none">{currentStep.title}</h2>
+              <span className="text-xs text-muted-foreground">
+                {currentSlide + 1} / {steps.length}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <Button
               variant={autoPlay ? "default" : "ghost"}
               size="sm"
               onClick={() => setAutoPlay(!autoPlay)}
               title={autoPlay ? "自動再生オフ" : "自動再生オン"}
-              className="gap-1"
+              className="h-8 px-2"
             >
               <Volume2 className="h-4 w-4" />
-              <span className="hidden sm:inline">
-                {autoPlay ? "自動再生オン" : "自動再生オフ"}
-              </span>
             </Button>
             <Button
               variant="ghost"
-              size="icon"
+              size="sm"
+              onClick={() => setShowPanel(!showPanel)}
+              title={showPanel ? "パネルを隠す (P)" : "パネルを表示 (P)"}
+              className="h-8 px-2"
+            >
+              {showPanel ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={toggleFullscreen}
               title={isFullscreen ? "フルスクリーン解除" : "フルスクリーン"}
+              className="h-8 px-2"
             >
-              {isFullscreen ? (
-                <Minimize2 className="h-4 w-4" />
-              ) : (
-                <Maximize2 className="h-4 w-4" />
-              )}
+              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </Button>
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <Button variant="ghost" size="sm" onClick={onClose} className="h-8 px-2">
               <X className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Slide Content */}
-          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-            {/* Image Section */}
-            <div className="flex-1 flex items-center justify-center bg-black p-4 min-h-[300px] lg:min-h-0">
-              {currentFrame ? (
-                <img
-                  src={currentFrame.imageUrl}
-                  alt={`ステップ ${currentSlide + 1}`}
-                  className="max-w-full max-h-full object-contain rounded-lg"
-                />
-              ) : (
-                <div className="text-white/50 text-sm">画像がありません</div>
-              )}
-            </div>
+        <div className="flex-1 flex overflow-hidden min-h-0">
+          {/* Image Section - Takes most of the space */}
+          <div className="flex-1 flex items-center justify-center bg-neutral-900 p-2 relative">
+            {currentFrame ? (
+              <img
+                src={currentFrame.imageUrl}
+                alt={`ステップ ${currentSlide + 1}`}
+                className="max-w-full max-h-full object-contain"
+                style={{ maxHeight: 'calc(100% - 16px)' }}
+              />
+            ) : (
+              <div className="text-white/50 text-sm">画像がありません</div>
+            )}
 
-            {/* Text Section */}
-            <div className="w-full lg:w-96 p-6 overflow-y-auto bg-background border-t lg:border-t-0 lg:border-l">
-              <div className="space-y-6">
+            {/* Navigation Overlay */}
+            <button
+              onClick={goToPrev}
+              disabled={currentSlide === 0}
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center rounded-full bg-black/30 hover:bg-black/50 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+            <button
+              onClick={goToNext}
+              disabled={currentSlide === steps.length - 1}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center rounded-full bg-black/30 hover:bg-black/50 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronRight className="h-6 w-6" />
+            </button>
+          </div>
+
+          {/* Info Panel - Collapsible */}
+          {showPanel && (
+            <div className="w-80 shrink-0 overflow-y-auto bg-background border-l">
+              <div className="p-4 space-y-4">
                 <div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg">
-                      {currentSlide + 1}
-                    </div>
-                    <h3 className="text-xl font-bold">{currentStep.title}</h3>
-                  </div>
+                  <h3 className="font-bold text-lg">{currentStep.title}</h3>
                 </div>
 
                 <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2">操作</h4>
-                  <p className="text-foreground">{currentStep.operation}</p>
+                  <h4 className="text-xs font-medium text-muted-foreground mb-1">操作</h4>
+                  <p className="text-sm">{currentStep.operation}</p>
                 </div>
 
                 <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2">説明</h4>
-                  <p className="text-foreground">{currentStep.description}</p>
+                  <h4 className="text-xs font-medium text-muted-foreground mb-1">説明</h4>
+                  <p className="text-sm">{currentStep.description}</p>
                 </div>
 
                 {currentStep.narration && (
-                  <div className="p-4 bg-muted rounded-lg space-y-3">
+                  <div className="p-3 bg-muted rounded-lg space-y-2">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-medium text-muted-foreground">
-                        ナレーション
-                      </h4>
+                      <h4 className="text-xs font-medium text-muted-foreground">ナレーション</h4>
                       {currentStep.audioUrl && (
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={togglePlayPause}
-                          className="h-8 px-3"
+                          className="h-7 px-2 text-xs"
                         >
                           {isPlaying ? (
                             <>
-                              <VolumeX className="h-4 w-4 mr-1" />
+                              <VolumeX className="h-3 w-3 mr-1" />
                               停止
                             </>
                           ) : (
                             <>
-                              <Volume2 className="h-4 w-4 mr-1" />
+                              <Volume2 className="h-3 w-3 mr-1" />
                               再生
                             </>
                           )}
                         </Button>
                       )}
                     </div>
-                    <p className="text-foreground italic">{currentStep.narration}</p>
+                    <p className="text-sm italic text-muted-foreground">{currentStep.narration}</p>
                     {currentStep.audioUrl && (
                       <audio
                         ref={audioRef}
@@ -262,53 +282,47 @@ export function SlidePreview({
                 )}
               </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Footer Navigation */}
-        <div className="flex items-center justify-between p-4 border-t bg-background">
-          {/* Prev Button */}
-          <Button
-            variant="outline"
-            onClick={goToPrev}
-            disabled={currentSlide === 0}
-            className="gap-2"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            前へ
-          </Button>
-
-          {/* Slide Indicator */}
-          <div className="flex items-center gap-1.5">
-            {steps.map((_, index) => (
-              <button
-                key={index}
-                onClick={() => setCurrentSlide(index)}
-                className={`w-2.5 h-2.5 rounded-full transition-colors ${
-                  index === currentSlide
-                    ? "bg-primary"
-                    : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
-                }`}
-                aria-label={`スライド ${index + 1} へ移動`}
-              />
-            ))}
+        {/* Footer - Slide Indicator */}
+        <div className="flex items-center justify-center gap-2 p-2 border-t bg-background shrink-0">
+          <div className="flex items-center gap-1 overflow-x-auto max-w-full px-2">
+            {steps.length <= 20 ? (
+              // Show dots for <= 20 slides
+              steps.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setCurrentSlide(index)}
+                  className={`w-2 h-2 rounded-full transition-colors shrink-0 ${
+                    index === currentSlide
+                      ? "bg-primary"
+                      : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
+                  }`}
+                  aria-label={`スライド ${index + 1} へ移動`}
+                />
+              ))
+            ) : (
+              // Show mini slider for > 20 slides
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{currentSlide + 1}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={steps.length - 1}
+                  value={currentSlide}
+                  onChange={(e) => setCurrentSlide(parseInt(e.target.value))}
+                  className="w-32"
+                />
+                <span className="text-xs text-muted-foreground">{steps.length}</span>
+              </div>
+            )}
           </div>
-
-          {/* Next Button */}
-          <Button
-            variant="outline"
-            onClick={goToNext}
-            disabled={currentSlide === steps.length - 1}
-            className="gap-2"
-          >
-            次へ
-            <ChevronRight className="h-4 w-4" />
-          </Button>
         </div>
 
         {/* Keyboard Shortcuts Hint */}
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 text-xs text-muted-foreground bg-background/80 px-3 py-1.5 rounded-full border shadow-sm">
-          ← → キーで移動 | Space で次へ | Esc で閉じる
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground bg-background/90 px-2 py-1 rounded border shadow-sm whitespace-nowrap">
+          ← → 移動 | Space 次へ | P パネル | Esc 閉じる
         </div>
       </DialogContent>
     </Dialog>
