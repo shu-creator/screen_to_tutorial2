@@ -63,7 +63,14 @@ export async function processVideo(
   const videoPath = path.join(tempDir, "video.mp4");
   console.log(`[VideoProcessor] Downloading video from: ${videoUrl}`);
   await downloadFile(videoUrl, videoPath);
-  console.log(`[VideoProcessor] Video downloaded to: ${videoPath}`);
+
+  // ダウンロードしたファイルの検証
+  const videoStats = await fs.stat(videoPath);
+  console.log(`[VideoProcessor] Video downloaded to: ${videoPath}, size: ${videoStats.size} bytes`);
+
+  if (videoStats.size === 0) {
+    throw new Error("ダウンロードした動画ファイルが空です。URLが正しいか確認してください。");
+  }
 
   try {
     // 進捗: フレーム抽出開始
@@ -71,9 +78,18 @@ export async function processVideo(
 
     // Pythonスクリプトを実行してフレームを抽出
     const scriptPath = path.join(process.cwd(), "scripts", "extract_frames.py");
+    console.log(`[VideoProcessor] Script path: ${scriptPath}`);
+    console.log(`[VideoProcessor] CWD: ${process.cwd()}`);
+
+    // スクリプトファイルの存在確認
+    try {
+      await fs.access(scriptPath);
+    } catch {
+      throw new Error(`Pythonスクリプトが見つかりません: ${scriptPath}`);
+    }
 
     // セキュリティ: execFileを使用してコマンドインジェクションを防止
-    console.log(`[VideoProcessor] Executing: python3 ${scriptPath} with args`);
+    console.log(`[VideoProcessor] Executing: python3 ${scriptPath} with args: ${videoPath} ${tempDir} ${threshold} ${minInterval} ${maxFrames}`);
     const { stdout, stderr } = await execFileAsync("python3", [
       scriptPath,
       videoPath,
@@ -81,7 +97,7 @@ export async function processVideo(
       threshold.toString(),
       minInterval.toString(),
       maxFrames.toString(),
-    ]);
+    ], { timeout: 300000 }); // 5分のタイムアウト
 
     if (stderr) {
       console.log(`[VideoProcessor] stderr: ${stderr}`);
@@ -142,10 +158,14 @@ export async function processVideo(
   } catch (error) {
     // エラーの種類を判定して適切なメッセージを生成
     let errorMessage = "動画処理中にエラーが発生しました";
-    
+
+    // 元のエラーメッセージをログに記録
+    const originalError = error instanceof Error ? error.message : String(error);
+    console.error(`[VideoProcessor] Original error: ${originalError}`);
+
     if (error instanceof Error) {
       const msg = error.message.toLowerCase();
-      
+
       if (msg.includes("no such file") || msg.includes("enoent")) {
         errorMessage = "動画ファイルが見つかりません。ファイルが削除されたか、アップロードが完了していない可能性があります。";
       } else if (msg.includes("invalid") || msg.includes("corrupt") || msg.includes("decode")) {
@@ -156,14 +176,15 @@ export async function processVideo(
         errorMessage = "ファイルのアクセス権限がありません。サーバーの設定を確認してください。";
       } else if (msg.includes("json") || msg.includes("parse")) {
         errorMessage = "フレーム抽出スクリプトの出力が不正です。Python環境を確認してください。";
-      } else if (msg.includes("command failed") || msg.includes("python")) {
-        errorMessage = "フレーム抽出スクリプトの実行に失敗しました。OpenCVが正しくインストールされているか確認してください。";
+      } else if (msg.includes("command failed") || msg.includes("python") || msg.includes("spawn")) {
+        // より詳細なエラー情報を含める
+        errorMessage = `フレーム抽出スクリプトの実行に失敗しました: ${error.message.substring(0, 150)}`;
       } else {
-        // デフォルト: エラーメッセージの最初の100文字を含める
-        errorMessage = `動画処理中にエラーが発生しました: ${error.message.substring(0, 100)}`;
+        // デフォルト: エラーメッセージの最初の150文字を含める
+        errorMessage = `動画処理中にエラーが発生しました: ${error.message.substring(0, 150)}`;
       }
     }
-    
+
     console.error(`[VideoProcessor] Error: ${errorMessage}`);
     throw new Error(errorMessage);
   } finally {
