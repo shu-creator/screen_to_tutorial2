@@ -90,14 +90,44 @@ export async function processVideo(
 
     // セキュリティ: execFileを使用してコマンドインジェクションを防止
     console.log(`[VideoProcessor] Executing: python3 ${scriptPath} with args: ${videoPath} ${tempDir} ${threshold} ${minInterval} ${maxFrames}`);
-    const { stdout, stderr } = await execFileAsync("python3", [
-      scriptPath,
-      videoPath,
-      tempDir,
-      threshold.toString(),
-      minInterval.toString(),
-      maxFrames.toString(),
-    ], { timeout: 300000 }); // 5分のタイムアウト
+
+    let stdout: string;
+    let stderr: string;
+    try {
+      const result = await execFileAsync("python3", [
+        scriptPath,
+        videoPath,
+        tempDir,
+        threshold.toString(),
+        minInterval.toString(),
+        maxFrames.toString(),
+      ], { timeout: 300000, maxBuffer: 10 * 1024 * 1024 }); // 5分のタイムアウト、10MB バッファ
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: unknown) {
+      // execFileAsyncのエラーにはstdout/stderrが含まれることがある
+      const err = execError as { stderr?: string; stdout?: string; message?: string; code?: number };
+      const errorStderr = err.stderr || '';
+      const errorStdout = err.stdout || '';
+      const errorMessage = err.message || 'Unknown error';
+      const exitCode = err.code;
+
+      console.error(`[VideoProcessor] Python script failed:`);
+      console.error(`[VideoProcessor] Exit code: ${exitCode}`);
+      console.error(`[VideoProcessor] stderr: ${errorStderr}`);
+      console.error(`[VideoProcessor] stdout: ${errorStdout}`);
+      console.error(`[VideoProcessor] message: ${errorMessage}`);
+
+      // より詳細なエラーメッセージを生成
+      let detailMessage = errorStderr || errorMessage;
+      if (detailMessage.includes('ModuleNotFoundError') || detailMessage.includes('No module named')) {
+        throw new Error(`Python依存パッケージが不足しています: ${detailMessage.substring(0, 200)}`);
+      } else if (detailMessage.includes('cv2') || detailMessage.includes('opencv')) {
+        throw new Error(`OpenCVエラー: ${detailMessage.substring(0, 200)}`);
+      } else {
+        throw new Error(`Pythonスクリプトエラー (code ${exitCode}): ${detailMessage.substring(0, 300)}`);
+      }
+    }
 
     if (stderr) {
       console.log(`[VideoProcessor] stderr: ${stderr}`);
