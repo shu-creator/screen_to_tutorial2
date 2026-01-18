@@ -59,9 +59,18 @@ export default function ProjectDetail() {
   const updateStepMutation = trpc.step.update.useMutation();
   const deleteStepMutation = trpc.step.delete.useMutation();
   const retryProjectMutation = trpc.project.retry.useMutation();
+  const generateSlidesMutation = trpc.slide.generate.useMutation();
+  const generateAudioMutation = trpc.video.generateAudio.useMutation();
+  const generateVideoMutation = trpc.video.generate.useMutation();
+  const { data: availableVoices } = trpc.video.getVoices.useQuery();
 
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
   const [isRetryDialogOpen, setIsRetryDialogOpen] = useState(false);
+  const [isGeneratingSlides, setIsGeneratingSlides] = useState(false);
+  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState<string>("nova");
+  const [slideUrl, setSlideUrl] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [retryParams, setRetryParams] = useState({
     threshold: 5.0,
     minInterval: 30,
@@ -117,7 +126,7 @@ export default function ProjectDetail() {
 
   const handleDeleteStep = async (stepId: number) => {
     if (!confirm("このステップを削除しますか?")) return;
-    
+
     try {
       await deleteStepMutation.mutateAsync({ id: stepId });
       toast.success("ステップを削除しました");
@@ -125,6 +134,58 @@ export default function ProjectDetail() {
     } catch (error) {
       toast.error("ステップの削除に失敗しました");
     }
+  };
+
+  // スライド生成とダウンロード
+  const handleGenerateSlides = async () => {
+    setIsGeneratingSlides(true);
+    try {
+      const result = await generateSlidesMutation.mutateAsync({ projectId });
+      setSlideUrl(result.slideUrl);
+      toast.success("スライドを生成しました");
+      // 自動ダウンロード
+      downloadFile(result.slideUrl, `${project?.title || "slides"}.pptx`);
+    } catch (error) {
+      toast.error("スライドの生成に失敗しました");
+    } finally {
+      setIsGeneratingSlides(false);
+    }
+  };
+
+  // 動画生成（音声生成 → 動画結合）
+  const handleGenerateVideo = async () => {
+    setIsGeneratingVideo(true);
+    try {
+      // 1. 音声を生成
+      toast.info("音声を生成中...");
+      await generateAudioMutation.mutateAsync({
+        projectId,
+        voice: selectedVoice as "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer",
+      });
+
+      // 2. 動画を生成
+      toast.info("動画を生成中...");
+      const result = await generateVideoMutation.mutateAsync({ projectId });
+      setVideoUrl(result.videoUrl);
+      toast.success("動画を生成しました");
+      // 自動ダウンロード
+      downloadFile(result.videoUrl, `${project?.title || "tutorial"}.mp4`);
+    } catch (error) {
+      toast.error("動画の生成に失敗しました");
+    } finally {
+      setIsGeneratingVideo(false);
+    }
+  };
+
+  // ファイルダウンロードヘルパー
+  const downloadFile = (url: string, filename: string) => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.target = "_blank";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   if (projectLoading) {
@@ -190,13 +251,23 @@ export default function ProjectDetail() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" disabled>
+            <Button
+              variant="outline"
+              onClick={slideUrl ? () => downloadFile(slideUrl, `${project.title}.pptx`) : handleGenerateSlides}
+              disabled={isGeneratingSlides || !steps || steps.length === 0}
+            >
+              {isGeneratingSlides && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               <Download className="h-4 w-4 mr-2" />
-              スライドをダウンロード
+              {slideUrl ? "スライドをダウンロード" : "スライドを生成"}
             </Button>
-            <Button variant="outline" disabled>
+            <Button
+              variant="outline"
+              onClick={videoUrl ? () => downloadFile(videoUrl, `${project.title}.mp4`) : handleGenerateVideo}
+              disabled={isGeneratingVideo || !steps || steps.length === 0}
+            >
+              {isGeneratingVideo && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               <Download className="h-4 w-4 mr-2" />
-              動画をダウンロード
+              {videoUrl ? "動画をダウンロード" : "動画を生成"}
             </Button>
           </div>
         </div>
@@ -543,15 +614,59 @@ export default function ProjectDetail() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {project.status === "completed" && steps && steps.length > 0 ? (
+                  {videoUrl ? (
+                    <div className="space-y-4">
+                      <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+                        <video
+                          src={videoUrl}
+                          controls
+                          className="w-full h-full object-contain"
+                          preload="metadata"
+                        >
+                          お使いのブラウザは動画再生に対応していません。
+                        </video>
+                      </div>
+                      <div className="flex justify-center">
+                        <Button onClick={() => downloadFile(videoUrl, `${project.title}.mp4`)}>
+                          <Download className="h-4 w-4 mr-2" />
+                          動画をダウンロード
+                        </Button>
+                      </div>
+                    </div>
+                  ) : project.status === "completed" && steps && steps.length > 0 ? (
                     <div className="space-y-4">
                       <div className="flex flex-col items-center justify-center aspect-video bg-muted rounded-lg">
                         <Wand2 className="h-12 w-12 text-muted-foreground mb-2" />
                         <p className="text-sm text-muted-foreground mb-4">
                           動画を生成する準備ができました
                         </p>
-                        <Button variant="outline" disabled>
-                          <Download className="h-4 w-4 mr-2" />
+                        {/* 音声選択 */}
+                        <div className="flex flex-col items-center gap-3 mb-4">
+                          <Label className="text-sm text-muted-foreground">ナレーション音声を選択</Label>
+                          <select
+                            value={selectedVoice}
+                            onChange={(e) => setSelectedVoice(e.target.value)}
+                            className="px-3 py-2 border rounded-md bg-background text-sm"
+                          >
+                            {availableVoices?.map((voice) => (
+                              <option key={voice.id} value={voice.id}>
+                                {voice.name} - {voice.description}
+                              </option>
+                            )) || (
+                              <>
+                                <option value="nova">Nova - 女性的で明るい声（推奨）</option>
+                                <option value="alloy">Alloy - 中性的で落ち着いた声</option>
+                                <option value="echo">Echo - 男性的で深みのある声</option>
+                                <option value="fable">Fable - イギリス英語風の声</option>
+                                <option value="onyx">Onyx - 男性的で力強い声</option>
+                                <option value="shimmer">Shimmer - 女性的で柔らかい声</option>
+                              </>
+                            )}
+                          </select>
+                        </div>
+                        <Button onClick={handleGenerateVideo} disabled={isGeneratingVideo}>
+                          {isGeneratingVideo && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                          <Wand2 className="h-4 w-4 mr-2" />
                           動画を生成
                         </Button>
                       </div>
