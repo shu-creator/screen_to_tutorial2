@@ -362,6 +362,22 @@ export const appRouter = router({
         await regenerateStep(input.stepId, input.frameId);
         return { success: true };
       }),
+
+    reorder: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        stepIds: z.array(z.number()),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // セキュリティ: プロジェクトの所有者チェック
+        const project = await db.getProjectById(input.projectId, ctx.user.id);
+        if (!project) {
+          throw new Error("プロジェクトが見つかりません");
+        }
+        // ステップの並び順を更新
+        await db.reorderSteps(input.projectId, input.stepIds);
+        return { success: true };
+      }),
   }),
   
   slide: router({
