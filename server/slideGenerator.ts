@@ -3,6 +3,13 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { getProjectById, getStepsByProjectId, getFramesByProjectId } from "./db";
+import {
+  truncateAtSentence,
+  ensureTerminalPunctuation,
+  anonymizeOnScreenStepNumbers,
+  uniquifyTitles,
+  fixFinalStepIfHover,
+} from "./slideText";
 
 const execFileAsync = promisify(execFile);
 
@@ -342,7 +349,7 @@ function addHighlightToSlide(
  */
 function createTableOfContentsSlides(
   pptx: any,
-  steps: Array<{ title: string; sortOrder: number }>,
+  steps: Array<{ title: string; displayTitle: string; sortOrder: number }>,
   projectTitle: string
 ): void {
   const totalSteps = steps.length;
@@ -416,7 +423,7 @@ function createTableOfContentsSlides(
       });
 
       // ステップタイトル
-      slide.addText(truncateText(step.title, 50), {
+      slide.addText(truncateText(step.displayTitle, 50), {
         x: 1.0,
         y: yPos + 0.05,
         w: 8.0,
@@ -503,7 +510,25 @@ export async function generateSlides(projectId: number): Promise<string> {
       throw new Error(`No steps found for project ${projectId}`);
     }
 
-    console.log(`[SlideGenerator] Creating slides for ${steps.length} steps`);
+    // テキスト整形: 重複タイトルのユニーク化
+    const stepsWithDisplayTitle = uniquifyTitles(steps);
+
+    // テキスト整形: 最終ステップの安全な補正
+    if (stepsWithDisplayTitle.length > 0) {
+      const lastIdx = stepsWithDisplayTitle.length - 1;
+      const last = stepsWithDisplayTitle[lastIdx];
+      const fixed = fixFinalStepIfHover(last.operation, last.description);
+      if (fixed.modified) {
+        stepsWithDisplayTitle[lastIdx] = {
+          ...last,
+          operation: fixed.operation,
+          description: fixed.description,
+        };
+        console.log("[SlideGenerator] Final step corrected from hover to completion check");
+      }
+    }
+
+    console.log(`[SlideGenerator] Creating slides for ${stepsWithDisplayTitle.length} steps`);
 
     const pptx = new PptxGenJS();
     pptx.author = "Screen Recording Tutorial Generator";
@@ -511,7 +536,7 @@ export async function generateSlides(projectId: number): Promise<string> {
     pptx.defineLayout({ name: "LAYOUT_16x9", width: 10, height: 5.625 });
     pptx.layout = "LAYOUT_16x9";
 
-    const totalSteps = steps.length;
+    const totalSteps = stepsWithDisplayTitle.length;
 
     // === タイトルスライド ===
     const titleSlide = pptx.addSlide();
@@ -561,7 +586,7 @@ export async function generateSlides(projectId: number): Promise<string> {
     });
 
     // === 目次スライド ===
-    createTableOfContentsSlides(pptx, steps, project.title);
+    createTableOfContentsSlides(pptx, stepsWithDisplayTitle, project.title);
 
     // === 各ステップのスライド ===
     // ROI設定（デフォルト: 1.2倍ズーム、中央フォーカス）
@@ -577,8 +602,8 @@ export async function generateSlides(projectId: number): Promise<string> {
     // 前フレームの画像パス（差分検出用）
     let prevCroppedImagePath: string | null = null;
 
-    for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
-      const step = steps[stepIndex];
+    for (let stepIndex = 0; stepIndex < stepsWithDisplayTitle.length; stepIndex++) {
+      const step = stepsWithDisplayTitle[stepIndex];
       const slide = pptx.addSlide();
       slide.background = { color: COLORS.white };
 
@@ -614,7 +639,7 @@ export async function generateSlides(projectId: number): Promise<string> {
       });
 
       // タイトル
-      slide.addText(truncateText(step.title, 40), {
+      slide.addText(truncateText(step.displayTitle, 40), {
         x: 1.2,
         y: 0.2,
         w: 7.0,
@@ -733,8 +758,10 @@ export async function generateSlides(projectId: number): Promise<string> {
         color: COLORS.primary,
       });
 
-      const operationText = truncateText(
-        convertToInstructionStyle(step.operation),
+      const operationText = truncateAtSentence(
+        ensureTerminalPunctuation(
+          removeEmojis(convertToInstructionStyle(step.operation))
+        ),
         MAX_OPERATION_CHARS
       );
       slide.addText(operationText, {
@@ -758,8 +785,12 @@ export async function generateSlides(projectId: number): Promise<string> {
         color: COLORS.primary,
       });
 
-      const detailText = truncateText(
-        convertToInstructionStyle(step.description),
+      const detailText = truncateAtSentence(
+        ensureTerminalPunctuation(
+          anonymizeOnScreenStepNumbers(
+            removeEmojis(convertToInstructionStyle(step.description))
+          )
+        ),
         MAX_DETAIL_CHARS
       );
       slide.addText(detailText, {
