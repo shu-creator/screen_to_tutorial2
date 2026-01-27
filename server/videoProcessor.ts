@@ -65,6 +65,87 @@ async function getVideoInfo(videoPath: string): Promise<{ duration: number; fps:
 }
 
 /**
+ * ベストフレーム選択: 複数候補から最もシャープなフレームを選択
+ *
+ * シーン変化検出は遷移の「瞬間」を検知するため、
+ * 取得したフレームが遷移途中（半透明・ぼやけ）になることがある。
+ * 少し遅れた複数タイムスタンプでフレームを抽出し、
+ * JPEGファイルサイズ（鮮明な画像ほど大きい）で最良を選択する。
+ */
+async function extractBestFrame(
+  videoPath: string,
+  timestamp: number,
+  outputPath: string,
+  duration: number
+): Promise<void> {
+  // 最初のフレーム（0秒付近）はオフセット不要
+  if (timestamp < 0.1) {
+    await execFileAsync("ffmpeg", [
+      "-ss", "0",
+      "-i", videoPath,
+      "-vframes", "1",
+      "-q:v", "2",
+      "-y",
+      outputPath,
+    ], { timeout: 30000 });
+    return;
+  }
+
+  // シーン変化後の複数候補を抽出して比較
+  const offsets = [0.3, 0.6, 1.0];
+  const candidates: Array<{ path: string; size: number }> = [];
+
+  for (const offset of offsets) {
+    const candidateTime = Math.min(timestamp + offset, duration - 0.1);
+    if (candidateTime <= 0) continue;
+
+    const candidatePath = outputPath.replace(".jpg", `_c${offset.toFixed(1)}.jpg`);
+
+    try {
+      await execFileAsync("ffmpeg", [
+        "-ss", candidateTime.toString(),
+        "-i", videoPath,
+        "-vframes", "1",
+        "-q:v", "2",
+        "-y",
+        candidatePath,
+      ], { timeout: 30000 });
+
+      const stats = await fs.stat(candidatePath);
+      candidates.push({ path: candidatePath, size: stats.size });
+    } catch {
+      // 候補の抽出に失敗した場合はスキップ
+    }
+  }
+
+  if (candidates.length === 0) {
+    // フォールバック: 元のタイムスタンプで抽出
+    await execFileAsync("ffmpeg", [
+      "-ss", timestamp.toString(),
+      "-i", videoPath,
+      "-vframes", "1",
+      "-q:v", "2",
+      "-y",
+      outputPath,
+    ], { timeout: 30000 });
+    return;
+  }
+
+  // 最もファイルサイズが大きい（=最も鮮明な）フレームを選択
+  candidates.sort((a, b) => b.size - a.size);
+  const best = candidates[0];
+
+  await fs.rename(best.path, outputPath);
+
+  // 他の候補を削除
+  for (const c of candidates) {
+    if (c.path !== best.path) {
+      await fs.unlink(c.path).catch(() => {});
+    }
+  }
+}
+
+/**
  * ffmpegを使ってシーン検出でキーフレームを抽出
  */
 async function extractFramesWithFFmpeg(
@@ -141,7 +222,7 @@ async function extractFramesWithFFmpeg(
       timestamps.sort((a, b) => a - b);
     }
 
-    // 各タイムスタンプでフレームを抽出
+    // 各タイムスタンプでフレームを抽出（ベストフレーム選択付き）
     const frames: ExtractedFrame[] = [];
 
     for (let i = 0; i < timestamps.length && i < maxFrames; i++) {
@@ -149,14 +230,7 @@ async function extractFramesWithFFmpeg(
       const filename = `frame_${String(i).padStart(6, "0")}.jpg`;
       const outputPath = path.join(outputDir, filename);
 
-      await execFileAsync("ffmpeg", [
-        "-ss", timestamp.toString(),
-        "-i", videoPath,
-        "-vframes", "1",
-        "-q:v", "2",
-        "-y",
-        outputPath,
-      ], { timeout: 30000 });
+      await extractBestFrame(videoPath, timestamp, outputPath, duration);
 
       frames.push({
         frame_number: Math.round(timestamp * fps),
@@ -165,7 +239,7 @@ async function extractFramesWithFFmpeg(
         diff_score: Math.round(sceneThreshold * 100),
       });
 
-      console.log(`[VideoProcessor] Extracted frame ${i + 1}/${timestamps.length} at ${timestamp.toFixed(2)}s`);
+      console.log(`[VideoProcessor] Extracted best frame ${i + 1}/${timestamps.length} at ${timestamp.toFixed(2)}s`);
     }
 
     return frames;
