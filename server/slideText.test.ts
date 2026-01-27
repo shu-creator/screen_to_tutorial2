@@ -1,11 +1,40 @@
 import { describe, it, expect } from "vitest";
 import {
+  normalizeWhitespace,
   truncateAtSentence,
   ensureTerminalPunctuation,
   anonymizeOnScreenStepNumbers,
   uniquifyTitles,
+  buildDisplayTitleMap,
   fixFinalStepIfHover,
+  applyFinalStepCompletionFix,
+  FINAL_STEP_FALLBACK,
 } from "./slideText";
+
+// ---------------------------------------------------------------------------
+// 0) normalizeWhitespace
+// ---------------------------------------------------------------------------
+describe("normalizeWhitespace", () => {
+  it("空文字列は空文字列を返す", () => {
+    expect(normalizeWhitespace("")).toBe("");
+  });
+
+  it("連続する半角スペースを1つにまとめる", () => {
+    expect(normalizeWhitespace("a   b")).toBe("a b");
+  });
+
+  it("全角スペースを半角スペース1つに正規化する", () => {
+    expect(normalizeWhitespace("a\u3000b")).toBe("a b");
+  });
+
+  it("前後の空白を除去する", () => {
+    expect(normalizeWhitespace("  テキスト  ")).toBe("テキスト");
+  });
+
+  it("タブ・改行も正規化する", () => {
+    expect(normalizeWhitespace("a\t\nb")).toBe("a b");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // 1) truncateAtSentence
@@ -108,13 +137,18 @@ describe("anonymizeOnScreenStepNumbers", () => {
     const result = anonymizeOnScreenStepNumbers(
       "ステップ17からステップ21を実行する",
     );
-    expect(result).toBe("ステップ（画面上）を実行する");
+    expect(result).toBe("ステップ一覧の一部を実行する");
     expect(result).not.toMatch(/\d/);
   });
 
   it("'ステップ7から10' が匿名化される", () => {
     const result = anonymizeOnScreenStepNumbers("ステップ7から10を参照");
-    expect(result).toBe("ステップ（画面上）を参照");
+    expect(result).toBe("ステップ一覧の一部を参照");
+  });
+
+  it("'ステップ7〜10' が匿名化される", () => {
+    const result = anonymizeOnScreenStepNumbers("ステップ7〜10を参照");
+    expect(result).toBe("ステップ一覧の一部を参照");
   });
 
   it("'ステップ16、17、18' が匿名化される", () => {
@@ -122,6 +156,13 @@ describe("anonymizeOnScreenStepNumbers", () => {
       "ステップ16、17、18を参照してください",
     );
     expect(result).toBe("ステップ一覧の一部を参照してください");
+  });
+
+  it("'ステップ16、17、18など' が匿名化される", () => {
+    const result = anonymizeOnScreenStepNumbers(
+      "ステップ16、17、18などを参照",
+    );
+    expect(result).toBe("ステップ一覧の一部を参照");
   });
 
   it("'ステップ一覧' (数字なし) は変更しない", () => {
@@ -189,6 +230,66 @@ describe("uniquifyTitles", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 4b) buildDisplayTitleMap
+// ---------------------------------------------------------------------------
+describe("buildDisplayTitleMap", () => {
+  it("重複がなければそのままのタイトルが返る", () => {
+    const steps = [
+      { id: 1, title: "ログイン" },
+      { id: 2, title: "設定変更" },
+    ];
+    const map = buildDisplayTitleMap(steps);
+    expect(map.get(1)).toBe("ログイン");
+    expect(map.get(2)).toBe("設定変更");
+  });
+
+  it("同一タイトル2回目に '（続き）' が付く", () => {
+    const steps = [
+      { id: 10, title: "設定変更" },
+      { id: 20, title: "設定変更" },
+    ];
+    const map = buildDisplayTitleMap(steps);
+    expect(map.get(10)).toBe("設定変更");
+    expect(map.get(20)).toBe("設定変更（続き）");
+  });
+
+  it("3回以上で '（続き2）' '（続き3）' が付く", () => {
+    const steps = [
+      { id: 1, title: "入力" },
+      { id: 2, title: "入力" },
+      { id: 3, title: "入力" },
+      { id: 4, title: "入力" },
+    ];
+    const map = buildDisplayTitleMap(steps);
+    expect(map.get(1)).toBe("入力");
+    expect(map.get(2)).toBe("入力（続き）");
+    expect(map.get(3)).toBe("入力（続き2）");
+    expect(map.get(4)).toBe("入力（続き3）");
+  });
+
+  it("空配列は空の Map を返す", () => {
+    const map = buildDisplayTitleMap([]);
+    expect(map.size).toBe(0);
+  });
+
+  it("異なるタイトルが混在する場合も正しくカウントする", () => {
+    const steps = [
+      { id: 1, title: "A" },
+      { id: 2, title: "B" },
+      { id: 3, title: "A" },
+      { id: 4, title: "B" },
+      { id: 5, title: "A" },
+    ];
+    const map = buildDisplayTitleMap(steps);
+    expect(map.get(1)).toBe("A");
+    expect(map.get(2)).toBe("B");
+    expect(map.get(3)).toBe("A（続き）");
+    expect(map.get(4)).toBe("B（続き）");
+    expect(map.get(5)).toBe("A（続き2）");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 5) fixFinalStepIfHover
 // ---------------------------------------------------------------------------
 describe("fixFinalStepIfHover", () => {
@@ -206,6 +307,22 @@ describe("fixFinalStepIfHover", () => {
     const result = fixFinalStepIfHover(
       "ボタンにホバーする",
       "ボタン上にマウスを置く",
+    );
+    expect(result.modified).toBe(true);
+  });
+
+  it("英語の hover を含む場合も補正される", () => {
+    const result = fixFinalStepIfHover(
+      "hover over the button",
+      "hover on element",
+    );
+    expect(result.modified).toBe(true);
+  });
+
+  it("マウスを合わせる操作のみの場合は補正される", () => {
+    const result = fixFinalStepIfHover(
+      "要素にマウスを合わせる",
+      "マウスオーバーする",
     );
     expect(result.modified).toBe(true);
   });
@@ -234,6 +351,65 @@ describe("fixFinalStepIfHover", () => {
       "テキストを選択",
     );
     expect(result.modified).toBe(false);
+  });
+
+  it("実行を含む場合は補正されない", () => {
+    const result = fixFinalStepIfHover(
+      "カーソルを合わせて実行する",
+      "コマンドを実行",
+    );
+    expect(result.modified).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5b) applyFinalStepCompletionFix
+// ---------------------------------------------------------------------------
+describe("applyFinalStepCompletionFix", () => {
+  it("最終ステップのhover系のみ置換する", () => {
+    const step = { operation: "カーソルを合わせる", description: "要素にホバー" };
+    const result = applyFinalStepCompletionFix(step, 4, 5);
+    expect(result.modified).toBe(true);
+    expect(result.operation).toBe(FINAL_STEP_FALLBACK.operation);
+    expect(result.description).toBe(FINAL_STEP_FALLBACK.description);
+  });
+
+  it("最終ステップでもクリック系は置換しない", () => {
+    const step = { operation: "ボタンをクリックする", description: "保存する" };
+    const result = applyFinalStepCompletionFix(step, 4, 5);
+    expect(result.modified).toBe(false);
+    expect(result.operation).toBe("ボタンをクリックする");
+  });
+
+  it("最終ステップでないhover系は置換しない", () => {
+    const step = { operation: "カーソルを合わせる", description: "要素にホバー" };
+    const result = applyFinalStepCompletionFix(step, 2, 5);
+    expect(result.modified).toBe(false);
+    expect(result.operation).toBe("カーソルを合わせる");
+  });
+
+  it("1ステップのみの場合 (index=0, total=1) でも最終ステップとして判定する", () => {
+    const step = { operation: "ホバーする", description: "マウスオーバー" };
+    const result = applyFinalStepCompletionFix(step, 0, 1);
+    expect(result.modified).toBe(true);
+  });
+
+  it("最終ステップで通常操作の場合は置換しない", () => {
+    const step = { operation: "保存ボタンを押す", description: "変更を保存" };
+    const result = applyFinalStepCompletionFix(step, 9, 10);
+    expect(result.modified).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6) FINAL_STEP_FALLBACK
+// ---------------------------------------------------------------------------
+describe("FINAL_STEP_FALLBACK", () => {
+  it("operation と description が定義されている", () => {
+    expect(FINAL_STEP_FALLBACK.operation).toBeDefined();
+    expect(FINAL_STEP_FALLBACK.description).toBeDefined();
+    expect(typeof FINAL_STEP_FALLBACK.operation).toBe("string");
+    expect(typeof FINAL_STEP_FALLBACK.description).toBe("string");
   });
 });
 

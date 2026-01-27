@@ -7,8 +7,8 @@ import {
   truncateAtSentence,
   ensureTerminalPunctuation,
   anonymizeOnScreenStepNumbers,
-  uniquifyTitles,
-  fixFinalStepIfHover,
+  buildDisplayTitleMap,
+  applyFinalStepCompletionFix,
 } from "./slideText";
 
 const execFileAsync = promisify(execFile);
@@ -511,13 +511,17 @@ export async function generateSlides(projectId: number): Promise<string> {
     }
 
     // テキスト整形: 重複タイトルのユニーク化
-    const stepsWithDisplayTitle = uniquifyTitles(steps);
+    const displayTitleMap = buildDisplayTitleMap(steps);
+    const stepsWithDisplayTitle = steps.map((s) => ({
+      ...s,
+      displayTitle: displayTitleMap.get(s.id) ?? s.title,
+    }));
 
     // テキスト整形: 最終ステップの安全な補正
     if (stepsWithDisplayTitle.length > 0) {
       const lastIdx = stepsWithDisplayTitle.length - 1;
       const last = stepsWithDisplayTitle[lastIdx];
-      const fixed = fixFinalStepIfHover(last.operation, last.description);
+      const fixed = applyFinalStepCompletionFix(last, lastIdx, stepsWithDisplayTitle.length);
       if (fixed.modified) {
         stepsWithDisplayTitle[lastIdx] = {
           ...last,
@@ -760,7 +764,7 @@ export async function generateSlides(projectId: number): Promise<string> {
 
       const operationText = truncateAtSentence(
         ensureTerminalPunctuation(
-          removeEmojis(convertToInstructionStyle(step.operation))
+          convertToInstructionStyle(removeEmojis(step.operation))
         ),
         MAX_OPERATION_CHARS
       );
@@ -788,7 +792,7 @@ export async function generateSlides(projectId: number): Promise<string> {
       const detailText = truncateAtSentence(
         ensureTerminalPunctuation(
           anonymizeOnScreenStepNumbers(
-            removeEmojis(convertToInstructionStyle(step.description))
+            convertToInstructionStyle(removeEmojis(step.description))
           )
         ),
         MAX_DETAIL_CHARS
