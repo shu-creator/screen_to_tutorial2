@@ -281,7 +281,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
   // Chat Completions API形式でペイロードを構築
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: "gemini-3-flash",
     messages: messages.map(normalizeMessage),
   };
 
