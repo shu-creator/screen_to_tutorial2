@@ -193,7 +193,79 @@ async function cropImageToROI(
 }
 
 /**
- * スライドにハイライトを追加
+ * 前後フレームの差分から変更領域を検出
+ * 返り値は画像全体に対する割合（0〜1）
+ */
+async function detectChangedRegion(
+  prevImagePath: string,
+  currImagePath: string,
+): Promise<{ x: number; y: number; w: number; h: number } | null> {
+  const diffPath = createTempFilePath("diff", ".png");
+
+  try {
+    // 差分画像を作成（変更箇所が明るく、未変更箇所が暗くなる）
+    await execFileAsync("ffmpeg", [
+      "-y",
+      "-i", prevImagePath,
+      "-i", currImagePath,
+      "-filter_complex", "[0][1]blend=all_mode=difference,format=gray",
+      "-q:v", "2",
+      diffPath,
+    ], { timeout: 15000 });
+
+    // 差分画像のサイズを取得
+    const dims = await getImageDimensions(diffPath);
+
+    // cropdetectで変更領域の境界を検出
+    // 閾値30: 微小な差異（圧縮ノイズ等）を無視
+    const { stderr } = await execFileAsync("ffmpeg", [
+      "-i", diffPath,
+      "-vf", "cropdetect=30:2:0",
+      "-f", "null", "-",
+    ], { timeout: 15000 });
+
+    // cropdetect出力: crop=W:H:X:Y
+    const cropMatches = stderr.match(/crop=(\d+):(\d+):(\d+):(\d+)/g);
+    if (!cropMatches || cropMatches.length === 0) return null;
+
+    // 最後の安定したcrop値を使用
+    const lastMatch = cropMatches[cropMatches.length - 1].match(/crop=(\d+):(\d+):(\d+):(\d+)/);
+    if (!lastMatch) return null;
+
+    const cropW = parseInt(lastMatch[1]);
+    const cropH = parseInt(lastMatch[2]);
+    const cropX = parseInt(lastMatch[3]);
+    const cropY = parseInt(lastMatch[4]);
+
+    // 変更領域が画像のほぼ全体（90%以上）の場合はハイライト不要
+    // （画面全体が切り替わった場合）
+    if (cropW >= dims.width * 0.9 && cropH >= dims.height * 0.9) {
+      return null;
+    }
+
+    // 変更領域が小さすぎる場合もスキップ（ノイズ除去）
+    if (cropW < dims.width * 0.03 || cropH < dims.height * 0.03) {
+      return null;
+    }
+
+    // 画像全体に対する割合に変換
+    return {
+      x: cropX / dims.width,
+      y: cropY / dims.height,
+      w: cropW / dims.width,
+      h: cropH / dims.height,
+    };
+  } catch (error) {
+    console.error("[SlideGenerator] Failed to detect changed region:", error);
+    return null;
+  } finally {
+    await fs.unlink(diffPath).catch(() => {});
+  }
+}
+
+/**
+ * スライドにハイライトを追加（変更領域ベース）
+ * region: 画像全体に対する変更領域の割合（0〜1）
  */
 function addHighlightToSlide(
   slide: any,
@@ -201,24 +273,33 @@ function addHighlightToSlide(
   imageX: number,
   imageY: number,
   imageW: number,
-  imageH: number
+  imageH: number,
+  region: { x: number; y: number; w: number; h: number }
 ): void {
   if (highlightType === "none") return;
 
-  // ハイライト位置（画像の中央下部にフォーカス）
-  const highlightX = imageX + imageW * 0.3;
-  const highlightY = imageY + imageH * 0.4;
-  const highlightW = imageW * 0.4;
-  const highlightH = imageH * 0.3;
+  // 変更領域をスライド座標に変換
+  const regionX = imageX + region.x * imageW;
+  const regionY = imageY + region.y * imageH;
+  const regionW = region.w * imageW;
+  const regionH = region.h * imageH;
+
+  // パディングを追加（少し余裕を持たせる）
+  const padX = regionW * 0.08;
+  const padY = regionH * 0.08;
+  const paddedX = Math.max(imageX, regionX - padX);
+  const paddedY = Math.max(imageY, regionY - padY);
+  const paddedW = Math.min(imageX + imageW - paddedX, regionW + padX * 2);
+  const paddedH = Math.min(imageY + imageH - paddedY, regionH + padY * 2);
 
   switch (highlightType) {
     case "rect":
       // 矩形ハイライト（枠線のみ）
       slide.addShape("rect", {
-        x: highlightX,
-        y: highlightY,
-        w: highlightW,
-        h: highlightH,
+        x: paddedX,
+        y: paddedY,
+        w: paddedW,
+        h: paddedH,
         fill: { type: "none" },
         line: { color: COLORS.highlight, width: 3, dashType: "solid" },
         rectRadius: 0.05,
@@ -227,34 +308,32 @@ function addHighlightToSlide(
 
     case "ring":
       // リング（楕円）ハイライト
-      const ringCenterX = imageX + imageW * 0.5;
-      const ringCenterY = imageY + imageH * 0.5;
-      const ringW = imageW * 0.25;
-      const ringH = imageH * 0.2;
       slide.addShape("ellipse", {
-        x: ringCenterX - ringW / 2,
-        y: ringCenterY - ringH / 2,
-        w: ringW,
-        h: ringH,
+        x: paddedX,
+        y: paddedY,
+        w: paddedW,
+        h: paddedH,
         fill: { type: "none" },
         line: { color: COLORS.highlightRing, width: 4, dashType: "solid" },
       });
       break;
 
-    case "arrow":
-      // 矢印（右上から中央へ）
-      const arrowStartX = imageX + imageW * 0.85;
-      const arrowStartY = imageY + imageH * 0.15;
-      const arrowEndX = imageX + imageW * 0.55;
-      const arrowEndY = imageY + imageH * 0.45;
+    case "arrow": {
+      // 変更領域の中心を指す矢印
+      const targetX = paddedX + paddedW / 2;
+      const targetY = paddedY + paddedH / 2;
+      // 矢印の始点: 画像の右上方向から
+      const arrowStartX = Math.min(imageX + imageW - 0.2, targetX + 1.5);
+      const arrowStartY = Math.max(imageY + 0.2, targetY - 1.0);
       slide.addShape("line", {
         x: arrowStartX,
         y: arrowStartY,
-        w: arrowEndX - arrowStartX,
-        h: arrowEndY - arrowStartY,
+        w: targetX - arrowStartX,
+        h: targetY - arrowStartY,
         line: { color: COLORS.highlight, width: 3, endArrowType: "triangle" },
       });
       break;
+    }
   }
 }
 
@@ -492,8 +571,11 @@ export async function generateSlides(projectId: number): Promise<string> {
       focusArea: "center",
     };
 
-    // ハイライトタイプをステップごとにローテーション
-    const highlightTypes: HighlightType[] = ["rect", "ring", "arrow", "none"];
+    // ハイライトタイプをローテーション（変更領域が検出された場合のみ使用）
+    const activeHighlightTypes: HighlightType[] = ["rect", "ring", "arrow"];
+
+    // 前フレームの画像パス（差分検出用）
+    let prevCroppedImagePath: string | null = null;
 
     for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
       const step = steps[stepIndex];
@@ -594,11 +676,21 @@ export async function generateSlides(projectId: number): Promise<string> {
             sizing: { type: "contain", w: imageW, h: imageH },
           });
 
-          // ハイライトを追加（3ステップごとにタイプを変更）
-          const highlightType = highlightTypes[stepIndex % highlightTypes.length];
-          addHighlightToSlide(slide, highlightType, imageX, imageY, imageW, imageH);
+          // 変更領域を検出してハイライトを追加
+          let highlightType: HighlightType = "none";
+          if (prevCroppedImagePath && stepIndex > 0) {
+            const changedRegion = await detectChangedRegion(prevCroppedImagePath, croppedImagePath);
+            if (changedRegion) {
+              highlightType = activeHighlightTypes[stepIndex % activeHighlightTypes.length];
+              addHighlightToSlide(slide, highlightType, imageX, imageY, imageW, imageH, changedRegion);
+              console.log(`[SlideGenerator] Highlight ${highlightType} at region: x=${changedRegion.x.toFixed(2)} y=${changedRegion.y.toFixed(2)} w=${changedRegion.w.toFixed(2)} h=${changedRegion.h.toFixed(2)}`);
+            }
+          }
 
-          console.log(`[SlideGenerator] Added image for step ${step.sortOrder + 1} with highlight: ${highlightType}`);
+          // 次のステップの差分検出用に保持
+          prevCroppedImagePath = croppedImagePath;
+
+          console.log(`[SlideGenerator] Added image for step ${step.sortOrder + 1} (highlight: ${highlightType})`);
         } catch (error) {
           console.error(`[SlideGenerator] Error adding image for frame ${frame.id}:`, error);
           slide.addShape("rect", {
