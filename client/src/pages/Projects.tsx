@@ -376,6 +376,7 @@ export default function Projects() {
       await processVideoMutation.mutateAsync({
         projectId: result.projectId,
         videoUrl: result.videoUrl,
+        videoKey: result.videoKey,
         threshold: processingParams.threshold,
         minInterval: processingParams.minInterval,
         maxFrames: processingParams.maxFrames,

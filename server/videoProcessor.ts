@@ -303,6 +303,7 @@ async function extractFramesAtIntervals(
 export async function processVideo(
   projectId: number,
   videoUrl: string,
+  videoKey: string,
   options: {
     threshold?: number;
     minInterval?: number;
@@ -321,7 +322,8 @@ export async function processVideo(
   // 動画をダウンロード（URLの場合）
   const videoPath = path.join(tempDir, "video.mp4");
   console.log(`[VideoProcessor] Downloading video from: ${videoUrl}`);
-  await downloadFile(videoUrl, videoPath);
+  console.log(`[VideoProcessor] Using video key: ${videoKey}`);
+  await downloadFile(videoUrl, videoPath, videoKey);
 
   // ダウンロードしたファイルの検証
   const videoStats = await fs.stat(videoPath);
@@ -430,10 +432,57 @@ export async function processVideo(
 /**
  * ローカルファイルをダウンロード（URLまたはローカルパスから）
  */
-export async function downloadFile(source: string, destination: string): Promise<void> {
+export async function downloadFile(source: string, destination: string, videoKey?: string): Promise<void> {
+  console.log(`[downloadFile] Source URL: ${source}`);
+  console.log(`[downloadFile] Video key: ${videoKey}`);
+  
   if (source.startsWith("http://") || source.startsWith("https://")) {
     // URLからダウンロード
-    const response = await fetch(source);
+    // S3のキーパスの場合は署名付きURLを取得
+    let downloadUrl = source;
+    const hasSignature = source.includes("?") || source.includes("X-Amz");
+    console.log(`[downloadFile] Has signature: ${hasSignature}`);
+    
+    if (!hasSignature && videoKey) {
+      // videoKeyが渡されている場合、Manusストレージプロキシ経由でダウンロード
+      try {
+        const { ENV } = await import("./_core/env");
+        const baseUrl = ENV.forgeApiUrl;
+        const apiKey = ENV.forgeApiKey;
+        
+        console.log(`[downloadFile] Using Manus storage proxy with key: ${videoKey}`);
+        
+        // Manusストレージプロキシ経由でダウンロード
+        const downloadApiUrl = new URL(
+          "v1/storage/download",
+          baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`
+        );
+        downloadApiUrl.searchParams.set("path", videoKey);
+        
+        console.log(`[downloadFile] Downloading via proxy: ${downloadApiUrl.toString().substring(0, 100)}...`);
+        
+        const response = await fetch(downloadApiUrl, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to download via proxy: ${response.statusText}`);
+        }
+        
+        const buffer = Buffer.from(await response.arrayBuffer());
+        await fs.writeFile(destination, buffer);
+        console.log(`[downloadFile] Downloaded ${buffer.length} bytes via proxy`);
+        return;
+      } catch (error) {
+        console.error(`[downloadFile] Failed to download via proxy:`, error);
+        console.warn(`[downloadFile] Falling back to direct URL`);
+      }
+    }
+    
+    // フォールバック: 直接URLでダウンロード
+    console.log(`[downloadFile] Downloading directly from: ${downloadUrl.substring(0, 100)}...`);
+    const response = await fetch(downloadUrl);
     if (!response.ok) {
       throw new Error(`Failed to download file: ${response.statusText}`);
     }

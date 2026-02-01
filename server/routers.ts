@@ -156,7 +156,7 @@ export const appRouter = router({
         await db.updateProjectProgress(projectId, 0, "再処理を開始しています...");
 
         // 動画を処理（バックグラウンドで実行）
-        processVideo(projectId, project.videoUrl, { threshold, minInterval, maxFrames })
+        processVideo(projectId, project.videoUrl, project.videoKey, { threshold, minInterval, maxFrames })
           .then(async () => {
             await db.updateProjectProgress(projectId, 100, "処理が完了しました");
             await db.updateProjectStatus(projectId, "completed");
@@ -245,19 +245,22 @@ export const appRouter = router({
       .input(z.object({
         projectId: z.number(),
         videoUrl: z.string(),
+        videoKey: z.string(),
         threshold: z.number().optional(),
         minInterval: z.number().optional(),
         maxFrames: z.number().optional(),
       }))
       .mutation(async ({ input }) => {
-        const { projectId, videoUrl, threshold, minInterval, maxFrames } = input;
+        const { projectId, videoUrl, videoKey, threshold, minInterval, maxFrames } = input;
+        
+        console.log(`[Router] processVideo called with:`, { projectId, videoUrl: videoUrl.substring(0, 100), videoKey, threshold, minInterval, maxFrames });
         
         // ステータスを処理中に更新
         await db.updateProjectStatus(projectId, "processing");
         
         try {
           // 動画を処理（バックグラウンドで実行）
-          processVideo(projectId, videoUrl, { threshold, minInterval, maxFrames })
+          processVideo(projectId, videoUrl, videoKey, { threshold, minInterval, maxFrames })
             .then(async () => {
               // 進捗を100%に更新
               await db.updateProjectProgress(projectId, 100, "処理が完了しました");
