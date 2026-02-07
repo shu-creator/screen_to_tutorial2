@@ -26,7 +26,9 @@ export default defineConfig({
   },
   server: {
     host: true,
-    allowedHosts: true,
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS === "*"
+      ? true
+      : ["localhost", "127.0.0.1"],
     fs: {
       strict: true,
       deny: ["**/.*"],
