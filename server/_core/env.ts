@@ -8,12 +8,19 @@ function requireEnv(key: string, defaultValue?: string): string {
 }
 
 // AUTH_MODEを先に解決（バリデーションで使うため）
+// デフォルトは常に "oauth"（secure by default）。"none" は明示設定のみ許可
 const VALID_AUTH_MODES = ["none", "oauth"] as const;
 type AuthMode = (typeof VALID_AUTH_MODES)[number];
-const rawAuthMode = process.env.AUTH_MODE ?? (process.env.NODE_ENV === "production" ? "oauth" : "none");
+const rawAuthMode = process.env.AUTH_MODE ?? "oauth";
 if (!VALID_AUTH_MODES.includes(rawAuthMode as AuthMode)) {
   throw new Error(
     `AUTH_MODE="${rawAuthMode}" は無効です。有効な値: ${VALID_AUTH_MODES.join(", ")}`
+  );
+}
+if (rawAuthMode === "none" && process.env.NODE_ENV === "production") {
+  throw new Error(
+    "AUTH_MODE=none は本番環境では使用できません。" +
+    "AUTH_MODE=oauth を設定するか、AUTH_MODE を未設定にしてください（デフォルト: oauth）"
   );
 }
 const authMode: AuthMode = rawAuthMode as AuthMode;
@@ -23,14 +30,6 @@ function validateEnvOnStartup(): void {
   const isProduction = process.env.NODE_ENV === "production";
 
   if (isProduction) {
-    // 本番環境では AUTH_MODE=none を禁止
-    if (authMode === "none") {
-      throw new Error(
-        "AUTH_MODE=none は本番環境では使用できません。" +
-        "AUTH_MODE=oauth を設定するか、AUTH_MODE を未設定にしてください（デフォルト: oauth）"
-      );
-    }
-
     const requiredVars = ["JWT_SECRET", "DATABASE_URL"];
     // OAuthモードの場合のみOAUTH_SERVER_URLを必須にする
     if (authMode === "oauth") {
