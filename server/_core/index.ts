@@ -34,7 +34,7 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
-  // Trust proxy for platforms like Manus that use reverse proxy
+  // Trust proxy when behind a reverse proxy (e.g. nginx)
   app.set("trust proxy", 1);
 
   // Configure body parser with larger size limit for file uploads

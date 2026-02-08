@@ -28,13 +28,18 @@ const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
 const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
 
+const LOCAL_DEV_USER_OPEN_ID = "local-dev-user";
+const LOCAL_DEV_USER_NAME = "Local Developer";
+
 class OAuthService {
   constructor(private client: ReturnType<typeof axios.create>) {
-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
-    if (!ENV.oAuthServerUrl) {
-      console.error(
-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
-      );
+    if (ENV.authMode === "oauth") {
+      console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
+      if (!ENV.oAuthServerUrl) {
+        console.error(
+          "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
+        );
+      }
     }
   }
 
@@ -78,7 +83,7 @@ class OAuthService {
 
 const createOAuthHttpClient = (): AxiosInstance =>
   axios.create({
-    baseURL: ENV.oAuthServerUrl,
+    baseURL: ENV.oAuthServerUrl || "http://localhost",
     timeout: AXIOS_TIMEOUT_MS,
   });
 
@@ -113,11 +118,6 @@ class SDKServer {
     return first ? first.toLowerCase() : null;
   }
 
-  /**
-   * Exchange OAuth authorization code for access token
-   * @example
-   * const tokenResponse = await sdk.exchangeCodeForToken(code, state);
-   */
   async exchangeCodeForToken(
     code: string,
     state: string
@@ -125,11 +125,6 @@ class SDKServer {
     return this.oauthService.getTokenByCode(code, state);
   }
 
-  /**
-   * Get user information using access token
-   * @example
-   * const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-   */
   async getUserInfo(accessToken: string): Promise<GetUserInfoResponse> {
     const data = await this.oauthService.getUserInfoByToken({
       accessToken,
@@ -159,11 +154,6 @@ class SDKServer {
     return new TextEncoder().encode(secret);
   }
 
-  /**
-   * Create a session token for a Manus user openId
-   * @example
-   * const sessionToken = await sdk.createSessionToken(userInfo.openId);
-   */
   async createSessionToken(
     openId: string,
     options: { expiresInMs?: number; name?: string } = {}
@@ -255,8 +245,35 @@ class SDKServer {
     };
   }
 
+  /**
+   * AUTH_MODE=none: ローカル開発用ユーザーを自動作成/取得して返す
+   */
+  private async authenticateLocalDev(): Promise<User> {
+    let user = await db.getUserByOpenId(LOCAL_DEV_USER_OPEN_ID);
+    if (!user) {
+      await db.upsertUser({
+        openId: LOCAL_DEV_USER_OPEN_ID,
+        name: LOCAL_DEV_USER_NAME,
+        email: "dev@localhost",
+        loginMethod: "local",
+        role: "admin",
+        lastSignedIn: new Date(),
+      });
+      user = await db.getUserByOpenId(LOCAL_DEV_USER_OPEN_ID);
+    }
+    if (!user) {
+      throw ForbiddenError("Failed to create local dev user");
+    }
+    return user;
+  }
+
   async authenticateRequest(req: Request): Promise<User> {
-    // Regular authentication flow
+    // AUTH_MODE=none: 認証をバイパスしてローカル開発ユーザーを返す
+    if (ENV.authMode === "none") {
+      return this.authenticateLocalDev();
+    }
+
+    // AUTH_MODE=oauth: 従来のOAuth認証フロー
     const cookies = this.parseCookies(req.headers.cookie);
     const sessionCookie = cookies.get(COOKIE_NAME);
     const session = await this.verifySession(sessionCookie);
