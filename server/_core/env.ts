@@ -12,7 +12,7 @@ function validateEnvOnStartup(): void {
   const isProduction = process.env.NODE_ENV === "production";
 
   if (isProduction) {
-    const requiredVars = ["JWT_SECRET", "DATABASE_URL"];
+    const requiredVars = ["JWT_SECRET", "DATABASE_URL", "OAUTH_SERVER_URL"];
     const missing = requiredVars.filter((key) => !process.env[key]);
 
     if (missing.length > 0) {
@@ -39,8 +39,8 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
 
   // --- 認証 ---
-  authMode: process.env.AUTH_MODE ?? (process.env.NODE_ENV === "production" ? "local" : "none"),
   cookieSecret: requireEnv("JWT_SECRET", "dev-secret-change-in-production-32chars!"),
+  oAuthServerUrl: requireEnv("OAUTH_SERVER_URL"),
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "local-admin",
 
   // --- データベース ---
@@ -49,22 +49,21 @@ export const ENV = {
   // --- ストレージ ---
   storagePath: process.env.STORAGE_PATH ?? "./data/storage",
 
-  // --- LLM ---
+  // --- LLM/TTS（現在はManus Forge経由、Phase 6-7で移行予定） ---
+  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
+  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+
+  // --- LLM プロバイダー切り替え（Phase 6で実装予定） ---
   llmProvider: process.env.LLM_PROVIDER ?? "openai",
   llmApiKey: process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
   llmApiUrl: process.env.LLM_API_URL ?? "",
   llmModel: process.env.LLM_MODEL ?? "",
 
-  // --- TTS ---
+  // --- TTS プロバイダー切り替え（Phase 7で実装予定） ---
   ttsProvider: process.env.TTS_PROVIDER ?? "openai",
   ttsApiKey: process.env.TTS_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
   ttsApiUrl: process.env.TTS_API_URL ?? "",
   ttsModel: process.env.TTS_MODEL ?? "",
   ttsVoice: process.env.TTS_VOICE ?? "nova",
-
-  // --- 後方互換（Manus Forge） ---
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
-  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
 };
