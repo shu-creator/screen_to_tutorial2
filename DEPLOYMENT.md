@@ -238,7 +238,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml patches/ ./patches/
 RUN corepack enable && pnpm install --frozen-lockfile
 
 COPY . .
