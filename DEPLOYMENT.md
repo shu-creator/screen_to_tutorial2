@@ -72,26 +72,26 @@ CREATE DATABASE tutorialgen CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 ```bash
 # 依存関係をインストール
-npm install --legacy-peer-deps
+pnpm install
 
 # マイグレーションを実行
-npx drizzle-kit push
+pnpm drizzle-kit push
 ```
 
-**注意**: `postbuild` スクリプトにマイグレーションが含まれているため、`npm run build` 後に自動実行されます。
+**注意**: `postbuild` スクリプトにマイグレーションが含まれているため、`pnpm run build` 後に自動実行されます。
 
 ## ビルドとデプロイ
 
 ### 1. 依存関係のインストール
 
 ```bash
-npm install --legacy-peer-deps
+pnpm install
 ```
 
 ### 2. ビルド
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 このコマンドは以下を実行します：
@@ -102,7 +102,7 @@ npm run build
 ### 3. サーバー起動
 
 ```bash
-npm start
+pnpm start
 ```
 
 ## セキュリティ設定
@@ -195,7 +195,7 @@ brew install ffmpeg
 #### 5. "drizzle-kit: command not found"
 
 ```bash
-npm install --legacy-peer-deps
+pnpm install
 ```
 
 ### ログの確認
@@ -238,14 +238,14 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install --legacy-peer-deps
+COPY package.json pnpm-lock.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 
 COPY . .
-RUN npm run build
+RUN pnpm run build
 
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["pnpm", "start"]
 ```
 
 ## サポート

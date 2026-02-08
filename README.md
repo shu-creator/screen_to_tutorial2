@@ -143,13 +143,13 @@ AI生成されたステップ情報を管理
 
 ```bash
 # 依存関係をインストール
-npm install --legacy-peer-deps
+pnpm install
 
 # ビルド（マイグレーションを含む）
-npm run build
+pnpm run build
 
 # サーバー起動
-npm start
+pnpm start
 ```
 
 ### 必須環境変数
