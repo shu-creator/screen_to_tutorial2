@@ -8,7 +8,7 @@ let _db: ReturnType<typeof drizzle> | null = null;
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db) {
-    const url = ENV.databaseUrl || process.env.DATABASE_URL;
+    const url = process.env.DATABASE_URL;
     if (!url) return null;
     try {
       _db = drizzle(url);

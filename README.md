@@ -169,8 +169,11 @@ brew services start mysql
 mysql -u root -e "CREATE DATABASE IF NOT EXISTS tutorialgen;"
 ```
 
-デフォルトの接続先: `mysql://root:password@localhost:3306/tutorialgen`
-（パスワードなしの場合は `mysql://root@localhost:3306/tutorialgen` に変更）
+Homebrewでインストールした場合、rootパスワードはデフォルトで未設定です。
+`.env` に以下を設定してください：
+```env
+DATABASE_URL=mysql://root@localhost:3306/tutorialgen
+```
 
 ### 環境変数
 
