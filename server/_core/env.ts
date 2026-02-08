@@ -12,7 +12,7 @@ function validateEnvOnStartup(): void {
   const isProduction = process.env.NODE_ENV === "production";
 
   if (isProduction) {
-    const requiredVars = ["JWT_SECRET", "DATABASE_URL", "OAUTH_SERVER_URL"];
+    const requiredVars = ["JWT_SECRET", "DATABASE_URL"];
     const missing = requiredVars.filter((key) => !process.env[key]);
 
     if (missing.length > 0) {
@@ -34,12 +34,36 @@ function validateEnvOnStartup(): void {
 validateEnvOnStartup();
 
 export const ENV = {
-  appId: process.env.VITE_APP_ID ?? "",
-  cookieSecret: requireEnv("JWT_SECRET"),
-  databaseUrl: requireEnv("DATABASE_URL"),
-  oAuthServerUrl: requireEnv("OAUTH_SERVER_URL"),
-  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
+  // --- アプリ基本設定 ---
+  appId: process.env.VITE_APP_ID ?? "tutorialgen",
   isProduction: process.env.NODE_ENV === "production",
+
+  // --- 認証 ---
+  authMode: process.env.AUTH_MODE ?? (process.env.NODE_ENV === "production" ? "local" : "none"),
+  cookieSecret: requireEnv("JWT_SECRET", "dev-secret-change-in-production-32chars!"),
+  ownerOpenId: process.env.OWNER_OPEN_ID ?? "local-admin",
+
+  // --- データベース ---
+  databaseUrl: requireEnv("DATABASE_URL", "mysql://root:password@localhost:3306/tutorialgen"),
+
+  // --- ストレージ ---
+  storagePath: process.env.STORAGE_PATH ?? "./data/storage",
+
+  // --- LLM ---
+  llmProvider: process.env.LLM_PROVIDER ?? "openai",
+  llmApiKey: process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
+  llmApiUrl: process.env.LLM_API_URL ?? "",
+  llmModel: process.env.LLM_MODEL ?? "",
+
+  // --- TTS ---
+  ttsProvider: process.env.TTS_PROVIDER ?? "openai",
+  ttsApiKey: process.env.TTS_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
+  ttsApiUrl: process.env.TTS_API_URL ?? "",
+  ttsModel: process.env.TTS_MODEL ?? "",
+  ttsVoice: process.env.TTS_VOICE ?? "nova",
+
+  // --- 後方互換（Manus Forge） ---
+  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
