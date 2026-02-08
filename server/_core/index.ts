@@ -2,10 +2,12 @@ import "dotenv/config";
 import express, { Request, Response, NextFunction } from "express";
 import { createServer } from "http";
 import net from "net";
+import path from "path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { ENV } from "./env";
 import { serveStatic, setupVite } from "./vite";
 import { uploadRouter } from "../uploadRoute";
 import { sdk } from "./sdk";
@@ -54,6 +56,10 @@ async function startServer() {
       res.status(401).json({ error: "認証が必要です" });
     }
   };
+
+  // Serve local storage files
+  const storagePath = path.resolve(ENV.storagePath);
+  app.use("/storage", express.static(storagePath));
 
   // File upload API (multipart/form-data)
   app.use("/api/upload", authenticateUpload, uploadRouter);
