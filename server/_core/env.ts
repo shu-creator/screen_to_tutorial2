@@ -7,12 +7,19 @@ function requireEnv(key: string, defaultValue?: string): string {
   return value ?? "";
 }
 
+// AUTH_MODEを先に解決（バリデーションで使うため）
+const authMode = (process.env.AUTH_MODE ?? (process.env.NODE_ENV === "production" ? "oauth" : "none")) as "none" | "oauth";
+
 // 起動時の環境変数検証
 function validateEnvOnStartup(): void {
   const isProduction = process.env.NODE_ENV === "production";
 
   if (isProduction) {
-    const requiredVars = ["JWT_SECRET", "DATABASE_URL", "OAUTH_SERVER_URL"];
+    const requiredVars = ["JWT_SECRET", "DATABASE_URL"];
+    // OAuthモードの場合のみOAUTH_SERVER_URLを必須にする
+    if (authMode === "oauth") {
+      requiredVars.push("OAUTH_SERVER_URL");
+    }
     const missing = requiredVars.filter((key) => !process.env[key]);
 
     if (missing.length > 0) {
@@ -39,8 +46,9 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
 
   // --- 認証 ---
+  authMode,
   cookieSecret: requireEnv("JWT_SECRET", "dev-secret-change-in-production-32chars!"),
-  oAuthServerUrl: requireEnv("OAUTH_SERVER_URL"),
+  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "local-admin",
 
   // --- データベース ---
