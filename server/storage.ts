@@ -1,108 +1,96 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
+// Local filesystem storage
+// Replaces Manus Forge storage proxy with direct filesystem operations
 
-import { ENV } from './_core/env';
+import { promises as fs } from "fs";
+import path from "path";
+import { ENV } from "./_core/env";
 
-type StorageConfig = { baseUrl: string; apiKey: string };
+const STORAGE_URL_PREFIX = "/storage/";
 
-function getStorageConfig(): StorageConfig {
-  const baseUrl = ENV.forgeApiUrl;
-  const apiKey = ENV.forgeApiKey;
-
-  if (!baseUrl || !apiKey) {
-    throw new Error(
-      "Storage proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
-    );
-  }
-
-  return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
-}
-
-function buildUploadUrl(baseUrl: string, relKey: string): URL {
-  const url = new URL("v1/storage/upload", ensureTrailingSlash(baseUrl));
-  url.searchParams.set("path", normalizeKey(relKey));
-  return url;
-}
-
-async function buildDownloadUrl(
-  baseUrl: string,
-  relKey: string,
-  apiKey: string
-): Promise<string> {
-  const downloadApiUrl = new URL(
-    "v1/storage/downloadUrl",
-    ensureTrailingSlash(baseUrl)
-  );
-  downloadApiUrl.searchParams.set("path", normalizeKey(relKey));
-  const response = await fetch(downloadApiUrl, {
-    method: "GET",
-    headers: buildAuthHeaders(apiKey),
-  });
-  return (await response.json()).url;
-}
-
-function ensureTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value : `${value}/`;
+function getStoragePath(): string {
+  return path.resolve(ENV.storagePath);
 }
 
 function normalizeKey(relKey: string): string {
   return relKey.replace(/^\/+/, "");
 }
 
-function toFormData(
-  data: Buffer | Uint8Array | string,
-  contentType: string,
-  fileName: string
-): FormData {
-  // Convert binary data to ArrayBuffer which Blob accepts without type issues
-  let blobPart: BlobPart;
-  if (typeof data === "string") {
-    blobPart = data;
-  } else {
-    // For Buffer or Uint8Array, copy to new ArrayBuffer
-    const bytes = new Uint8Array(data);
-    blobPart = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+/**
+ * パストラバーサル防止: resolve後のパスがストレージルート配下であることを検証
+ */
+function safePath(key: string): string {
+  const storageRoot = getStoragePath();
+  const resolved = path.resolve(storageRoot, key);
+  if (!resolved.startsWith(storageRoot + path.sep) && resolved !== storageRoot) {
+    throw new Error(`Path traversal detected: ${key}`);
   }
-  const blob = new Blob([blobPart], { type: contentType });
-  const form = new FormData();
-  form.append("file", blob, fileName || "file");
-  return form;
+  return resolved;
 }
 
-function buildAuthHeaders(apiKey: string): HeadersInit {
-  return { Authorization: `Bearer ${apiKey}` };
-}
-
+/**
+ * ファイルをローカルストレージに保存
+ */
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string }> {
-  const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
-  const uploadUrl = buildUploadUrl(baseUrl, key);
-  const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
-  const response = await fetch(uploadUrl, {
-    method: "POST",
-    headers: buildAuthHeaders(apiKey),
-    body: formData,
-  });
+  const filePath = safePath(key);
 
-  if (!response.ok) {
-    const message = await response.text().catch(() => response.statusText);
-    throw new Error(
-      `Storage upload failed (${response.status} ${response.statusText}): ${message}`
-    );
+  // 親ディレクトリを作成
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+
+  // ファイルを書き込み
+  if (typeof data === "string") {
+    await fs.writeFile(filePath, data, "utf-8");
+  } else {
+    await fs.writeFile(filePath, data);
   }
-  const url = (await response.json()).url;
-  return { key, url };
+
+  return { key, url: STORAGE_URL_PREFIX + key };
 }
 
-export async function storageGet(relKey: string): Promise<{ key: string; url: string; }> {
-  const { baseUrl, apiKey } = getStorageConfig();
+/**
+ * ストレージキーからURLを取得
+ */
+export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
-  return {
-    key,
-    url: await buildDownloadUrl(baseUrl, key, apiKey),
-  };
+  return { key, url: STORAGE_URL_PREFIX + key };
+}
+
+/**
+ * URLがローカルストレージURLの場合、ファイルシステムパスに変換
+ * パストラバーサル防止付き。ローカルでない場合は null を返す
+ */
+export function storageResolveUrl(url: string): string | null {
+  if (url.startsWith(STORAGE_URL_PREFIX)) {
+    const key = url.substring(STORAGE_URL_PREFIX.length);
+    const storageRoot = getStoragePath();
+    const resolved = path.resolve(storageRoot, key);
+    if (!resolved.startsWith(storageRoot + path.sep) && resolved !== storageRoot) {
+      return null; // パストラバーサルの場合はローカルURLとして扱わない
+    }
+    return resolved;
+  }
+  return null;
+}
+
+/**
+ * URLからファイルを読み込み
+ * ローカルストレージURLの場合はファイルシステムから直接読み込み、
+ * リモートURLの場合はHTTP fetchでダウンロード
+ */
+export async function fetchStorageFile(url: string): Promise<Buffer> {
+  const localPath = storageResolveUrl(url);
+  if (localPath) {
+    return fs.readFile(localPath);
+  }
+
+  // リモートURLの場合はHTTP fetch
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
+  }
+  return Buffer.from(await response.arrayBuffer());
 }

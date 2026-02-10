@@ -671,11 +671,8 @@ export async function generateSlides(projectId: number): Promise<string> {
       if (frame) {
         try {
           console.log(`[SlideGenerator] Fetching image for step ${step.sortOrder + 1}: ${frame.imageUrl}`);
-          const response = await fetch(frame.imageUrl);
-          if (!response.ok) {
-            throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
-          }
-          const imageBuffer = Buffer.from(await response.arrayBuffer());
+          const { fetchStorageFile } = await import("./storage");
+          const imageBuffer = await fetchStorageFile(frame.imageUrl);
           const tempImagePath = createTempFilePath(`frame_${frame.id}`, ".jpg");
           await fs.writeFile(tempImagePath, imageBuffer);
           tempFilesToDelete.push(tempImagePath);
