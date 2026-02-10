@@ -16,6 +16,18 @@ function normalizeKey(relKey: string): string {
 }
 
 /**
+ * パストラバーサル防止: resolve後のパスがストレージルート配下であることを検証
+ */
+function safePath(key: string): string {
+  const storageRoot = getStoragePath();
+  const resolved = path.resolve(storageRoot, key);
+  if (!resolved.startsWith(storageRoot + path.sep) && resolved !== storageRoot) {
+    throw new Error(`Path traversal detected: ${key}`);
+  }
+  return resolved;
+}
+
+/**
  * ファイルをローカルストレージに保存
  */
 export async function storagePut(
@@ -24,7 +36,7 @@ export async function storagePut(
   contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
-  const filePath = path.join(getStoragePath(), key);
+  const filePath = safePath(key);
 
   // 親ディレクトリを作成
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -49,12 +61,17 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
 
 /**
  * URLがローカルストレージURLの場合、ファイルシステムパスに変換
- * ローカルでない場合は null を返す
+ * パストラバーサル防止付き。ローカルでない場合は null を返す
  */
 export function storageResolveUrl(url: string): string | null {
   if (url.startsWith(STORAGE_URL_PREFIX)) {
     const key = url.substring(STORAGE_URL_PREFIX.length);
-    return path.join(getStoragePath(), key);
+    const storageRoot = getStoragePath();
+    const resolved = path.resolve(storageRoot, key);
+    if (!resolved.startsWith(storageRoot + path.sep) && resolved !== storageRoot) {
+      return null; // パストラバーサルの場合はローカルURLとして扱わない
+    }
+    return resolved;
   }
   return null;
 }
