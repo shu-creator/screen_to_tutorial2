@@ -1,7 +1,9 @@
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import type PptxGenJS from "pptxgenjs";
 import { getProjectById, getStepsByProjectId, getFramesByProjectId } from "./db";
 import { readBinaryFromSource } from "./storage";
 import {
@@ -13,6 +15,7 @@ import {
 } from "./slideText";
 
 const execFileAsync = promisify(execFile);
+type PptxSlide = ReturnType<PptxGenJS["addSlide"]>;
 
 // スライドのテキスト制限
 const MAX_OPERATION_CHARS = 60;
@@ -116,7 +119,7 @@ function buildNotesText(step: {
 function createTempFilePath(prefix: string, extension: string): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 8);
-  return path.join("/tmp", `${prefix}_${timestamp}_${random}${extension}`);
+  return path.join(os.tmpdir(), `${prefix}_${timestamp}_${random}${extension}`);
 }
 
 /**
@@ -276,7 +279,7 @@ async function detectChangedRegion(
  * region: 画像全体に対する変更領域の割合（0〜1）
  */
 function addHighlightToSlide(
-  slide: any,
+  slide: PptxSlide,
   highlightType: HighlightType,
   imageX: number,
   imageY: number,
@@ -349,7 +352,7 @@ function addHighlightToSlide(
  * 目次スライドを作成
  */
 function createTableOfContentsSlides(
-  pptx: any,
+  pptx: PptxGenJS,
   steps: Array<{ title: string; displayTitle: string; sortOrder: number }>,
   projectTitle: string
 ): void {
@@ -441,7 +444,7 @@ function createTableOfContentsSlides(
  * 進捗表示を追加（例: 7/21）
  */
 function addProgressIndicator(
-  slide: any,
+  slide: PptxSlide,
   currentStep: number,
   totalSteps: number
 ): void {
@@ -494,7 +497,7 @@ export async function generateSlides(projectId: number): Promise<string> {
   console.log(`[SlideGenerator] Starting slide generation for project ${projectId}`);
 
   const PptxGenJSModule = await import("pptxgenjs");
-  const PptxGenJS = PptxGenJSModule.default;
+  const PptxGenJSConstructor = PptxGenJSModule.default;
 
   const tempFilesToDelete: string[] = [];
 
@@ -535,7 +538,7 @@ export async function generateSlides(projectId: number): Promise<string> {
 
     console.log(`[SlideGenerator] Creating slides for ${stepsWithDisplayTitle.length} steps`);
 
-    const pptx = new PptxGenJS();
+    const pptx = new PptxGenJSConstructor();
     pptx.author = "Screen Recording Tutorial Generator";
     pptx.title = project.title;
     pptx.defineLayout({ name: "LAYOUT_16x9", width: 10, height: 5.625 });

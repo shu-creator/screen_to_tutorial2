@@ -83,7 +83,6 @@ screen_to_tutorial/
 │   └── schema.ts
 ├── scripts/               # Pythonスクリプト
 │   └── extract_frames.py  # フレーム抽出スクリプト
-└── todo.md                # 開発タスク管理
 ```
 
 ## データベーススキーマ
@@ -105,10 +104,6 @@ screen_to_tutorial/
 AI生成されたステップ情報を管理
 - タイトル、操作、説明、ナレーション
 - 音声URL
-
-## 開発状況
-
-現在の実装状況については、`todo.md`を参照してください。
 
 ## 使用方法
 
