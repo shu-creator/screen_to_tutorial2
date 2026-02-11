@@ -1,35 +1,22 @@
-/**
- * Text-to-Speech service using OpenAI TTS API via Forge
- *
- * Usage:
- * ```ts
- * import { generateSpeech } from "./_core/tts";
- *
- * const result = await generateSpeech({
- *   text: "こんにちは、これはテストです。",
- *   voice: "nova",
- *   speed: 1.0,
- * });
- *
- * if ('error' in result) {
- *   console.error(result.error);
- * } else {
- *   // result.audioBuffer is the MP3 audio data
- *   await fs.writeFile("output.mp3", result.audioBuffer);
- * }
- * ```
- */
-import { ENV } from "./env";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import { nanoid } from "nanoid";
+import { ENV, type TTSProvider } from "./env";
 
-export type TTSVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
-export type TTSModel = "tts-1" | "tts-1-hd" | "gpt-4o-mini-tts";
+const execFileAsync = promisify(execFile);
+
+export type TTSVoice = string;
+export type TTSModel = string;
 export type TTSFormat = "mp3" | "opus" | "aac" | "flac";
 
 export type TTSOptions = {
   text: string;
   voice?: TTSVoice;
   model?: TTSModel;
-  speed?: number; // 0.25 to 4.0
+  speed?: number;
   format?: TTSFormat;
 };
 
@@ -44,206 +31,287 @@ export type TTSError = {
   details?: string;
 };
 
-// OpenAI TTS API has a 4096 character limit per request
+interface TTSAdapter {
+  generateSpeech(options: TTSOptions): Promise<TTSResponse | TTSError>;
+  getVoices(): Array<{ id: string; name: string; description: string }>;
+}
+
 const MAX_TEXT_LENGTH = 4096;
 
-/**
- * Generate speech using OpenAI API directly
- * @param options - TTS options
- * @returns Audio buffer or error
- */
-async function generateSpeechWithOpenAI(
-  options: TTSOptions
-): Promise<TTSResponse | TTSError> {
+const OPENAI_VOICES: Array<{ id: string; name: string; description: string }> = [
+  { id: "alloy", name: "Alloy", description: "Neutral and calm" },
+  { id: "echo", name: "Echo", description: "Deep male voice" },
+  { id: "fable", name: "Fable", description: "British accented voice" },
+  { id: "onyx", name: "Onyx", description: "Strong male voice" },
+  { id: "nova", name: "Nova", description: "Bright female voice" },
+  { id: "shimmer", name: "Shimmer", description: "Soft female voice" },
+];
+
+const GEMINI_VOICES: Array<{ id: string; name: string; description: string }> = [
+  { id: "Kore", name: "Kore", description: "Gemini default voice" },
+];
+
+function validateOptions(options: TTSOptions): TTSError | null {
+  const { text, speed = 1.0 } = options;
+
+  if (!text || text.trim().length === 0) {
+    return {
+      error: "Text is required",
+      code: "GENERATION_FAILED",
+      details: "Empty text provided",
+    };
+  }
+
+  if (text.length > MAX_TEXT_LENGTH) {
+    return {
+      error: `Text exceeds maximum length of ${MAX_TEXT_LENGTH} characters`,
+      code: "TEXT_TOO_LONG",
+      details: `Text length: ${text.length} characters`,
+    };
+  }
+
+  if (speed < 0.25 || speed > 4.0) {
+    return {
+      error: "Speed must be between 0.25 and 4.0",
+      code: "GENERATION_FAILED",
+      details: `Invalid speed: ${speed}`,
+    };
+  }
+
+  return null;
+}
+
+function createServiceError(error: string, details?: string): TTSError {
+  return {
+    error,
+    code: "SERVICE_ERROR",
+    details,
+  };
+}
+
+function createGenerationError(error: string, details?: string): TTSError {
+  return {
+    error,
+    code: "GENERATION_FAILED",
+    details,
+  };
+}
+
+function getContentType(format: TTSFormat): string {
+  const formatToContentType: Record<TTSFormat, string> = {
+    mp3: "audio/mpeg",
+    opus: "audio/opus",
+    aac: "audio/aac",
+    flac: "audio/flac",
+  };
+
+  return formatToContentType[format] || "audio/mpeg";
+}
+
+function extensionForMimeType(contentType: string): string {
+  if (contentType.includes("wav")) return ".wav";
+  if (contentType.includes("mpeg") || contentType.includes("mp3")) return ".mp3";
+  if (contentType.includes("flac")) return ".flac";
+  if (contentType.includes("aac")) return ".aac";
+  return ".bin";
+}
+
+async function transcodeToMp3(
+  inputBuffer: Buffer,
+  inputContentType: string
+): Promise<Buffer> {
+  if (inputContentType.includes("audio/mpeg") || inputContentType.includes("audio/mp3")) {
+    return inputBuffer;
+  }
+
+  const tempDir = path.join(os.tmpdir(), `tts-transcode-${nanoid()}`);
+  await fs.mkdir(tempDir, { recursive: true });
+
+  const inputPath = path.join(tempDir, `input${extensionForMimeType(inputContentType)}`);
+  const outputPath = path.join(tempDir, "output.mp3");
+
   try {
-    const { text, voice = "nova", model = "tts-1", speed = 1.0, format = "mp3" } = options;
-
-    // Validate input
-    if (!text || text.trim().length === 0) {
-      return {
-        error: "Text is required",
-        code: "GENERATION_FAILED",
-        details: "Empty text provided",
-      };
-    }
-
-    if (text.length > MAX_TEXT_LENGTH) {
-      return {
-        error: `Text exceeds maximum length of ${MAX_TEXT_LENGTH} characters`,
-        code: "TEXT_TOO_LONG",
-        details: `Text length: ${text.length} characters`,
-      };
-    }
-
-    if (speed < 0.25 || speed > 4.0) {
-      return {
-        error: "Speed must be between 0.25 and 4.0",
-        code: "GENERATION_FAILED",
-        details: `Invalid speed: ${speed}`,
-      };
-    }
-
-    // Call OpenAI TTS API
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${ENV.openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        input: text,
-        voice,
-        speed,
-        response_format: format,
-      }),
+    await fs.writeFile(inputPath, inputBuffer);
+    await execFileAsync("ffmpeg", ["-y", "-i", inputPath, "-acodec", "libmp3lame", outputPath], {
+      timeout: 60000,
     });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      return {
-        error: "OpenAI TTS generation failed",
-        code: "GENERATION_FAILED",
-        details: `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`,
-      };
-    }
-
-    // Return audio buffer
-    const audioBuffer = Buffer.from(await response.arrayBuffer());
-    const contentType = getContentType(format);
-
-    return {
-      audioBuffer,
-      contentType,
-    };
-  } catch (error) {
-    return {
-      error: "OpenAI TTS generation failed",
-      code: "SERVICE_ERROR",
-      details: error instanceof Error ? error.message : "An unexpected error occurred",
-    };
+    return await fs.readFile(outputPath);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
   }
 }
 
-/**
- * Generate speech from text using OpenAI TTS API
- *
- * @param options - TTS options
- * @returns Audio buffer or error
- */
+class OpenAITTSAdapter implements TTSAdapter {
+  async generateSpeech(options: TTSOptions): Promise<TTSResponse | TTSError> {
+    if (!ENV.ttsApiKey) {
+      return createServiceError("TTS API key is not configured");
+    }
+
+    const validation = validateOptions(options);
+    if (validation) return validation;
+
+    try {
+      const {
+        text,
+        voice = "nova",
+        model = ENV.ttsModel,
+        speed = 1.0,
+        format = "mp3",
+      } = options;
+
+      const response = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${ENV.ttsApiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          input: text,
+          voice,
+          speed,
+          response_format: format,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        return createGenerationError(
+          "OpenAI TTS generation failed",
+          `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`
+        );
+      }
+
+      return {
+        audioBuffer: Buffer.from(await response.arrayBuffer()),
+        contentType: getContentType(format),
+      };
+    } catch (error) {
+      return createServiceError(
+        "OpenAI TTS generation failed",
+        error instanceof Error ? error.message : "Unexpected error"
+      );
+    }
+  }
+
+  getVoices() {
+    return OPENAI_VOICES;
+  }
+}
+
+class GeminiTTSAdapter implements TTSAdapter {
+  async generateSpeech(options: TTSOptions): Promise<TTSResponse | TTSError> {
+    if (!ENV.ttsApiKey) {
+      return createServiceError("TTS API key is not configured");
+    }
+
+    const validation = validateOptions(options);
+    if (validation) return validation;
+
+    try {
+      const {
+        text,
+        voice = "Kore",
+        model = ENV.ttsModel,
+      } = options;
+
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(ENV.ttsApiKey)}`;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text }],
+            },
+          ],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: voice,
+                },
+              },
+            },
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        return createGenerationError(
+          "Gemini TTS generation failed",
+          `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`
+        );
+      }
+
+      const json = (await response.json()) as {
+        candidates?: Array<{
+          content?: {
+            parts?: Array<{
+              inlineData?: {
+                mimeType?: string;
+                data?: string;
+              };
+            }>;
+          };
+        }>;
+      };
+
+      const part = json.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
+      const inlineData = part?.inlineData;
+      if (!inlineData?.data) {
+        return createGenerationError("Gemini TTS response missing audio payload");
+      }
+
+      const mimeType = inlineData.mimeType ?? "audio/wav";
+      const rawAudio = Buffer.from(inlineData.data, "base64");
+      const mp3Audio = await transcodeToMp3(rawAudio, mimeType);
+
+      return {
+        audioBuffer: mp3Audio,
+        contentType: "audio/mpeg",
+      };
+    } catch (error) {
+      return createServiceError(
+        "Gemini TTS generation failed",
+        error instanceof Error ? error.message : "Unexpected error"
+      );
+    }
+  }
+
+  getVoices() {
+    return GEMINI_VOICES;
+  }
+}
+
+function createTTSAdapter(provider: TTSProvider): TTSAdapter {
+  if (provider === "gemini") {
+    return new GeminiTTSAdapter();
+  }
+  return new OpenAITTSAdapter();
+}
+
 export async function generateSpeech(
   options: TTSOptions
 ): Promise<TTSResponse | TTSError> {
-  try {
-    // Step 1: Try OpenAI API first if key is available
-    if (ENV.openaiApiKey) {
-      const openaiResult = await generateSpeechWithOpenAI(options);
-      if (!('error' in openaiResult)) {
-        console.log('[TTS] Successfully generated speech using OpenAI API');
-        return openaiResult;
-      }
-      console.warn('[TTS] OpenAI API failed, falling back to Manus Forge:', openaiResult.details);
-    }
-
-    // Step 2: Fallback to Manus Forge API
-    if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
-      return {
-        error: "TTS service is not configured",
-        code: "SERVICE_ERROR",
-        details: "Neither OPENAI_API_KEY nor BUILT_IN_FORGE_API_KEY is set",
-      };
-    }
-
-    // Step 2: Validate input
-    const { text, voice = "nova", model = "gpt-4o-mini-tts", speed = 1.0, format = "mp3" } = options;
-
-    if (!text || text.trim().length === 0) {
-      return {
-        error: "Text is required",
-        code: "GENERATION_FAILED",
-        details: "Empty text provided",
-      };
-    }
-
-    if (text.length > MAX_TEXT_LENGTH) {
-      return {
-        error: `Text exceeds maximum length of ${MAX_TEXT_LENGTH} characters`,
-        code: "TEXT_TOO_LONG",
-        details: `Text length: ${text.length} characters`,
-      };
-    }
-
-    if (speed < 0.25 || speed > 4.0) {
-      return {
-        error: "Speed must be between 0.25 and 4.0",
-        code: "GENERATION_FAILED",
-        details: `Invalid speed: ${speed}`,
-      };
-    }
-
-    // Step 3: Build API URL
-    const baseUrl = ENV.forgeApiUrl.endsWith("/")
-      ? ENV.forgeApiUrl
-      : `${ENV.forgeApiUrl}/`;
-    const fullUrl = new URL("v1/audio/speech", baseUrl).toString();
-
-    // Step 4: Call TTS API
-    const response = await fetch(fullUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${ENV.forgeApiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        input: text,
-        voice,
-        speed,
-        response_format: format,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      return {
-        error: "TTS generation failed",
-        code: "GENERATION_FAILED",
-        details: `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`,
-      };
-    }
-
-    // Step 5: Return audio buffer
-    const audioBuffer = Buffer.from(await response.arrayBuffer());
-    const contentType = getContentType(format);
-
-    return {
-      audioBuffer,
-      contentType,
-    };
-  } catch (error) {
-    return {
-      error: "TTS generation failed",
-      code: "SERVICE_ERROR",
-      details: error instanceof Error ? error.message : "An unexpected error occurred",
-    };
-  }
+  const adapter = createTTSAdapter(ENV.ttsProvider);
+  return adapter.generateSpeech(options);
 }
 
-/**
- * Generate speech for long text by splitting into chunks
- * Returns concatenated audio buffers
- */
 export async function generateSpeechForLongText(
   options: TTSOptions
 ): Promise<TTSResponse | TTSError> {
   const { text, ...restOptions } = options;
 
-  // If text is short enough, use single request
   if (text.length <= MAX_TEXT_LENGTH) {
     return generateSpeech(options);
   }
 
-  // Split text into chunks at sentence boundaries
   const chunks = splitTextIntoChunks(text, MAX_TEXT_LENGTH);
   const audioBuffers: Buffer[] = [];
   let contentType = "audio/mpeg";
@@ -265,18 +333,12 @@ export async function generateSpeechForLongText(
     contentType = result.contentType;
   }
 
-  // Concatenate all audio buffers
-  const combinedBuffer = Buffer.concat(audioBuffers);
-
   return {
-    audioBuffer: combinedBuffer,
+    audioBuffer: Buffer.concat(audioBuffers),
     contentType,
   };
 }
 
-/**
- * Split text into chunks at sentence boundaries
- */
 function splitTextIntoChunks(text: string, maxLength: number): string[] {
   const chunks: string[] = [];
   let remaining = text;
@@ -287,10 +349,7 @@ function splitTextIntoChunks(text: string, maxLength: number): string[] {
       break;
     }
 
-    // Find the best split point (sentence boundary)
     let splitIndex = findSentenceBoundary(remaining, maxLength);
-
-    // If no good split point, split at maxLength
     if (splitIndex === -1) {
       splitIndex = maxLength;
     }
@@ -302,13 +361,8 @@ function splitTextIntoChunks(text: string, maxLength: number): string[] {
   return chunks;
 }
 
-/**
- * Find the best sentence boundary within maxLength
- */
 function findSentenceBoundary(text: string, maxLength: number): number {
   const searchText = text.substring(0, maxLength);
-
-  // Look for sentence endings (Japanese and English)
   const sentenceEndings = ["。", "！", "？", ".", "!", "?", "\n\n", "\n"];
 
   let bestIndex = -1;
@@ -323,30 +377,7 @@ function findSentenceBoundary(text: string, maxLength: number): number {
   return bestIndex;
 }
 
-/**
- * Get content type from format
- */
-function getContentType(format: TTSFormat): string {
-  const formatToContentType: Record<TTSFormat, string> = {
-    mp3: "audio/mpeg",
-    opus: "audio/opus",
-    aac: "audio/aac",
-    flac: "audio/flac",
-  };
-
-  return formatToContentType[format] || "audio/mpeg";
-}
-
-/**
- * Get available voices with descriptions
- */
-export function getAvailableVoices(): Array<{ id: TTSVoice; name: string; description: string }> {
-  return [
-    { id: "alloy", name: "Alloy", description: "中性的で落ち着いた声" },
-    { id: "echo", name: "Echo", description: "男性的で深みのある声" },
-    { id: "fable", name: "Fable", description: "イギリス英語風の声" },
-    { id: "onyx", name: "Onyx", description: "男性的で力強い声" },
-    { id: "nova", name: "Nova", description: "女性的で明るい声（推奨）" },
-    { id: "shimmer", name: "Shimmer", description: "女性的で柔らかい声" },
-  ];
+export function getAvailableVoices(): Array<{ id: string; name: string; description: string }> {
+  const adapter = createTTSAdapter(ENV.ttsProvider);
+  return adapter.getVoices();
 }

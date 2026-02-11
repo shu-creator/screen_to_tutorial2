@@ -11,10 +11,10 @@ function getQueryParam(req: Request, key: string): string | undefined {
 }
 
 export function registerOAuthRoutes(app: Express) {
-  if (ENV.authMode === "none") {
-    console.log("[Auth] AUTH_MODE=none: OAuth routes skipped, using local dev user");
+  if (ENV.authMode !== "oauth") {
     return;
   }
+
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");

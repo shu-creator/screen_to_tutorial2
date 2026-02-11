@@ -1,4 +1,20 @@
-// 必須環境変数の検証関数
+import path from "path";
+
+type AuthMode = "none" | "oauth";
+type LLMProvider = "openai" | "gemini" | "claude";
+type TTSProvider = "openai" | "gemini";
+
+const DEFAULT_LLM_MODEL: Record<LLMProvider, string> = {
+  openai: "gpt-5.2",
+  gemini: "gemini-3-flash-preview",
+  claude: "claude-sonnet-4-5",
+};
+
+const DEFAULT_TTS_MODEL: Record<TTSProvider, string> = {
+  openai: "gpt-4o-mini-tts",
+  gemini: "gemini-2.5-flash-preview-tts",
+};
+
 function requireEnv(key: string, defaultValue?: string): string {
   const value = process.env[key] ?? defaultValue;
   if (!value && process.env.NODE_ENV === "production") {
@@ -7,86 +23,127 @@ function requireEnv(key: string, defaultValue?: string): string {
   return value ?? "";
 }
 
-// AUTH_MODEを先に解決（バリデーションで使うため）
-// デフォルトは常に "oauth"（secure by default）。"none" は明示設定のみ許可
-const VALID_AUTH_MODES = ["none", "oauth"] as const;
-type AuthMode = (typeof VALID_AUTH_MODES)[number];
-const rawAuthMode = process.env.AUTH_MODE ?? "oauth";
-if (!VALID_AUTH_MODES.includes(rawAuthMode as AuthMode)) {
+function parseEnumEnv<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  defaultValue: T
+): T {
+  const value = process.env[key];
+  if (!value) return defaultValue;
+  if (allowed.includes(value as T)) {
+    return value as T;
+  }
   throw new Error(
-    `AUTH_MODE="${rawAuthMode}" は無効です。有効な値: ${VALID_AUTH_MODES.join(", ")}`
+    `環境変数 ${key} の値が不正です: ${value}. 許可値: ${allowed.join(", ")}`
   );
 }
-if (rawAuthMode === "none" && process.env.NODE_ENV === "production") {
-  throw new Error(
-    "AUTH_MODE=none は本番環境では使用できません。" +
-    "AUTH_MODE=oauth を設定するか、AUTH_MODE を未設定にしてください（デフォルト: oauth）"
-  );
-}
-const authMode: AuthMode = rawAuthMode as AuthMode;
 
-// 起動時の環境変数検証
+function resolveLLMApiKey(provider: LLMProvider): string {
+  if (process.env.LLM_API_KEY) {
+    return process.env.LLM_API_KEY;
+  }
+
+  if (provider === "openai") {
+    return process.env.OPENAI_API_KEY ?? "";
+  }
+  if (provider === "gemini") {
+    return process.env.GEMINI_API_KEY ?? "";
+  }
+  return process.env.ANTHROPIC_API_KEY ?? "";
+}
+
+function resolveTTSApiKey(provider: TTSProvider): string {
+  if (process.env.TTS_API_KEY) {
+    return process.env.TTS_API_KEY;
+  }
+
+  if (provider === "openai") {
+    return process.env.OPENAI_API_KEY ?? "";
+  }
+
+  return process.env.GEMINI_API_KEY ?? "";
+}
+
+const authMode = parseEnumEnv<AuthMode>(
+  "AUTH_MODE",
+  ["none", "oauth"],
+  "oauth"
+);
+const llmProvider = parseEnumEnv<LLMProvider>(
+  "LLM_PROVIDER",
+  ["openai", "gemini", "claude"],
+  "openai"
+);
+const ttsProvider = parseEnumEnv<TTSProvider>(
+  "TTS_PROVIDER",
+  ["openai", "gemini"],
+  "openai"
+);
+
+const llmModel = process.env.LLM_MODEL ?? DEFAULT_LLM_MODEL[llmProvider];
+const ttsModel = process.env.TTS_MODEL ?? DEFAULT_TTS_MODEL[ttsProvider];
+const llmApiKey = resolveLLMApiKey(llmProvider);
+const ttsApiKey = resolveTTSApiKey(ttsProvider);
+
 function validateEnvOnStartup(): void {
   const isProduction = process.env.NODE_ENV === "production";
+  const allowUnsafeNoneAuthInProduction =
+    process.env.ALLOW_UNSAFE_AUTH_MODE_NONE === "true";
 
   if (isProduction) {
-    const requiredVars = ["JWT_SECRET", "DATABASE_URL"];
-    // OAuthモードの場合のみOAUTH_SERVER_URLを必須にする
-    if (authMode === "oauth") {
-      requiredVars.push("OAUTH_SERVER_URL");
+    if (authMode === "none" && !allowUnsafeNoneAuthInProduction) {
+      throw new Error(
+        "本番環境では AUTH_MODE=none は禁止です。必要な場合のみ ALLOW_UNSAFE_AUTH_MODE_NONE=true を明示してください"
+      );
     }
-    const missing = requiredVars.filter((key) => !process.env[key]);
 
+    const requiredVars = ["JWT_SECRET", "DATABASE_URL"];
+    if (authMode === "oauth") {
+      requiredVars.push("OAUTH_SERVER_URL", "VITE_APP_ID", "VITE_OAUTH_PORTAL_URL");
+    }
+
+    const missing = requiredVars.filter((key) => !process.env[key]);
     if (missing.length > 0) {
       throw new Error(
         `本番環境では以下の環境変数が必須です: ${missing.join(", ")}`
       );
     }
 
-    // JWT_SECRETの強度チェック（32文字未満は拒否）
+    if (!llmApiKey) {
+      throw new Error("本番環境では LLM 用の API キーが必須です");
+    }
+    if (!ttsApiKey) {
+      throw new Error("本番環境では TTS 用の API キーが必須です");
+    }
+
     if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
-      throw new Error(
-        "JWT_SECRET は32文字以上が必須です（セキュリティ要件）"
-      );
+      throw new Error("JWT_SECRET は32文字以上が必須です（セキュリティ要件）");
     }
   }
 }
 
-// 起動時に検証を実行
 validateEnvOnStartup();
 
 export const ENV = {
-  // --- アプリ基本設定 ---
-  appId: process.env.VITE_APP_ID ?? "tutorialgen",
-  isProduction: process.env.NODE_ENV === "production",
-
-  // --- 認証 ---
+  appId: process.env.VITE_APP_ID ?? "",
   authMode,
-  cookieSecret: requireEnv("JWT_SECRET", "dev-secret-change-in-production-32chars!"),
+  cookieSecret: requireEnv("JWT_SECRET"),
+  databaseUrl: requireEnv("DATABASE_URL"),
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
-  ownerOpenId: process.env.OWNER_OPEN_ID ?? "local-admin",
-
-  // --- データベース ---
-  databaseUrl: requireEnv("DATABASE_URL", "mysql://root:password@localhost:3306/tutorialgen"),
-
-  // --- ストレージ ---
-  storagePath: process.env.STORAGE_PATH ?? "./data/storage",
-
-  // --- LLM/TTS（現在はManus Forge経由、Phase 6-7で移行予定） ---
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
+  isProduction: process.env.NODE_ENV === "production",
+  storageDir:
+    process.env.STORAGE_DIR ?? path.resolve(process.cwd(), "data", "storage"),
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
-
-  // --- LLM プロバイダー切り替え（Phase 6で実装予定） ---
-  llmProvider: process.env.LLM_PROVIDER ?? "openai",
-  llmApiKey: process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
-  llmApiUrl: process.env.LLM_API_URL ?? "",
-  llmModel: process.env.LLM_MODEL ?? "",
-
-  // --- TTS プロバイダー切り替え（Phase 7で実装予定） ---
-  ttsProvider: process.env.TTS_PROVIDER ?? "openai",
-  ttsApiKey: process.env.TTS_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
-  ttsApiUrl: process.env.TTS_API_URL ?? "",
-  ttsModel: process.env.TTS_MODEL ?? "",
-  ttsVoice: process.env.TTS_VOICE ?? "nova",
+  geminiApiKey: process.env.GEMINI_API_KEY ?? "",
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  llmProvider,
+  llmModel,
+  llmApiKey,
+  ttsProvider,
+  ttsModel,
+  ttsApiKey,
+  oauthPortalUrl: process.env.VITE_OAUTH_PORTAL_URL ?? "",
 };
+
+export type { AuthMode, LLMProvider, TTSProvider };

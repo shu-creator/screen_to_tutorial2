@@ -1,7 +1,15 @@
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
+export const getAuthMode = (): "none" | "oauth" => {
+  return import.meta.env.VITE_AUTH_MODE === "none" ? "none" : "oauth";
+};
+
 // Generate login URL at runtime so redirect URI reflects the current origin.
 export const getLoginUrl = () => {
+  if (getAuthMode() === "none") {
+    return "/projects";
+  }
+
   const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
   const appId = import.meta.env.VITE_APP_ID;
   const redirectUri = `${window.location.origin}/api/oauth/callback`;

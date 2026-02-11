@@ -1,10 +1,8 @@
 import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import fs from "node:fs";
 import path from "path";
 import { defineConfig } from "vite";
-
 
 const plugins = [react(), tailwindcss(), jsxLocPlugin()];
 
@@ -26,9 +24,7 @@ export default defineConfig({
   },
   server: {
     host: true,
-    allowedHosts: process.env.VITE_ALLOWED_HOSTS === "*"
-      ? true
-      : ["localhost", "127.0.0.1"],
+    allowedHosts: ["localhost", "127.0.0.1"],
     fs: {
       strict: true,
       deny: ["**/.*"],

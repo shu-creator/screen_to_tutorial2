@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import fs from "fs/promises";
-import { storagePut, storageResolveUrl } from "./storage";
+import { readBinaryFromSource, storagePut } from "./storage";
 import * as db from "./db";
 import { nanoid } from "nanoid";
 
@@ -430,31 +430,12 @@ export async function processVideo(
 }
 
 /**
- * ファイルをダウンロード（ローカルストレージURL、HTTP URL、ローカルパスに対応）
+ * ローカルファイルをダウンロード（URLまたはローカルパスから）
  */
-export async function downloadFile(source: string, destination: string, _videoKey?: string): Promise<void> {
-  console.log(`[downloadFile] Source: ${source}`);
+export async function downloadFile(source: string, destination: string, videoKey?: string): Promise<void> {
+  console.log(`[downloadFile] Source URL: ${source}`);
+  console.log(`[downloadFile] Video key: ${videoKey}`);
 
-  // ローカルストレージURL（/storage/...）の場合はファイルシステムから直接コピー
-  const localPath = storageResolveUrl(source);
-  if (localPath) {
-    console.log(`[downloadFile] Copying from local storage: ${localPath}`);
-    await fs.copyFile(localPath, destination);
-    return;
-  }
-
-  if (source.startsWith("http://") || source.startsWith("https://")) {
-    // リモートURLからダウンロード
-    console.log(`[downloadFile] Downloading from: ${source.substring(0, 100)}...`);
-    const response = await fetch(source);
-    if (!response.ok) {
-      throw new Error(`Failed to download file: ${response.statusText}`);
-    }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    await fs.writeFile(destination, buffer);
-    console.log(`[downloadFile] Downloaded ${buffer.length} bytes`);
-  } else {
-    // ローカルファイルパスをコピー
-    await fs.copyFile(source, destination);
-  }
+  const buffer = await readBinaryFromSource(source);
+  await fs.writeFile(destination, buffer);
 }

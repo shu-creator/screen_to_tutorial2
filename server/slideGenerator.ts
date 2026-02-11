@@ -3,6 +3,7 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { getProjectById, getStepsByProjectId, getFramesByProjectId } from "./db";
+import { readBinaryFromSource } from "./storage";
 import {
   truncateAtSentence,
   ensureTerminalPunctuation,
@@ -671,8 +672,7 @@ export async function generateSlides(projectId: number): Promise<string> {
       if (frame) {
         try {
           console.log(`[SlideGenerator] Fetching image for step ${step.sortOrder + 1}: ${frame.imageUrl}`);
-          const { fetchStorageFile } = await import("./storage");
-          const imageBuffer = await fetchStorageFile(frame.imageUrl);
+          const imageBuffer = await readBinaryFromSource(frame.imageUrl);
           const tempImagePath = createTempFilePath(`frame_${frame.id}`, ".jpg");
           await fs.writeFile(tempImagePath, imageBuffer);
           tempFilesToDelete.push(tempImagePath);

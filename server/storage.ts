@@ -1,96 +1,122 @@
-// Local filesystem storage
-// Replaces Manus Forge storage proxy with direct filesystem operations
-
-import { promises as fs } from "fs";
+import fs from "fs/promises";
 import path from "path";
 import { ENV } from "./_core/env";
 
-const STORAGE_URL_PREFIX = "/storage/";
-
-function getStoragePath(): string {
-  return path.resolve(ENV.storagePath);
-}
+const STORAGE_ROUTE_PREFIX = "/api/storage/";
+const LEGACY_STORAGE_ROUTE_PREFIX = "/storage/";
 
 function normalizeKey(relKey: string): string {
-  return relKey.replace(/^\/+/, "");
-}
-
-/**
- * パストラバーサル防止: resolve後のパスがストレージルート配下であることを検証
- */
-function safePath(key: string): string {
-  const storageRoot = getStoragePath();
-  const resolved = path.resolve(storageRoot, key);
-  if (!resolved.startsWith(storageRoot + path.sep) && resolved !== storageRoot) {
-    throw new Error(`Path traversal detected: ${key}`);
+  const normalized = path.posix.normalize(relKey.replace(/^\/+/, ""));
+  if (
+    normalized.length === 0 ||
+    normalized === "." ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../")
+  ) {
+    throw new Error(`Invalid storage key: ${relKey}`);
   }
-  return resolved;
+  return normalized;
 }
 
-/**
- * ファイルをローカルストレージに保存
- */
+function getStorageRoot(): string {
+  return ENV.storageDir;
+}
+
+function keyToFsPath(key: string): string {
+  const root = getStorageRoot();
+  const filePath = path.resolve(root, key);
+  const normalizedRoot = path.resolve(root) + path.sep;
+  if (!filePath.startsWith(normalizedRoot)) {
+    throw new Error(`Path traversal detected for key: ${key}`);
+  }
+  return filePath;
+}
+
+function keyToPublicUrl(key: string): string {
+  const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+  return `${STORAGE_ROUTE_PREFIX}${encodedKey}`;
+}
+
+function storageUrlToKey(url: string): string {
+  const routePrefix = url.startsWith(STORAGE_ROUTE_PREFIX)
+    ? STORAGE_ROUTE_PREFIX
+    : url.startsWith(LEGACY_STORAGE_ROUTE_PREFIX)
+      ? LEGACY_STORAGE_ROUTE_PREFIX
+      : null;
+
+  if (!routePrefix) {
+    throw new Error(`Unsupported storage URL: ${url}`);
+  }
+
+  const keyPart = url
+    .slice(routePrefix.length)
+    .split("?")[0]
+    .split("#")[0]
+    .split("/")
+    .map((segment) => decodeURIComponent(segment))
+    .join("/");
+
+  return normalizeKey(keyPart);
+}
+
+function toBuffer(data: Buffer | Uint8Array | string): Buffer {
+  if (typeof data === "string") {
+    return Buffer.from(data);
+  }
+  return Buffer.from(data);
+}
+
+export function isLocalStorageUrl(url: string): boolean {
+  return (
+    url.startsWith(STORAGE_ROUTE_PREFIX) ||
+    url.startsWith(LEGACY_STORAGE_ROUTE_PREFIX)
+  );
+}
+
+export function resolveLocalStoragePathFromUrl(url: string): string {
+  const key = storageUrlToKey(url);
+  return keyToFsPath(key);
+}
+
+export async function readBinaryFromSource(source: string): Promise<Buffer> {
+  if (isLocalStorageUrl(source)) {
+    return fs.readFile(resolveLocalStoragePathFromUrl(source));
+  }
+
+  if (source.startsWith("http://") || source.startsWith("https://")) {
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download file: ${response.status} ${response.statusText}`
+      );
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  return fs.readFile(source);
+}
+
+export async function ensureStorageDir(): Promise<void> {
+  await fs.mkdir(getStorageRoot(), { recursive: true });
+}
+
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
-  contentType = "application/octet-stream"
+  _contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
-  const filePath = safePath(key);
-
-  // 親ディレクトリを作成
+  const filePath = keyToFsPath(key);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-
-  // ファイルを書き込み
-  if (typeof data === "string") {
-    await fs.writeFile(filePath, data, "utf-8");
-  } else {
-    await fs.writeFile(filePath, data);
-  }
-
-  return { key, url: STORAGE_URL_PREFIX + key };
+  await fs.writeFile(filePath, toBuffer(data));
+  return { key, url: keyToPublicUrl(key) };
 }
 
-/**
- * ストレージキーからURLを取得
- */
-export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
+export async function storageGet(
+  relKey: string
+): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
-  return { key, url: STORAGE_URL_PREFIX + key };
-}
-
-/**
- * URLがローカルストレージURLの場合、ファイルシステムパスに変換
- * パストラバーサル防止付き。ローカルでない場合は null を返す
- */
-export function storageResolveUrl(url: string): string | null {
-  if (url.startsWith(STORAGE_URL_PREFIX)) {
-    const key = url.substring(STORAGE_URL_PREFIX.length);
-    const storageRoot = getStoragePath();
-    const resolved = path.resolve(storageRoot, key);
-    if (!resolved.startsWith(storageRoot + path.sep) && resolved !== storageRoot) {
-      return null; // パストラバーサルの場合はローカルURLとして扱わない
-    }
-    return resolved;
-  }
-  return null;
-}
-
-/**
- * URLからファイルを読み込み
- * ローカルストレージURLの場合はファイルシステムから直接読み込み、
- * リモートURLの場合はHTTP fetchでダウンロード
- */
-export async function fetchStorageFile(url: string): Promise<Buffer> {
-  const localPath = storageResolveUrl(url);
-  if (localPath) {
-    return fs.readFile(localPath);
-  }
-
-  // リモートURLの場合はHTTP fetch
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
-  }
-  return Buffer.from(await response.arrayBuffer());
+  const filePath = keyToFsPath(key);
+  await fs.access(filePath);
+  return { key, url: keyToPublicUrl(key) };
 }
