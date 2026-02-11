@@ -141,9 +141,7 @@ async function startServer() {
         requestId,
       };
 
-      if (pathname.startsWith("/api/trpc") && status < 400) {
-        httpLogger.debug("HTTP request", context);
-      } else if (status >= 500) {
+      if (status >= 500) {
         httpLogger.error("HTTP request failed", context);
       } else if (status >= 400 || durationMs > 2_000) {
         httpLogger.warn("HTTP request warning", context);
