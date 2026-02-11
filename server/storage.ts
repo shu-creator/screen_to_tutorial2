@@ -3,6 +3,7 @@ import path from "path";
 import { ENV } from "./_core/env";
 
 const STORAGE_ROUTE_PREFIX = "/api/storage/";
+const LEGACY_STORAGE_ROUTE_PREFIX = "/storage/";
 
 function normalizeKey(relKey: string): string {
   const normalized = path.posix.normalize(relKey.replace(/^\/+/, ""));
@@ -37,12 +38,18 @@ function keyToPublicUrl(key: string): string {
 }
 
 function storageUrlToKey(url: string): string {
-  if (!url.startsWith(STORAGE_ROUTE_PREFIX)) {
+  const routePrefix = url.startsWith(STORAGE_ROUTE_PREFIX)
+    ? STORAGE_ROUTE_PREFIX
+    : url.startsWith(LEGACY_STORAGE_ROUTE_PREFIX)
+      ? LEGACY_STORAGE_ROUTE_PREFIX
+      : null;
+
+  if (!routePrefix) {
     throw new Error(`Unsupported storage URL: ${url}`);
   }
 
   const keyPart = url
-    .slice(STORAGE_ROUTE_PREFIX.length)
+    .slice(routePrefix.length)
     .split("?")[0]
     .split("#")[0]
     .split("/")
@@ -60,7 +67,10 @@ function toBuffer(data: Buffer | Uint8Array | string): Buffer {
 }
 
 export function isLocalStorageUrl(url: string): boolean {
-  return url.startsWith(STORAGE_ROUTE_PREFIX);
+  return (
+    url.startsWith(STORAGE_ROUTE_PREFIX) ||
+    url.startsWith(LEGACY_STORAGE_ROUTE_PREFIX)
+  );
 }
 
 export function resolveLocalStoragePathFromUrl(url: string): string {

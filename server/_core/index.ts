@@ -58,6 +58,18 @@ async function startServer() {
     })
   );
 
+  app.use(
+    "/storage",
+    express.static(ENV.storageDir, {
+      dotfiles: "deny",
+      index: false,
+      fallthrough: false,
+      setHeaders: (res) => {
+        res.setHeader("X-Content-Type-Options", "nosniff");
+      },
+    })
+  );
+
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
 

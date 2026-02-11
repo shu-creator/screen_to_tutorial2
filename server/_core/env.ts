@@ -87,8 +87,16 @@ const ttsApiKey = resolveTTSApiKey(ttsProvider);
 
 function validateEnvOnStartup(): void {
   const isProduction = process.env.NODE_ENV === "production";
+  const allowUnsafeNoneAuthInProduction =
+    process.env.ALLOW_UNSAFE_AUTH_MODE_NONE === "true";
 
   if (isProduction) {
+    if (authMode === "none" && !allowUnsafeNoneAuthInProduction) {
+      throw new Error(
+        "本番環境では AUTH_MODE=none は禁止です。必要な場合のみ ALLOW_UNSAFE_AUTH_MODE_NONE=true を明示してください"
+      );
+    }
+
     const requiredVars = ["JWT_SECRET", "DATABASE_URL"];
     if (authMode === "oauth") {
       requiredVars.push("OAUTH_SERVER_URL", "VITE_APP_ID", "VITE_OAUTH_PORTAL_URL");
