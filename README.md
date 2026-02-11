@@ -143,17 +143,43 @@ AI生成されたステップ情報を管理
 
 ```bash
 # 依存関係をインストール
-npm install --legacy-peer-deps
+pnpm install
+
+# 環境変数を設定
+cp .env.example .env
+# .env を編集して必要な値を設定
 
 # ビルド（マイグレーションを含む）
-npm run build
+pnpm run build
 
 # サーバー起動
-npm start
+pnpm start
 ```
 
-### 必須環境変数
+### ローカルMySQLセットアップ（Mac）
 
+```bash
+# MySQLをインストール
+brew install mysql
+
+# MySQLを起動
+brew services start mysql
+
+# データベースを作成
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS tutorialgen;"
+```
+
+Homebrewでインストールした場合、rootパスワードはデフォルトで未設定です。
+`.env` に以下を設定してください：
+```env
+DATABASE_URL=mysql://root@localhost:3306/tutorialgen
+```
+
+### 環境変数
+
+`.env.example` を `.env` にコピーして設定してください。詳細は [.env.example](./.env.example) を参照。
+
+**本番環境で必須:**
 ```env
 DATABASE_URL=mysql://user:password@host:3306/database
 JWT_SECRET=your-very-long-secret-key-at-least-32-chars

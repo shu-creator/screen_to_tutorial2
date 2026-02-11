@@ -101,6 +101,9 @@ jspm_packages/
 tmp/
 temp/
 
+# Local storage data
+data/
+
 # Database
 *.db
 *.sqlite
