@@ -3,10 +3,10 @@ import fs from "fs";
 import { type Server } from "http";
 import { nanoid } from "nanoid";
 import path from "path";
-import { createServer as createViteServer } from "vite";
+import { createServer as createViteServer, type ViteDevServer } from "vite";
 import viteConfig from "../../vite.config";
 
-export async function setupVite(app: Express, server: Server) {
+export async function setupVite(app: Express, server: Server): Promise<ViteDevServer> {
   const serverOptions = {
     middlewareMode: true,
     hmr: { server },
@@ -45,6 +45,8 @@ export async function setupVite(app: Express, server: Server) {
       next(e);
     }
   });
+
+  return vite;
 }
 
 export function serveStatic(app: Express) {

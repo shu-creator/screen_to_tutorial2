@@ -234,7 +234,27 @@ pnpm install
 アプリケーションが正常に動作しているか確認するには：
 
 ```bash
-curl http://localhost:3000/api/health
+curl -i http://localhost:3000/api/health
+```
+
+- `200 OK`: Readiness成功（`checks.db` と `checks.storage` が両方 `ok=true`）
+- `503 Service Unavailable`: Readiness失敗（DB接続不可、またはストレージ書き込み不可）
+- `checks.llm` / `checks.tts` / `checks.ffmpeg` は警告用途です。未設定でも `db` と `storage` が正常なら `200` を返します。
+
+レスポンス例:
+
+```json
+{
+  "ok": true,
+  "timestamp": "2026-02-11T14:00:00.000Z",
+  "checks": {
+    "db": { "ok": true, "status": "ok", "message": "Database reachable" },
+    "storage": { "ok": true, "status": "ok", "message": "Storage writable" },
+    "llm": { "ok": false, "status": "warn", "message": "LLM API key is not configured" },
+    "tts": { "ok": true, "status": "ok", "message": "Configured" },
+    "ffmpeg": { "ok": true, "status": "ok", "message": "ffmpeg available" }
+  }
+}
 ```
 
 ## 推奨ハードウェア

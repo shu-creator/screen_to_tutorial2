@@ -5,11 +5,29 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useTheme } from "@/contexts/ThemeContext";
-import { LogOut, Moon, Sun, User } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import { LogOut, Moon, Server, Sun, User } from "lucide-react";
 
 export default function Settings() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme, switchable } = useTheme();
+  const {
+    data: systemInfo,
+    isLoading: systemInfoLoading,
+    error: systemInfoError,
+  } = trpc.system.info.useQuery();
+
+  const llmKeyHint =
+    systemInfo?.llmProvider === "openai"
+      ? "LLM_API_KEY または OPENAI_API_KEY"
+      : systemInfo?.llmProvider === "gemini"
+        ? "LLM_API_KEY または GEMINI_API_KEY"
+        : "LLM_API_KEY または ANTHROPIC_API_KEY";
+
+  const ttsKeyHint =
+    systemInfo?.ttsProvider === "openai"
+      ? "TTS_API_KEY または OPENAI_API_KEY"
+      : "TTS_API_KEY または GEMINI_API_KEY";
 
   return (
     <DashboardLayout>
@@ -73,6 +91,75 @@ export default function Settings() {
                 </p>
               )}
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Server className="h-5 w-5" />
+              システム
+            </CardTitle>
+            <CardDescription>
+              現在の認証モードとAIプロバイダー設定
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {systemInfoLoading && (
+              <p className="text-sm text-muted-foreground">設定情報を読み込み中です...</p>
+            )}
+            {systemInfoError && (
+              <p className="text-sm text-destructive">設定情報の取得に失敗しました</p>
+            )}
+            {systemInfo && (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-md border p-3 space-y-1">
+                    <p className="text-sm text-muted-foreground">認証モード</p>
+                    <p className="font-medium">{systemInfo.authMode}</p>
+                  </div>
+                  <div className="rounded-md border p-3 space-y-1">
+                    <p className="text-sm text-muted-foreground">実行環境</p>
+                    <p className="font-medium">
+                      {systemInfo.isProduction ? "production" : "development"}
+                    </p>
+                  </div>
+                  <div className="rounded-md border p-3 space-y-1">
+                    <p className="text-sm text-muted-foreground">LLM</p>
+                    <p className="font-medium">
+                      {systemInfo.llmProvider} / {systemInfo.llmModel}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      APIキー: {systemInfo.llmApiKeyConfigured ? "設定済み" : "未設定"}
+                    </p>
+                  </div>
+                  <div className="rounded-md border p-3 space-y-1">
+                    <p className="text-sm text-muted-foreground">TTS</p>
+                    <p className="font-medium">
+                      {systemInfo.ttsProvider} / {systemInfo.ttsModel}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      APIキー: {systemInfo.ttsApiKeyConfigured ? "設定済み" : "未設定"}
+                    </p>
+                  </div>
+                </div>
+
+                {(!systemInfo.llmApiKeyConfigured || !systemInfo.ttsApiKeyConfigured) && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900">
+                    <p className="text-sm font-medium">APIキーの設定が不足しています</p>
+                    <p className="text-sm mt-1">
+                      サーバーの <code>.env</code> を更新して再起動してください。
+                    </p>
+                    {!systemInfo.llmApiKeyConfigured && (
+                      <p className="text-sm mt-1">LLM: {llmKeyHint}</p>
+                    )}
+                    {!systemInfo.ttsApiKeyConfigured && (
+                      <p className="text-sm mt-1">TTS: {ttsKeyHint}</p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </CardContent>
         </Card>
 
