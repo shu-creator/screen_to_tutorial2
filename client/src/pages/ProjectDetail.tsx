@@ -353,6 +353,12 @@ export default function ProjectDetail() {
     maxFrames: 100,
   });
 
+  useEffect(() => {
+    if (!availableVoices || availableVoices.length === 0) return;
+    if (availableVoices.some((voice) => voice.id === selectedVoice)) return;
+    setSelectedVoice(availableVoices[0].id);
+  }, [availableVoices, selectedVoice]);
+
   // 再試行ハンドラー
   const handleRetry = async () => {
     try {
@@ -450,7 +456,7 @@ export default function ProjectDetail() {
       setVideoGenerationProgress({ progress: 10, message: "ナレーション音声を生成中..." });
       await generateAudioMutation.mutateAsync({
         projectId,
-        voice: selectedVoice as "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer",
+        voice: selectedVoice,
       });
 
       // 音声生成後にステップを再取得（audioUrlを更新するため）
@@ -923,20 +929,16 @@ export default function ProjectDetail() {
                               onChange={(e) => setSelectedVoice(e.target.value)}
                               className="px-3 py-2 border rounded-md bg-background text-sm"
                             >
-                              {availableVoices?.map((voice) => (
+                              {(availableVoices && availableVoices.length > 0
+                                ? availableVoices
+                                : [
+                                    { id: "nova", name: "Nova", description: "女性的で明るい声（推奨）" },
+                                  ]
+                              ).map((voice) => (
                                 <option key={voice.id} value={voice.id}>
                                   {voice.name} - {voice.description}
                                 </option>
-                              )) || (
-                                <>
-                                  <option value="nova">Nova - 女性的で明るい声（推奨）</option>
-                                  <option value="alloy">Alloy - 中性的で落ち着いた声</option>
-                                  <option value="echo">Echo - 男性的で深みのある声</option>
-                                  <option value="fable">Fable - イギリス英語風の声</option>
-                                  <option value="onyx">Onyx - 男性的で力強い声</option>
-                                  <option value="shimmer">Shimmer - 女性的で柔らかい声</option>
-                                </>
-                              )}
+                              ))}
                             </select>
                           </div>
                           <Button onClick={handleGenerateVideo} disabled={isGeneratingVideo}>

@@ -57,11 +57,11 @@
 
 ### AI・機械学習
 - GPT-4o（画像解析）
-- Manus LLM統合
+- マルチLLMプロバイダー統合（OpenAI/Gemini/Claude）
 
 ### インフラ
-- S3（ファイルストレージ）
-- Manus OAuth（認証）
+- ローカルファイルシステム（ファイルストレージ）
+- OAuth 2.0（認証）
 
 ## プロジェクト構造
 
@@ -157,9 +157,11 @@ npm start
 ```env
 DATABASE_URL=mysql://user:password@host:3306/database
 JWT_SECRET=your-very-long-secret-key-at-least-32-chars
+AUTH_MODE=none
 OAUTH_SERVER_URL=https://oauth.example.com
-BUILT_IN_FORGE_API_URL=https://api.openai.com
-BUILT_IN_FORGE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+TTS_PROVIDER=openai
 ```
 
 ## セキュリティ機能

@@ -8,6 +8,8 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { uploadRouter } from "../uploadRoute";
+import { ENV } from "./env";
+import { ensureStorageDir } from "../storage";
 import { sdk } from "./sdk";
 import type { MaybeAuthenticatedRequest } from "../types";
 
@@ -31,16 +33,31 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  await ensureStorageDir();
+
   const app = express();
   const server = createServer(app);
 
-  // Trust proxy for platforms like Manus that use reverse proxy
+  // Trust proxy for deployments that run behind a reverse proxy
   app.set("trust proxy", 1);
 
   // Configure body parser with larger size limit for file uploads
   // Base64エンコーディングは約33%のオーバーヘッドがあるため、500MBのファイルには約700MBが必要
   app.use(express.json({ limit: "700mb" }));
   app.use(express.urlencoded({ limit: "700mb", extended: true }));
+
+  app.use(
+    "/api/storage",
+    express.static(ENV.storageDir, {
+      dotfiles: "deny",
+      index: false,
+      fallthrough: false,
+      setHeaders: (res) => {
+        res.setHeader("X-Content-Type-Options", "nosniff");
+      },
+    })
+  );
+
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
 

@@ -41,6 +41,9 @@ JWT_SECRET=your-very-long-secret-key-at-least-32-chars
 
 # OAuth認証サーバーURL
 OAUTH_SERVER_URL=https://oauth.example.com
+
+# 認証モード（none | oauth）
+AUTH_MODE=none
 ```
 
 ### オプション環境変数
@@ -49,9 +52,10 @@ OAUTH_SERVER_URL=https://oauth.example.com
 # アプリケーションID
 VITE_APP_ID=tutorial-gen
 
-# LLM API設定（AI機能に必須）
-BUILT_IN_FORGE_API_URL=https://api.openai.com
-BUILT_IN_FORGE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+# LLM/TTS API設定（AI機能に必須）
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+TTS_PROVIDER=openai
 
 # 管理者ユーザーのOpenID
 OWNER_OPEN_ID=admin-user-open-id
@@ -132,7 +136,7 @@ APIにはレート制限が組み込まれています：
 
 ## S3/ストレージ設定
 
-Manusプラットフォームでは、組み込みのストレージプロキシが使用されます。
+ローカル環境では `STORAGE_DIR` 配下のファイルストレージが使用されます。
 カスタムデプロイの場合は、`server/storage.ts` を適切なS3/GCS/Azure Blobクライアントに置き換えてください。
 
 ## TTS（音声合成）設定
@@ -153,8 +157,9 @@ TTS機能はOpenAI TTS API互換のエンドポイントを使用します。
 ### 設定
 
 ```env
-BUILT_IN_FORGE_API_URL=https://api.openai.com
-BUILT_IN_FORGE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+TTS_PROVIDER=openai
 ```
 
 **注意**: TTS APIキーが設定されていない場合、無音のフォールバック音声が生成されます。

@@ -415,7 +415,7 @@ export const appRouter = router({
     generateAudio: protectedProcedure
       .input(z.object({
         projectId: z.number(),
-        voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
+        voice: z.string().min(1).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         // セキュリティ: プロジェクトの所有者チェック

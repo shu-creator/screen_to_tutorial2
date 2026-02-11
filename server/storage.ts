@@ -1,108 +1,112 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
+import fs from "fs/promises";
+import path from "path";
+import { ENV } from "./_core/env";
 
-import { ENV } from './_core/env';
-
-type StorageConfig = { baseUrl: string; apiKey: string };
-
-function getStorageConfig(): StorageConfig {
-  const baseUrl = ENV.forgeApiUrl;
-  const apiKey = ENV.forgeApiKey;
-
-  if (!baseUrl || !apiKey) {
-    throw new Error(
-      "Storage proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
-    );
-  }
-
-  return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
-}
-
-function buildUploadUrl(baseUrl: string, relKey: string): URL {
-  const url = new URL("v1/storage/upload", ensureTrailingSlash(baseUrl));
-  url.searchParams.set("path", normalizeKey(relKey));
-  return url;
-}
-
-async function buildDownloadUrl(
-  baseUrl: string,
-  relKey: string,
-  apiKey: string
-): Promise<string> {
-  const downloadApiUrl = new URL(
-    "v1/storage/downloadUrl",
-    ensureTrailingSlash(baseUrl)
-  );
-  downloadApiUrl.searchParams.set("path", normalizeKey(relKey));
-  const response = await fetch(downloadApiUrl, {
-    method: "GET",
-    headers: buildAuthHeaders(apiKey),
-  });
-  return (await response.json()).url;
-}
-
-function ensureTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value : `${value}/`;
-}
+const STORAGE_ROUTE_PREFIX = "/api/storage/";
 
 function normalizeKey(relKey: string): string {
-  return relKey.replace(/^\/+/, "");
-}
-
-function toFormData(
-  data: Buffer | Uint8Array | string,
-  contentType: string,
-  fileName: string
-): FormData {
-  // Convert binary data to ArrayBuffer which Blob accepts without type issues
-  let blobPart: BlobPart;
-  if (typeof data === "string") {
-    blobPart = data;
-  } else {
-    // For Buffer or Uint8Array, copy to new ArrayBuffer
-    const bytes = new Uint8Array(data);
-    blobPart = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  const normalized = path.posix.normalize(relKey.replace(/^\/+/, ""));
+  if (
+    normalized.length === 0 ||
+    normalized === "." ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../")
+  ) {
+    throw new Error(`Invalid storage key: ${relKey}`);
   }
-  const blob = new Blob([blobPart], { type: contentType });
-  const form = new FormData();
-  form.append("file", blob, fileName || "file");
-  return form;
+  return normalized;
 }
 
-function buildAuthHeaders(apiKey: string): HeadersInit {
-  return { Authorization: `Bearer ${apiKey}` };
+function getStorageRoot(): string {
+  return ENV.storageDir;
+}
+
+function keyToFsPath(key: string): string {
+  const root = getStorageRoot();
+  const filePath = path.resolve(root, key);
+  const normalizedRoot = path.resolve(root) + path.sep;
+  if (!filePath.startsWith(normalizedRoot)) {
+    throw new Error(`Path traversal detected for key: ${key}`);
+  }
+  return filePath;
+}
+
+function keyToPublicUrl(key: string): string {
+  const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+  return `${STORAGE_ROUTE_PREFIX}${encodedKey}`;
+}
+
+function storageUrlToKey(url: string): string {
+  if (!url.startsWith(STORAGE_ROUTE_PREFIX)) {
+    throw new Error(`Unsupported storage URL: ${url}`);
+  }
+
+  const keyPart = url
+    .slice(STORAGE_ROUTE_PREFIX.length)
+    .split("?")[0]
+    .split("#")[0]
+    .split("/")
+    .map((segment) => decodeURIComponent(segment))
+    .join("/");
+
+  return normalizeKey(keyPart);
+}
+
+function toBuffer(data: Buffer | Uint8Array | string): Buffer {
+  if (typeof data === "string") {
+    return Buffer.from(data);
+  }
+  return Buffer.from(data);
+}
+
+export function isLocalStorageUrl(url: string): boolean {
+  return url.startsWith(STORAGE_ROUTE_PREFIX);
+}
+
+export function resolveLocalStoragePathFromUrl(url: string): string {
+  const key = storageUrlToKey(url);
+  return keyToFsPath(key);
+}
+
+export async function readBinaryFromSource(source: string): Promise<Buffer> {
+  if (isLocalStorageUrl(source)) {
+    return fs.readFile(resolveLocalStoragePathFromUrl(source));
+  }
+
+  if (source.startsWith("http://") || source.startsWith("https://")) {
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download file: ${response.status} ${response.statusText}`
+      );
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  return fs.readFile(source);
+}
+
+export async function ensureStorageDir(): Promise<void> {
+  await fs.mkdir(getStorageRoot(), { recursive: true });
 }
 
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
-  contentType = "application/octet-stream"
+  _contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string }> {
-  const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
-  const uploadUrl = buildUploadUrl(baseUrl, key);
-  const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
-  const response = await fetch(uploadUrl, {
-    method: "POST",
-    headers: buildAuthHeaders(apiKey),
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const message = await response.text().catch(() => response.statusText);
-    throw new Error(
-      `Storage upload failed (${response.status} ${response.statusText}): ${message}`
-    );
-  }
-  const url = (await response.json()).url;
-  return { key, url };
+  const filePath = keyToFsPath(key);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, toBuffer(data));
+  return { key, url: keyToPublicUrl(key) };
 }
 
-export async function storageGet(relKey: string): Promise<{ key: string; url: string; }> {
-  const { baseUrl, apiKey } = getStorageConfig();
+export async function storageGet(
+  relKey: string
+): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
-  return {
-    key,
-    url: await buildDownloadUrl(baseUrl, key, apiKey),
-  };
+  const filePath = keyToFsPath(key);
+  await fs.access(filePath);
+  return { key, url: keyToPublicUrl(key) };
 }

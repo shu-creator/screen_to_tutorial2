@@ -3,9 +3,11 @@ import { promisify } from "util";
 import path from "path";
 import fs from "fs/promises";
 import { storagePut } from "./storage";
+import { readBinaryFromSource } from "./storage";
 import * as db from "./db";
 import { nanoid } from "nanoid";
-import { generateSpeech, generateSpeechForLongText, type TTSVoice } from "./_core/tts";
+import { generateSpeechForLongText, type TTSVoice } from "./_core/tts";
+import { ENV } from "./_core/env";
 import { createTempFilePath, createTempDir, safeTempFileDelete, safeTempDirDelete } from "./tempFileManager";
 
 const execFileAsync = promisify(execFile);
@@ -49,7 +51,7 @@ async function generateAudio(
   const result = await generateSpeechForLongText({
     text,
     voice,
-    model: "gpt-4o-mini-tts",
+    model: ENV.ttsModel,
     speed: 1.0,
     format: "mp3",
   });
@@ -158,16 +160,14 @@ export async function generateVideo(projectId: number): Promise<string> {
       if (!frame) continue;
 
       // 画像をダウンロード
-      const imageResponse = await fetch(frame.imageUrl);
-      const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+      const imageBuffer = await readBinaryFromSource(frame.imageUrl);
       const imagePath = path.join(tempDir, `frame_${step.id}.jpg`);
       await fs.writeFile(imagePath, imageBuffer);
 
       // 音声ファイルのパス
       let audioPath: string | null = null;
       if (step.audioUrl) {
-        const audioResponse = await fetch(step.audioUrl);
-        const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+        const audioBuffer = await readBinaryFromSource(step.audioUrl);
         audioPath = path.join(tempDir, `audio_${step.id}.mp3`);
         await fs.writeFile(audioPath, audioBuffer);
       }

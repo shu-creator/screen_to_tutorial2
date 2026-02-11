@@ -30,6 +30,9 @@ const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserI
 
 class OAuthService {
   constructor(private client: ReturnType<typeof axios.create>) {
+    if (ENV.authMode !== "oauth") {
+      return;
+    }
     console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
     if (!ENV.oAuthServerUrl) {
       console.error(
@@ -160,7 +163,7 @@ class SDKServer {
   }
 
   /**
-   * Create a session token for a Manus user openId
+   * Create a session token for a user openId
    * @example
    * const sessionToken = await sdk.createSessionToken(userInfo.openId);
    */
@@ -256,6 +259,10 @@ class SDKServer {
   }
 
   async authenticateRequest(req: Request): Promise<User> {
+    if (ENV.authMode === "none") {
+      return this.authenticateDevelopmentUser();
+    }
+
     // Regular authentication flow
     const cookies = this.parseCookies(req.headers.cookie);
     const sessionCookie = cookies.get(COOKIE_NAME);
@@ -295,6 +302,28 @@ class SDKServer {
       openId: user.openId,
       lastSignedIn: signedInAt,
     });
+
+    return user;
+  }
+
+  private async authenticateDevelopmentUser(): Promise<User> {
+    const openId = process.env.DEV_USER_OPEN_ID ?? "local-dev-user";
+    const now = new Date();
+
+    await db.upsertUser({
+      openId,
+      name: process.env.DEV_USER_NAME ?? "Local Dev User",
+      email: process.env.DEV_USER_EMAIL ?? null,
+      loginMethod: "local",
+      lastSignedIn: now,
+    });
+
+    const user = await db.getUserByOpenId(openId);
+    if (!user) {
+      throw ForbiddenError(
+        "AUTH_MODE=none ですが、開発用ユーザーをデータベースに作成できませんでした"
+      );
+    }
 
     return user;
   }
