@@ -10,8 +10,11 @@ import { serveStatic, setupVite } from "./vite";
 import { uploadRouter } from "../uploadRoute";
 import { ENV } from "./env";
 import { ensureStorageDir } from "../storage";
+import { createLogger } from "./logger";
 import { sdk } from "./sdk";
 import type { MaybeAuthenticatedRequest } from "../types";
+
+const logger = createLogger("Server");
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -110,12 +113,16 @@ async function startServer() {
   const port = await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
+    logger.info(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
   server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+    logger.info(`Server running on http://localhost:${port}/`);
   });
 }
 
-startServer().catch(console.error);
+startServer().catch((error: unknown) => {
+  const normalizedError =
+    error instanceof Error ? error : new Error(String(error));
+  logger.error("Failed to start server", undefined, normalizedError);
+});

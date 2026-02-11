@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import path from "path";
 
 type AuthMode = "none" | "oauth";
@@ -15,8 +16,12 @@ const DEFAULT_TTS_MODEL: Record<TTSProvider, string> = {
   gemini: "gemini-2.5-flash-preview-tts",
 };
 
+const DEV_DEFAULT_JWT_SECRET =
+  "dev-only-jwt-secret-do-not-use-in-production-change-this";
+
 function requireEnv(key: string, defaultValue?: string): string {
-  const value = process.env[key] ?? defaultValue;
+  const rawValue = process.env[key];
+  const value = rawValue && rawValue.length > 0 ? rawValue : defaultValue;
   if (!value && process.env.NODE_ENV === "production") {
     throw new Error(`必須環境変数 ${key} が設定されていません`);
   }
@@ -127,7 +132,12 @@ validateEnvOnStartup();
 export const ENV = {
   appId: process.env.VITE_APP_ID ?? "",
   authMode,
-  cookieSecret: requireEnv("JWT_SECRET"),
+  cookieSecret: requireEnv(
+    "JWT_SECRET",
+    process.env.NODE_ENV === "production"
+      ? undefined
+      : `${DEV_DEFAULT_JWT_SECRET}-${crypto.randomUUID()}`
+  ),
   databaseUrl: requireEnv("DATABASE_URL"),
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",

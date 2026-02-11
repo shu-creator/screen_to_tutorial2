@@ -33,6 +33,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { SlidePreview } from "@/components/SlidePreview";
+import NotFound from "./NotFound";
 
 // ソート可能なステップカードコンポーネント
 type StepData = {
@@ -226,11 +227,22 @@ function SortableStepCard({
 
 export default function ProjectDetail() {
   const params = useParams<{ id: string }>();
-  const projectId = parseInt(params.id || "0");
+  const parsedProjectId = Number(params.id);
+  const isValidProjectId = Number.isInteger(parsedProjectId) && parsedProjectId > 0;
+  const projectId = isValidProjectId ? parsedProjectId : 0;
   
-  const { data: project, isLoading: projectLoading, refetch: refetchProject } = trpc.project.getById.useQuery({ id: projectId });
-  const { data: frames, isLoading: framesLoading, refetch: refetchFrames } = trpc.frame.listByProject.useQuery({ projectId });
-  const { data: steps, isLoading: stepsLoading, refetch: refetchSteps } = trpc.step.listByProject.useQuery({ projectId });
+  const { data: project, isLoading: projectLoading, refetch: refetchProject } = trpc.project.getById.useQuery(
+    { id: projectId },
+    { enabled: isValidProjectId }
+  );
+  const { data: frames, isLoading: framesLoading, refetch: refetchFrames } = trpc.frame.listByProject.useQuery(
+    { projectId },
+    { enabled: isValidProjectId }
+  );
+  const { data: steps, isLoading: stepsLoading, refetch: refetchSteps } = trpc.step.listByProject.useQuery(
+    { projectId },
+    { enabled: isValidProjectId }
+  );
   const utils = trpc.useUtils();
   const [progressData, setProgressData] = useState<{ progress: number; message: string; errorMessage?: string | null } | null>(null);
 
@@ -506,6 +518,10 @@ export default function ProjectDetail() {
       window.open(url, '_blank');
     }
   };
+
+  if (!isValidProjectId) {
+    return <NotFound />;
+  }
 
   if (projectLoading) {
     return (
