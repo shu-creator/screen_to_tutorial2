@@ -42,20 +42,32 @@ JWT_SECRET=your-very-long-secret-key-at-least-32-chars
 # OAuth認証サーバーURL
 OAUTH_SERVER_URL=https://oauth.example.com
 
-# 認証モード（none | oauth）
-AUTH_MODE=none
+# OAuthポータルURL（ログイン画面遷移先）
+VITE_OAUTH_PORTAL_URL=https://oauth-portal.example.com
+
+# アプリケーションID
+VITE_APP_ID=tutorial-gen
+
+# 認証モード（本番はoauthのみ）
+AUTH_MODE=oauth
+VITE_AUTH_MODE=oauth
 ```
+
+**注意**: 本番環境では `AUTH_MODE=none` は禁止です。例外的に有効化する場合のみ `ALLOW_UNSAFE_AUTH_MODE_NONE=true` が必要です（非推奨）。
 
 ### オプション環境変数
 
 ```env
-# アプリケーションID
-VITE_APP_ID=tutorial-gen
-
 # LLM/TTS API設定（AI機能に必須）
 LLM_PROVIDER=openai
+LLM_MODEL=gpt-5.2
+LLM_API_KEY=
 OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+GEMINI_API_KEY=
+ANTHROPIC_API_KEY=
 TTS_PROVIDER=openai
+TTS_MODEL=gpt-4o-mini-tts
+TTS_API_KEY=
 
 # 管理者ユーザーのOpenID
 OWNER_OPEN_ID=admin-user-open-id
@@ -79,7 +91,7 @@ CREATE DATABASE tutorialgen CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 pnpm install
 
 # マイグレーションを実行
-pnpm drizzle-kit push
+pnpm db:push
 ```
 
 **注意**: `postbuild` スクリプトにマイグレーションが含まれているため、`pnpm run build` 後に自動実行されます。
@@ -139,30 +151,34 @@ APIにはレート制限が組み込まれています：
 ローカル環境では `STORAGE_DIR` 配下のファイルストレージが使用されます。
 カスタムデプロイの場合は、`server/storage.ts` を適切なS3/GCS/Azure Blobクライアントに置き換えてください。
 
-## TTS（音声合成）設定
+## LLM / TTS 設定
 
-TTS機能はOpenAI TTS API互換のエンドポイントを使用します。
+LLM は `openai | gemini | claude`、TTS は `openai | gemini` を選択できます。
+`LLM_API_KEY` / `TTS_API_KEY` が設定されている場合、それぞれ最優先で使用されます。
 
 ### 対応音声
 
-| Voice ID | 説明 |
-|----------|------|
-| alloy | 中性的で落ち着いた声 |
-| echo | 男性的で深みのある声 |
-| fable | イギリス英語風の声 |
-| onyx | 男性的で力強い声 |
-| nova | 女性的で明るい声（推奨） |
-| shimmer | 女性的で柔らかい声 |
+| Provider | Voice ID | 説明 |
+|----------|----------|------|
+| openai | alloy | 中性的で落ち着いた声 |
+| openai | echo | 男性的で深みのある声 |
+| openai | fable | イギリス英語風の声 |
+| openai | onyx | 男性的で力強い声 |
+| openai | nova | 女性的で明るい声（推奨） |
+| openai | shimmer | 女性的で柔らかい声 |
+| gemini | Kore | Geminiデフォルト音声 |
 
 ### 設定
 
 ```env
 LLM_PROVIDER=openai
+LLM_MODEL=gpt-5.2
 OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
 TTS_PROVIDER=openai
+TTS_MODEL=gpt-4o-mini-tts
 ```
 
-**注意**: TTS APIキーが設定されていない場合、無音のフォールバック音声が生成されます。
+**注意**: 開発環境ではTTSが失敗すると無音フォールバックが生成されます。本番環境ではLLM/TTS APIキー未設定時に起動エラーになります。
 
 ## トラブルシューティング
 

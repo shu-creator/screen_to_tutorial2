@@ -10,7 +10,7 @@
 - 重要な操作手順を自動でキーフレームとして抽出
 
 ### 2. AI画像解析とステップ構造化
-- LLM（GPT-4o）による画像解析
+- LLM（`LLM_PROVIDER` で選択）による画像解析
 - 各フレームから以下の情報を自動生成：
   - ステップタイトル
   - 操作説明
@@ -56,8 +56,8 @@
 - PptxGenJS
 
 ### AI・機械学習
-- GPT-4o（画像解析）
 - マルチLLMプロバイダー統合（OpenAI/Gemini/Claude）
+- マルチTTSプロバイダー統合（OpenAI/Gemini）
 
 ### インフラ
 - ローカルファイルシステム（ファイルストレージ）
@@ -139,7 +139,7 @@ AI生成されたステップ情報を管理
 
 デプロイの詳細については、[DEPLOYMENT.md](./DEPLOYMENT.md) を参照してください。
 
-### クイックスタート
+### クイックスタート（ローカル開発）
 
 ```bash
 # 依存関係をインストール
@@ -147,12 +147,19 @@ pnpm install
 
 # 環境変数を設定
 cp .env.example .env
-# .env を編集して必要な値を設定
+# .env を編集（AUTH_MODE=none / VITE_AUTH_MODE=none）
 
-# ビルド（マイグレーションを含む）
+# DBスキーマを反映
+pnpm db:push
+
+# 開発サーバー起動
+pnpm dev
+```
+
+### 本番ビルド
+
+```bash
 pnpm run build
-
-# サーバー起動
 pnpm start
 ```
 
@@ -183,12 +190,47 @@ DATABASE_URL=mysql://root@localhost:3306/tutorialgen
 ```env
 DATABASE_URL=mysql://user:password@host:3306/database
 JWT_SECRET=your-very-long-secret-key-at-least-32-chars
-AUTH_MODE=none
+AUTH_MODE=oauth
+VITE_AUTH_MODE=oauth
 OAUTH_SERVER_URL=https://oauth.example.com
+VITE_OAUTH_PORTAL_URL=https://oauth-portal.example.com
+VITE_APP_ID=your-app-id
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
 TTS_PROVIDER=openai
 ```
+
+本番環境では `AUTH_MODE=none` は禁止です。例外的に有効化する場合のみ `ALLOW_UNSAFE_AUTH_MODE_NONE=true` を明示してください（推奨しません）。
+
+**ローカル開発（認証なし）例:**
+```env
+AUTH_MODE=none
+VITE_AUTH_MODE=none
+DEV_USER_OPEN_ID=local-dev-user
+DEV_USER_NAME=Local Dev User
+```
+
+### LLM / TTS プロバイダー設定
+
+```env
+# LLM: openai | gemini | claude
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-5.2
+LLM_API_KEY=
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+ANTHROPIC_API_KEY=
+
+# TTS: openai | gemini
+TTS_PROVIDER=openai
+TTS_MODEL=gpt-4o-mini-tts
+TTS_API_KEY=
+```
+
+- APIキー解決順は `LLM_API_KEY` / `TTS_API_KEY` が最優先です。
+- `LLM_API_KEY` 未設定時はプロバイダーごとのキー（OpenAI/Gemini/Anthropic）を参照します。
+- `TTS_API_KEY` 未設定時は OpenAI/Gemini のキーを参照します。
+- 開発環境でTTSが失敗した場合は無音フォールバックを生成します（本番はAPIキー未設定で起動エラー）。
 
 ## セキュリティ機能
 
@@ -202,8 +244,8 @@ TTS_PROVIDER=openai
 
 - ✅ 動画アップロード（Base64エンコード、進捗表示付き）
 - ✅ フレーム抽出（OpenCV）
-- ✅ AIステップ生成（GPT-4o）
-- ✅ TTS音声合成（OpenAI TTS API）
+- ✅ AIステップ生成（`LLM_PROVIDER`: OpenAI/Gemini/Claude）
+- ✅ TTS音声合成（`TTS_PROVIDER`: OpenAI/Gemini）
 - ✅ スライド生成（PowerPoint）
 - ✅ 動画生成（FFmpeg）
 - ✅ ダウンロード機能（スライド/動画）
