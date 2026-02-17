@@ -176,6 +176,12 @@ function validateEnvOnStartup(): void {
     );
   }
 
+  if (asrProvider === "openai" && !process.env.OPENAI_API_KEY) {
+    throw new Error(
+      "ASR_PROVIDER=openai の場合は OPENAI_API_KEY が必須です。利用しない場合は ASR_PROVIDER=none を設定してください"
+    );
+  }
+
   if (isProduction) {
     if (authMode === "none" && !allowUnsafeNoneAuthInProduction) {
       throw new Error(

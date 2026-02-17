@@ -350,19 +350,40 @@ export const appRouter = router({
         }
         // セキュリティ: ユーザーIDによる所有者チェック
         await db.deleteStep(input.id, ctx.user.id);
+        const remainingSteps = await db.getStepsByProjectId(step.projectId, ctx.user.id);
+        const sortedRemaining = remainingSteps
+          .slice()
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+        if (sortedRemaining.length > 0) {
+          await db.reorderSteps(
+            step.projectId,
+            sortedRemaining.map((item) => item.id),
+          );
+        }
+
         await patchStepArtifact(step.projectId, (artifact) => {
-          const filtered = artifact.steps
-            .filter(
-              (item) =>
-                item.legacy_step_db_id !== input.id &&
-                item.sort_order !== step.sortOrder,
-            )
-            .sort((a, b) => a.sort_order - b.sort_order)
-            .map((item, idx) => ({
-              ...item,
-              sort_order: idx,
-              step_id: `step-${idx + 1}`,
-            }));
+          const byLegacyId = new Map(
+            artifact.steps
+              .filter((item) => typeof item.legacy_step_db_id === "number")
+              .map((item) => [item.legacy_step_db_id as number, item]),
+          );
+
+          const filtered = sortedRemaining
+            .map((dbStep, idx) => {
+              const artifactStep = byLegacyId.get(dbStep.id);
+              if (!artifactStep) return null;
+              return {
+                ...artifactStep,
+                sort_order: idx,
+                step_id: `step-${idx + 1}`,
+              };
+            })
+            .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+          if (filtered.length !== sortedRemaining.length) {
+            return artifact;
+          }
+
           return {
             ...artifact,
             steps: filtered,
