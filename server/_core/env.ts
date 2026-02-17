@@ -4,6 +4,7 @@ import path from "path";
 type AuthMode = "none" | "oauth";
 type LLMProvider = "openai" | "gemini" | "claude";
 type TTSProvider = "openai" | "gemini";
+type SlidePreset = "default" | "training";
 
 const DEFAULT_LLM_MODEL: Record<LLMProvider, string> = {
   openai: "gpt-5.2",
@@ -41,6 +42,29 @@ function parseEnumEnv<T extends string>(
   throw new Error(
     `環境変数 ${key} の値が不正です: ${value}. 許可値: ${allowed.join(", ")}`
   );
+}
+
+function parseNumberEnv(
+  key: string,
+  defaultValue: number,
+  options?: { min?: number; max?: number }
+): number {
+  const value = process.env[key];
+  if (!value) return defaultValue;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`環境変数 ${key} の値が数値ではありません: ${value}`);
+  }
+
+  if (options?.min !== undefined && parsed < options.min) {
+    throw new Error(`環境変数 ${key} は ${options.min} 以上である必要があります`);
+  }
+  if (options?.max !== undefined && parsed > options.max) {
+    throw new Error(`環境変数 ${key} は ${options.max} 以下である必要があります`);
+  }
+
+  return parsed;
 }
 
 function resolveLLMApiKey(provider: LLMProvider): string {
@@ -84,16 +108,52 @@ const ttsProvider = parseEnumEnv<TTSProvider>(
   ["openai", "gemini"],
   "openai"
 );
+const slidePreset = parseEnumEnv<SlidePreset>(
+  "SLIDE_PRESET",
+  ["default", "training"],
+  "default"
+);
 
 const llmModel = process.env.LLM_MODEL ?? DEFAULT_LLM_MODEL[llmProvider];
 const ttsModel = process.env.TTS_MODEL ?? DEFAULT_TTS_MODEL[ttsProvider];
 const llmApiKey = resolveLLMApiKey(llmProvider);
 const ttsApiKey = resolveTTSApiKey(ttsProvider);
+const slideRoiMinAreaRatio = parseNumberEnv(
+  "SLIDE_ROI_MIN_AREA_RATIO",
+  0.015,
+  { min: 0, max: 1 }
+);
+const slideRoiMaxAreaRatio = parseNumberEnv(
+  "SLIDE_ROI_MAX_AREA_RATIO",
+  0.65,
+  { min: 0, max: 1 }
+);
+const slideRoiPaddingRatio = parseNumberEnv(
+  "SLIDE_ROI_PADDING_RATIO",
+  0.15,
+  { min: 0, max: 0.5 }
+);
+const slideRoiMinCropWidthPx = parseNumberEnv(
+  "SLIDE_ROI_MIN_CROP_WIDTH_PX",
+  900,
+  { min: 100 }
+);
+const slideSpotlightOpacity = parseNumberEnv(
+  "SLIDE_SPOTLIGHT_OPACITY",
+  0.35,
+  { min: 0, max: 1 }
+);
 
 function validateEnvOnStartup(): void {
   const isProduction = process.env.NODE_ENV === "production";
   const allowUnsafeNoneAuthInProduction =
     process.env.ALLOW_UNSAFE_AUTH_MODE_NONE === "true";
+
+  if (slideRoiMinAreaRatio > slideRoiMaxAreaRatio) {
+    throw new Error(
+      "SLIDE_ROI_MIN_AREA_RATIO は SLIDE_ROI_MAX_AREA_RATIO 以下である必要があります"
+    );
+  }
 
   if (isProduction) {
     if (authMode === "none" && !allowUnsafeNoneAuthInProduction) {
@@ -153,7 +213,13 @@ export const ENV = {
   ttsProvider,
   ttsModel,
   ttsApiKey,
+  slidePreset,
+  slideRoiMinAreaRatio,
+  slideRoiMaxAreaRatio,
+  slideRoiPaddingRatio,
+  slideRoiMinCropWidthPx,
+  slideSpotlightOpacity,
   oauthPortalUrl: process.env.VITE_OAUTH_PORTAL_URL ?? "",
 };
 
-export type { AuthMode, LLMProvider, TTSProvider };
+export type { AuthMode, LLMProvider, TTSProvider, SlidePreset };

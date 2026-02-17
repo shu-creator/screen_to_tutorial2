@@ -249,3 +249,217 @@ export function applyFinalStepCompletionFix(
   }
   return fixFinalStepIfHover(step.operation, step.description);
 }
+
+// ---------------------------------------------------------------------------
+// 6) 投影プリセット向けテキスト整形
+// ---------------------------------------------------------------------------
+
+const CAUTION_KEYWORDS = [
+  "注意",
+  "必ず",
+  "禁止",
+  "しない",
+  "共有",
+  "セキュリティ",
+  "漏えい",
+];
+const NEXT_KEYWORDS = [
+  "次",
+  "続け",
+  "その後",
+  "再ログイン",
+  "次に",
+];
+
+const HALF_WIDTH_CHAR_REGEX = /[\u0000-\u00ff]/;
+
+export interface ProjectionTextOptions {
+  maxUnitsPerLine: number;
+  maxLines: number;
+}
+
+export interface ProjectionFormattedText {
+  text: string;
+  overflow: string;
+  lineCount: number;
+  truncated: boolean;
+}
+
+function charUnits(char: string): number {
+  return HALF_WIDTH_CHAR_REGEX.test(char) ? 0.5 : 1;
+}
+
+function splitSentences(text: string): string[] {
+  if (!text) return [];
+  return normalizeWhitespace(text)
+    .split(/(?<=[。！？.!?])\s*/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function wrapTextByUnits(
+  text: string,
+  maxUnitsPerLine: number,
+  maxLines: number,
+): { lines: string[]; overflow: string } {
+  const normalized = normalizeWhitespace(text);
+  if (!normalized || maxLines <= 0) {
+    return { lines: [], overflow: normalized };
+  }
+
+  const lines: string[] = [];
+  let cursor = 0;
+
+  while (cursor < normalized.length && lines.length < maxLines) {
+    let line = "";
+    let units = 0;
+
+    while (cursor < normalized.length) {
+      const char = normalized[cursor];
+      const nextUnits = units + charUnits(char);
+      if (line.length > 0 && nextUnits > maxUnitsPerLine) {
+        break;
+      }
+      line += char;
+      units = nextUnits;
+      cursor += 1;
+    }
+
+    lines.push(line.trimEnd());
+    while (normalized[cursor] === " ") {
+      cursor += 1;
+    }
+  }
+
+  return {
+    lines,
+    overflow: normalized.slice(cursor).trim(),
+  };
+}
+
+function appendEllipsis(lines: string[]): string[] {
+  if (lines.length === 0) return lines;
+  const lastLine = lines[lines.length - 1];
+  if (!lastLine || /[。！？.!?…]$/.test(lastLine)) {
+    return lines;
+  }
+  const cloned = [...lines];
+  cloned[cloned.length - 1] = `${lastLine}…`;
+  return cloned;
+}
+
+export function estimateTextUnits(text: string): number {
+  if (!text) return 0;
+  let total = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    total += charUnits(text[index]);
+  }
+  return total;
+}
+
+export function formatProjectionOperation(
+  operation: string,
+  options: ProjectionTextOptions,
+): ProjectionFormattedText {
+  const source = ensureTerminalPunctuation(normalizeWhitespace(operation));
+  const wrapped = wrapTextByUnits(
+    source,
+    options.maxUnitsPerLine,
+    options.maxLines,
+  );
+  const lines = wrapped.overflow ? appendEllipsis(wrapped.lines) : wrapped.lines;
+  return {
+    text: lines.join("\n"),
+    overflow: wrapped.overflow,
+    lineCount: lines.length,
+    truncated: Boolean(wrapped.overflow),
+  };
+}
+
+function isCautionSentence(sentence: string): boolean {
+  return CAUTION_KEYWORDS.some((keyword) => sentence.includes(keyword));
+}
+
+function isNextSentence(sentence: string): boolean {
+  return NEXT_KEYWORDS.some((keyword) => sentence.includes(keyword));
+}
+
+function pickSentence(
+  sentences: string[],
+  usedIndexes: Set<number>,
+  predicate: (sentence: string) => boolean,
+): string | null {
+  for (let index = 0; index < sentences.length; index += 1) {
+    if (usedIndexes.has(index)) continue;
+    if (!predicate(sentences[index])) continue;
+    usedIndexes.add(index);
+    return sentences[index];
+  }
+  return null;
+}
+
+export function formatProjectionDetail(
+  operation: string,
+  detail: string,
+  options: ProjectionTextOptions,
+): ProjectionFormattedText {
+  const normalizedDetail = anonymizeOnScreenStepNumbers(
+    ensureTerminalPunctuation(normalizeWhitespace(detail)),
+  );
+  const detailSentences = splitSentences(normalizedDetail);
+  const normalizedOperation = ensureTerminalPunctuation(
+    normalizeWhitespace(operation),
+  );
+
+  const usedIndexes = new Set<number>();
+  const caution = pickSentence(detailSentences, usedIndexes, isCautionSentence);
+  const next = pickSentence(detailSentences, usedIndexes, isNextSentence);
+  const result =
+    pickSentence(
+      detailSentences,
+      usedIndexes,
+      (sentence) => !isCautionSentence(sentence) && !isNextSentence(sentence),
+    ) ??
+    pickSentence(detailSentences, usedIndexes, () => true) ??
+    normalizedOperation;
+
+  const bullets = [
+    `・結果: ${result}`,
+    caution ? `・注意: ${caution}` : null,
+    next ? `・次: ${next}` : null,
+  ].filter((line): line is string => Boolean(line));
+
+  const lines: string[] = [];
+  const overflowSegments: string[] = [];
+
+  for (let bulletIndex = 0; bulletIndex < bullets.length; bulletIndex += 1) {
+    const remainingLines = options.maxLines - lines.length;
+    if (remainingLines <= 0) {
+      overflowSegments.push(...bullets.slice(bulletIndex));
+      break;
+    }
+
+    const wrapped = wrapTextByUnits(
+      bullets[bulletIndex],
+      options.maxUnitsPerLine,
+      remainingLines,
+    );
+    lines.push(...wrapped.lines);
+
+    if (wrapped.overflow) {
+      overflowSegments.push(wrapped.overflow);
+      overflowSegments.push(...bullets.slice(bulletIndex + 1));
+      break;
+    }
+  }
+
+  const finalizedLines = overflowSegments.length > 0 ? appendEllipsis(lines) : lines;
+  const overflow = overflowSegments.join(" ").trim();
+
+  return {
+    text: finalizedLines.join("\n"),
+    overflow,
+    lineCount: finalizedLines.length,
+    truncated: overflow.length > 0,
+  };
+}

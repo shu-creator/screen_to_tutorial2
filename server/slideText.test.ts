@@ -9,6 +9,9 @@ import {
   fixFinalStepIfHover,
   applyFinalStepCompletionFix,
   FINAL_STEP_FALLBACK,
+  estimateTextUnits,
+  formatProjectionOperation,
+  formatProjectionDetail,
 } from "./slideText";
 
 // ---------------------------------------------------------------------------
@@ -433,5 +436,54 @@ describe("テキスト整形パイプライン", () => {
     expect(withPunct.endsWith("。")).toBe(true);
     const result = truncateAtSentence(withPunct, 120);
     expect(result.endsWith("。")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7) 投影プリセット向けテキスト整形
+// ---------------------------------------------------------------------------
+describe("estimateTextUnits", () => {
+  it("半角文字は全角文字より小さい単位で計算される", () => {
+    const asciiUnits = estimateTextUnits("ABCD");
+    const jpUnits = estimateTextUnits("あいうえ");
+    expect(asciiUnits).toBeLessThan(jpUnits);
+  });
+});
+
+describe("formatProjectionOperation", () => {
+  it("行数上限を守り、超過時は省略記号を付ける", () => {
+    const formatted = formatProjectionOperation(
+      "この操作はとても長く、投影資料では2行に収める必要があります。さらに説明が続きます。",
+      { maxUnitsPerLine: 14, maxLines: 2 },
+    );
+    expect(formatted.lineCount).toBeLessThanOrEqual(2);
+    expect(formatted.truncated).toBe(true);
+    expect(formatted.text.endsWith("…")).toBe(true);
+    expect(formatted.overflow.length).toBeGreaterThan(0);
+  });
+});
+
+describe("formatProjectionDetail", () => {
+  it("結果/注意/次 の順で箇条書き化する", () => {
+    const formatted = formatProjectionDetail(
+      "ログアウト画面を表示する",
+      "正常にログアウトされましたと表示されます。共有PCでは必ずログアウトを確認してください。続ける場合は再ログインします。",
+      { maxUnitsPerLine: 26, maxLines: 4 },
+    );
+    expect(formatted.text).toContain("・結果:");
+    expect(formatted.text).toContain("・注意:");
+    expect(formatted.text).toContain("・次:");
+    expect(formatted.lineCount).toBeLessThanOrEqual(4);
+  });
+
+  it("行数超過時は overflow に退避する", () => {
+    const formatted = formatProjectionDetail(
+      "設定を開く",
+      "結果を確認します。注意点を確認します。次の操作に進みます。追加の長い説明が続きます。",
+      { maxUnitsPerLine: 12, maxLines: 2 },
+    );
+    expect(formatted.truncated).toBe(true);
+    expect(formatted.overflow.length).toBeGreaterThan(0);
+    expect(formatted.lineCount).toBeLessThanOrEqual(2);
   });
 });

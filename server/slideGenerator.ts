@@ -4,6 +4,7 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type PptxGenJS from "pptxgenjs";
+import { ENV, type SlidePreset } from "./_core/env";
 import { getProjectById, getStepsByProjectId, getFramesByProjectId } from "./db";
 import { readBinaryFromSource } from "./storage";
 import {
@@ -12,6 +13,8 @@ import {
   anonymizeOnScreenStepNumbers,
   buildDisplayTitleMap,
   applyFinalStepCompletionFix,
+  formatProjectionOperation,
+  formatProjectionDetail,
 } from "./slideText";
 
 const execFileAsync = promisify(execFile);
@@ -21,6 +24,66 @@ type PptxSlide = ReturnType<PptxGenJS["addSlide"]>;
 const MAX_OPERATION_CHARS = 60;
 const MAX_DETAIL_CHARS = 120;
 const MAX_TOC_ITEMS_PER_SLIDE = 8; // 目次1ページあたりの項目数
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface TextConstraint {
+  maxUnitsPerLine: number;
+  maxLines: number;
+}
+
+interface SlideTemplateConfig {
+  preset: SlidePreset;
+  imageRect: Rect;
+  panelRect: Rect;
+  panelPaddingX: number;
+  panelPaddingY: number;
+  titleRect: Rect;
+  titleFontSize: number;
+  stepBadgeRect: Rect;
+  stepBadgeShape: "rect" | "ellipse";
+  stepBadgeFontSize: number;
+  progressFontSize: number;
+  sectionTitleFontSize: number;
+  operationFontSize: number;
+  detailFontSize: number;
+  operationLabelY: number;
+  operationTextY: number;
+  operationTextHeight: number;
+  detailLabelY: number;
+  detailTextY: number;
+  detailTextHeight: number;
+  useProjectionTextFormatter: boolean;
+  operationConstraint: TextConstraint;
+  detailConstraint: TextConstraint;
+}
+
+interface CroppingConfig {
+  minAreaRatio: number;
+  maxAreaRatio: number;
+  paddingRatio: number;
+  minCropWidthPx: number;
+  spotlightOpacity: number;
+}
+
+interface PixelRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface NormalizedRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 // カラー定義（プロフェッショナルなパレット）
 const COLORS = {
@@ -45,6 +108,59 @@ interface ROIConfig {
   zoomFactor: number; // 1.0 = no zoom, 1.5 = 150% zoom
   focusArea: "center" | "top" | "bottom" | "left" | "right";
 }
+
+const SLIDE_TEMPLATE_CONFIG: Record<SlidePreset, SlideTemplateConfig> = {
+  default: {
+    preset: "default",
+    imageRect: { x: 0.3, y: 0.8, w: 6.2, h: 4.5 },
+    panelRect: { x: 6.7, y: 0.8, w: 3.0, h: 4.5 },
+    panelPaddingX: 0.15,
+    panelPaddingY: 0.15,
+    titleRect: { x: 1.2, y: 0.2, w: 7.0, h: 0.45 },
+    titleFontSize: 22,
+    stepBadgeRect: { x: 0.3, y: 0.25, w: 0.8, h: 0.35 },
+    stepBadgeShape: "rect",
+    stepBadgeFontSize: 14,
+    progressFontSize: 12,
+    sectionTitleFontSize: 11,
+    operationFontSize: 12,
+    detailFontSize: 11,
+    operationLabelY: 0.15,
+    operationTextY: 0.45,
+    operationTextHeight: 1.0,
+    detailLabelY: 1.6,
+    detailTextY: 1.9,
+    detailTextHeight: 2.3,
+    useProjectionTextFormatter: false,
+    operationConstraint: { maxUnitsPerLine: 20, maxLines: 4 },
+    detailConstraint: { maxUnitsPerLine: 20, maxLines: 6 },
+  },
+  training: {
+    preset: "training",
+    imageRect: { x: 0.3, y: 0.8, w: 6.0, h: 4.5 },
+    panelRect: { x: 6.5, y: 0.8, w: 3.2, h: 4.5 },
+    panelPaddingX: 0.16,
+    panelPaddingY: 0.14,
+    titleRect: { x: 0.95, y: 0.2, w: 7.3, h: 0.55 },
+    titleFontSize: 28,
+    stepBadgeRect: { x: 0.3, y: 0.16, w: 0.52, h: 0.52 },
+    stepBadgeShape: "ellipse",
+    stepBadgeFontSize: 18,
+    progressFontSize: 15,
+    sectionTitleFontSize: 16,
+    operationFontSize: 18,
+    detailFontSize: 16,
+    operationLabelY: 0.16,
+    operationTextY: 0.52,
+    operationTextHeight: 1.55,
+    detailLabelY: 2.1,
+    detailTextY: 2.45,
+    detailTextHeight: 1.85,
+    useProjectionTextFormatter: true,
+    operationConstraint: { maxUnitsPerLine: 14.5, maxLines: 2 },
+    detailConstraint: { maxUnitsPerLine: 15.5, maxLines: 4 },
+  },
+};
 
 /**
  * テキストを指定文字数で切り詰め、省略記号を追加
@@ -97,14 +213,25 @@ function buildNotesText(step: {
   operation: string;
   description: string;
   narration?: string | null;
+}, overflow?: {
+  operationOverflow?: string;
+  detailOverflow?: string;
 }): string {
   const parts: string[] = [];
   parts.push(`【${step.title}】`);
   parts.push("");
   parts.push(`操作: ${step.operation}`);
+  if (overflow?.operationOverflow) {
+    parts.push(`操作（省略分）: ${overflow.operationOverflow}`);
+  }
   parts.push("");
   parts.push(`詳細:`);
   parts.push(step.description);
+  if (overflow?.detailOverflow) {
+    parts.push("");
+    parts.push(`詳細（省略分）:`);
+    parts.push(overflow.detailOverflow);
+  }
   if (step.narration) {
     parts.push("");
     parts.push(`ナレーション:`);
@@ -201,6 +328,173 @@ async function cropImageToROI(
     await fs.copyFile(inputPath, outputPath);
     return outputPath;
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizedToPixelRect(
+  rect: NormalizedRect,
+  dims: { width: number; height: number },
+): PixelRect {
+  return {
+    x: rect.x * dims.width,
+    y: rect.y * dims.height,
+    w: rect.w * dims.width,
+    h: rect.h * dims.height,
+  };
+}
+
+function pixelToNormalizedRect(
+  rect: PixelRect,
+  dims: { width: number; height: number },
+): NormalizedRect {
+  return {
+    x: rect.x / dims.width,
+    y: rect.y / dims.height,
+    w: rect.w / dims.width,
+    h: rect.h / dims.height,
+  };
+}
+
+function getCroppingConfig(): CroppingConfig {
+  return {
+    minAreaRatio: ENV.slideRoiMinAreaRatio,
+    maxAreaRatio: ENV.slideRoiMaxAreaRatio,
+    paddingRatio: ENV.slideRoiPaddingRatio,
+    minCropWidthPx: ENV.slideRoiMinCropWidthPx,
+    spotlightOpacity: ENV.slideSpotlightOpacity,
+  };
+}
+
+function isReliableRoiRegion(
+  region: NormalizedRect | null,
+  croppingConfig: CroppingConfig,
+): boolean {
+  if (!region) return false;
+  const areaRatio = region.w * region.h;
+  return (
+    areaRatio >= croppingConfig.minAreaRatio &&
+    areaRatio <= croppingConfig.maxAreaRatio
+  );
+}
+
+function buildCropRectFromRegion(
+  region: NormalizedRect,
+  dims: { width: number; height: number },
+  targetAspect: number,
+  croppingConfig: CroppingConfig,
+): PixelRect {
+  const roi = normalizedToPixelRect(region, dims);
+  const padX = roi.w * croppingConfig.paddingRatio;
+  const padY = roi.h * croppingConfig.paddingRatio;
+
+  let width = roi.w + padX * 2;
+  let height = roi.h + padY * 2;
+  width = Math.max(width, Math.min(croppingConfig.minCropWidthPx, dims.width));
+
+  if (width / height > targetAspect) {
+    height = width / targetAspect;
+  } else {
+    width = height * targetAspect;
+  }
+
+  if (width > dims.width) {
+    width = dims.width;
+    height = width / targetAspect;
+  }
+  if (height > dims.height) {
+    height = dims.height;
+    width = height * targetAspect;
+  }
+
+  const centerX = roi.x + roi.w / 2;
+  const centerY = roi.y + roi.h / 2;
+
+  const x = clamp(centerX - width / 2, 0, Math.max(0, dims.width - width));
+  const y = clamp(centerY - height / 2, 0, Math.max(0, dims.height - height));
+
+  return {
+    x: Math.max(0, Math.floor(x)),
+    y: Math.max(0, Math.floor(y)),
+    w: Math.max(1, Math.floor(width)),
+    h: Math.max(1, Math.floor(height)),
+  };
+}
+
+function getRegionInCropSpace(
+  region: NormalizedRect,
+  cropRect: PixelRect,
+  dims: { width: number; height: number },
+): NormalizedRect | null {
+  const regionPx = normalizedToPixelRect(region, dims);
+  const x1 = clamp(regionPx.x, cropRect.x, cropRect.x + cropRect.w);
+  const y1 = clamp(regionPx.y, cropRect.y, cropRect.y + cropRect.h);
+  const x2 = clamp(
+    regionPx.x + regionPx.w,
+    cropRect.x,
+    cropRect.x + cropRect.w,
+  );
+  const y2 = clamp(
+    regionPx.y + regionPx.h,
+    cropRect.y,
+    cropRect.y + cropRect.h,
+  );
+
+  const width = x2 - x1;
+  const height = y2 - y1;
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return {
+    x: (x1 - cropRect.x) / cropRect.w,
+    y: (y1 - cropRect.y) / cropRect.h,
+    w: width / cropRect.w,
+    h: height / cropRect.h,
+  };
+}
+
+function defaultCenterRegion(): NormalizedRect {
+  return { x: 0.34, y: 0.28, w: 0.32, h: 0.34 };
+}
+
+const CLICK_HINT_KEYWORDS = [
+  "クリック",
+  "選択",
+  "押す",
+  "タップ",
+  "実行",
+  "開く",
+  "入力",
+];
+
+function isClickFocusedStep(operation: string, detail: string): boolean {
+  const text = `${operation} ${detail}`;
+  return CLICK_HINT_KEYWORDS.some((keyword) => text.includes(keyword));
+}
+
+async function cropImageByPixelRect(
+  inputPath: string,
+  outputPath: string,
+  cropRect: PixelRect,
+): Promise<string> {
+  await execFileAsync(
+    "ffmpeg",
+    [
+      "-y",
+      "-i",
+      inputPath,
+      "-vf",
+      `crop=${cropRect.w}:${cropRect.h}:${cropRect.x}:${cropRect.y}`,
+      "-q:v",
+      "2",
+      outputPath,
+    ],
+    { timeout: 30000 },
+  );
+  return outputPath;
 }
 
 /**
@@ -348,6 +642,98 @@ function addHighlightToSlide(
   }
 }
 
+function addRectHighlightToSlide(
+  slide: PptxSlide,
+  imageRect: Rect,
+  region: NormalizedRect,
+  lineWidth: number,
+): void {
+  const regionX = imageRect.x + region.x * imageRect.w;
+  const regionY = imageRect.y + region.y * imageRect.h;
+  const regionW = region.w * imageRect.w;
+  const regionH = region.h * imageRect.h;
+  const padX = regionW * 0.07;
+  const padY = regionH * 0.07;
+  const x = Math.max(imageRect.x, regionX - padX);
+  const y = Math.max(imageRect.y, regionY - padY);
+  const w = Math.min(imageRect.x + imageRect.w - x, regionW + padX * 2);
+  const h = Math.min(imageRect.y + imageRect.h - y, regionH + padY * 2);
+
+  slide.addShape("rect", {
+    x,
+    y,
+    w,
+    h,
+    fill: { type: "none" },
+    line: { color: COLORS.highlight, width: lineWidth, dashType: "solid" },
+    rectRadius: 0.05,
+  });
+}
+
+function addSpotlightToSlide(
+  slide: PptxSlide,
+  imageRect: Rect,
+  region: NormalizedRect,
+  opacity: number,
+): void {
+  const targetX = imageRect.x + region.x * imageRect.w;
+  const targetY = imageRect.y + region.y * imageRect.h;
+  const targetW = region.w * imageRect.w;
+  const targetH = region.h * imageRect.h;
+  const rightEdge = imageRect.x + imageRect.w;
+  const bottomEdge = imageRect.y + imageRect.h;
+  const transparency = Math.round((1 - clamp(opacity, 0, 1)) * 100);
+  const fill = { color: "000000", transparency };
+
+  const topHeight = targetY - imageRect.y;
+  if (topHeight > 0) {
+    slide.addShape("rect", {
+      x: imageRect.x,
+      y: imageRect.y,
+      w: imageRect.w,
+      h: topHeight,
+      line: { color: "000000", transparency: 100 },
+      fill,
+    });
+  }
+
+  const bottomHeight = bottomEdge - (targetY + targetH);
+  if (bottomHeight > 0) {
+    slide.addShape("rect", {
+      x: imageRect.x,
+      y: targetY + targetH,
+      w: imageRect.w,
+      h: bottomHeight,
+      line: { color: "000000", transparency: 100 },
+      fill,
+    });
+  }
+
+  const leftWidth = targetX - imageRect.x;
+  if (leftWidth > 0) {
+    slide.addShape("rect", {
+      x: imageRect.x,
+      y: targetY,
+      w: leftWidth,
+      h: targetH,
+      line: { color: "000000", transparency: 100 },
+      fill,
+    });
+  }
+
+  const rightWidth = rightEdge - (targetX + targetW);
+  if (rightWidth > 0) {
+    slide.addShape("rect", {
+      x: targetX + targetW,
+      y: targetY,
+      w: rightWidth,
+      h: targetH,
+      line: { color: "000000", transparency: 100 },
+      fill,
+    });
+  }
+}
+
 /**
  * 目次スライドを作成
  */
@@ -446,15 +832,16 @@ function createTableOfContentsSlides(
 function addProgressIndicator(
   slide: PptxSlide,
   currentStep: number,
-  totalSteps: number
+  totalSteps: number,
+  fontSize: number = 12,
 ): void {
   // 右下に進捗表示
   slide.addText(`${currentStep}/${totalSteps}`, {
     x: 8.8,
-    y: 5.2,
+    y: fontSize >= 15 ? 5.15 : 5.2,
     w: 1.0,
     h: 0.3,
-    fontSize: 12,
+    fontSize,
     color: COLORS.textMuted,
     align: "right",
     valign: "middle",
@@ -597,25 +984,40 @@ export async function generateSlides(projectId: number): Promise<string> {
     createTableOfContentsSlides(pptx, stepsWithDisplayTitle, project.title);
 
     // === 各ステップのスライド ===
-    // ROI設定（デフォルト: 1.2倍ズーム、中央フォーカス）
+    const slideTemplate = SLIDE_TEMPLATE_CONFIG[ENV.slidePreset];
+    const isTrainingPreset = slideTemplate.preset === "training";
+    const croppingConfig = getCroppingConfig();
+
     const roiConfig: ROIConfig = {
       enabled: true,
       zoomFactor: 1.2,
       focusArea: "center",
     };
-
-    // ハイライトタイプをローテーション（変更領域が検出された場合のみ使用）
     const activeHighlightTypes: HighlightType[] = ["rect", "ring", "arrow"];
-
-    // 前フレームの画像パス（差分検出用）
     let prevCroppedImagePath: string | null = null;
+
+    const frameById = new Map(frames.map((frame) => [frame.id, frame]));
+    const frameTempPathCache = new Map<number, string>();
+    const getFrameTempPath = async (frameId: number): Promise<string | null> => {
+      if (frameTempPathCache.has(frameId)) {
+        return frameTempPathCache.get(frameId) ?? null;
+      }
+      const frame = frameById.get(frameId);
+      if (!frame) return null;
+
+      const imageBuffer = await readBinaryFromSource(frame.imageUrl);
+      const tempImagePath = createTempFilePath(`frame_${frame.id}`, ".jpg");
+      await fs.writeFile(tempImagePath, imageBuffer);
+      tempFilesToDelete.push(tempImagePath);
+      frameTempPathCache.set(frameId, tempImagePath);
+      return tempImagePath;
+    };
 
     for (let stepIndex = 0; stepIndex < stepsWithDisplayTitle.length; stepIndex++) {
       const step = stepsWithDisplayTitle[stepIndex];
       const slide = pptx.addSlide();
       slide.background = { color: COLORS.white };
 
-      // 上部のアクセントバー
       slide.addShape("rect", {
         x: 0,
         y: 0,
@@ -624,115 +1026,199 @@ export async function generateSlides(projectId: number): Promise<string> {
         fill: { color: COLORS.primary },
       });
 
-      // ステップ番号バッジ
-      slide.addShape("rect", {
-        x: 0.3,
-        y: 0.25,
-        w: 0.8,
-        h: 0.35,
-        fill: { color: COLORS.primary },
-        rectRadius: 0.05,
-      });
+      if (slideTemplate.stepBadgeShape === "ellipse") {
+        slide.addShape("ellipse", {
+          x: slideTemplate.stepBadgeRect.x,
+          y: slideTemplate.stepBadgeRect.y,
+          w: slideTemplate.stepBadgeRect.w,
+          h: slideTemplate.stepBadgeRect.h,
+          fill: { color: COLORS.primary },
+        });
+      } else {
+        slide.addShape("rect", {
+          x: slideTemplate.stepBadgeRect.x,
+          y: slideTemplate.stepBadgeRect.y,
+          w: slideTemplate.stepBadgeRect.w,
+          h: slideTemplate.stepBadgeRect.h,
+          fill: { color: COLORS.primary },
+          rectRadius: 0.05,
+        });
+      }
 
       slide.addText(`${step.sortOrder + 1}`, {
-        x: 0.3,
-        y: 0.25,
-        w: 0.8,
-        h: 0.35,
-        fontSize: 14,
+        x: slideTemplate.stepBadgeRect.x,
+        y: slideTemplate.stepBadgeRect.y,
+        w: slideTemplate.stepBadgeRect.w,
+        h: slideTemplate.stepBadgeRect.h,
+        fontSize: slideTemplate.stepBadgeFontSize,
         bold: true,
         color: COLORS.white,
         align: "center",
         valign: "middle",
       });
 
-      // タイトル
-      slide.addText(truncateText(step.displayTitle, 40), {
-        x: 1.2,
-        y: 0.2,
-        w: 7.0,
-        h: 0.45,
-        fontSize: 22,
+      const titleCharLimit = isTrainingPreset ? 32 : 40;
+      slide.addText(truncateText(step.displayTitle, titleCharLimit), {
+        x: slideTemplate.titleRect.x,
+        y: slideTemplate.titleRect.y,
+        w: slideTemplate.titleRect.w,
+        h: slideTemplate.titleRect.h,
+        fontSize: slideTemplate.titleFontSize,
         bold: true,
         color: COLORS.text,
         valign: "middle",
       });
 
-      // 進捗表示
-      addProgressIndicator(slide, stepIndex + 1, totalSteps);
+      addProgressIndicator(
+        slide,
+        stepIndex + 1,
+        totalSteps,
+        slideTemplate.progressFontSize,
+      );
 
-      const frame = frames.find((f) => f.id === step.frameId);
-
-      const imageX = 0.3;
-      const imageY = 0.8;
-      const imageW = 6.2;
-      const imageH = 4.5;
-
-      const infoX = 6.7;
-      const infoY = 0.8;
-      const infoW = 3.0;
+      const frame = frameById.get(step.frameId);
+      const imageRect = slideTemplate.imageRect;
+      const panelRect = slideTemplate.panelRect;
+      let operationOverflow = "";
+      let detailOverflow = "";
 
       if (frame) {
         try {
-          console.log(`[SlideGenerator] Fetching image for step ${step.sortOrder + 1}: ${frame.imageUrl}`);
-          const imageBuffer = await readBinaryFromSource(frame.imageUrl);
-          const tempImagePath = createTempFilePath(`frame_${frame.id}`, ".jpg");
-          await fs.writeFile(tempImagePath, imageBuffer);
-          tempFilesToDelete.push(tempImagePath);
+          const baseImagePath = await getFrameTempPath(frame.id);
+          if (!baseImagePath) {
+            throw new Error(`Frame image not found: ${frame.id}`);
+          }
 
-          // ROIクロップを適用
-          const croppedImagePath = createTempFilePath(`frame_${frame.id}_cropped`, ".jpg");
-          await cropImageToROI(tempImagePath, croppedImagePath, roiConfig);
+          const croppedImagePath = createTempFilePath(
+            `frame_${frame.id}_cropped`,
+            ".jpg",
+          );
           tempFilesToDelete.push(croppedImagePath);
 
-          // 画像の背景
+          let imagePathForSlide = croppedImagePath;
+          let highlightType: HighlightType = "none";
+          let highlightRegion: NormalizedRect | null = null;
+
+          if (isTrainingPreset) {
+            const imageDims = await getImageDimensions(baseImagePath);
+            const targetAspect = imageRect.w / imageRect.h;
+            let candidateRegion: NormalizedRect | null = null;
+
+            if (stepIndex > 0) {
+              const prevFrameId = stepsWithDisplayTitle[stepIndex - 1].frameId;
+              const prevPath = await getFrameTempPath(prevFrameId);
+              if (prevPath) {
+                const detected = await detectChangedRegion(prevPath, baseImagePath);
+                if (isReliableRoiRegion(detected, croppingConfig)) {
+                  candidateRegion = detected;
+                }
+              }
+            }
+
+            if (candidateRegion) {
+              const cropRect = buildCropRectFromRegion(
+                candidateRegion,
+                imageDims,
+                targetAspect,
+                croppingConfig,
+              );
+              try {
+                await cropImageByPixelRect(baseImagePath, croppedImagePath, cropRect);
+                const adjustedRegion = getRegionInCropSpace(
+                  candidateRegion,
+                  cropRect,
+                  imageDims,
+                );
+                highlightRegion = adjustedRegion ?? defaultCenterRegion();
+              } catch (error) {
+                console.error("[SlideGenerator] ROI crop failed, fallback to full frame", error);
+                await fs.copyFile(baseImagePath, croppedImagePath);
+                highlightRegion = candidateRegion;
+              }
+            } else {
+              await fs.copyFile(baseImagePath, croppedImagePath);
+            }
+
+            if (!highlightRegion && isClickFocusedStep(step.operation, step.description)) {
+              highlightRegion = defaultCenterRegion();
+            }
+
+            if (highlightRegion) {
+              highlightType = "rect";
+            }
+          } else {
+            await cropImageToROI(baseImagePath, croppedImagePath, roiConfig);
+
+            if (prevCroppedImagePath && stepIndex > 0) {
+              const changedRegion = await detectChangedRegion(
+                prevCroppedImagePath,
+                croppedImagePath,
+              );
+              if (changedRegion) {
+                highlightType =
+                  activeHighlightTypes[stepIndex % activeHighlightTypes.length];
+                highlightRegion = changedRegion;
+              }
+            }
+            prevCroppedImagePath = croppedImagePath;
+          }
+
           slide.addShape("rect", {
-            x: imageX - 0.05,
-            y: imageY - 0.05,
-            w: imageW + 0.1,
-            h: imageH + 0.1,
+            x: imageRect.x - 0.05,
+            y: imageRect.y - 0.05,
+            w: imageRect.w + 0.1,
+            h: imageRect.h + 0.1,
             fill: { color: COLORS.lightBg },
             rectRadius: 0.05,
           });
 
-          // スライドに画像を追加
           slide.addImage({
-            path: croppedImagePath,
-            x: imageX,
-            y: imageY,
-            w: imageW,
-            h: imageH,
-            sizing: { type: "contain", w: imageW, h: imageH },
+            path: imagePathForSlide,
+            x: imageRect.x,
+            y: imageRect.y,
+            w: imageRect.w,
+            h: imageRect.h,
+            sizing: { type: "contain", w: imageRect.w, h: imageRect.h },
           });
 
-          // 変更領域を検出してハイライトを追加
-          let highlightType: HighlightType = "none";
-          if (prevCroppedImagePath && stepIndex > 0) {
-            const changedRegion = await detectChangedRegion(prevCroppedImagePath, croppedImagePath);
-            if (changedRegion) {
-              highlightType = activeHighlightTypes[stepIndex % activeHighlightTypes.length];
-              addHighlightToSlide(slide, highlightType, imageX, imageY, imageW, imageH, changedRegion);
-              console.log(`[SlideGenerator] Highlight ${highlightType} at region: x=${changedRegion.x.toFixed(2)} y=${changedRegion.y.toFixed(2)} w=${changedRegion.w.toFixed(2)} h=${changedRegion.h.toFixed(2)}`);
-            }
+          if (isTrainingPreset && highlightRegion) {
+            addSpotlightToSlide(
+              slide,
+              imageRect,
+              highlightRegion,
+              croppingConfig.spotlightOpacity,
+            );
+            addRectHighlightToSlide(slide, imageRect, highlightRegion, 5);
           }
 
-          // 次のステップの差分検出用に保持
-          prevCroppedImagePath = croppedImagePath;
+          if (!isTrainingPreset && highlightRegion && highlightType !== "none") {
+            addHighlightToSlide(
+              slide,
+              highlightType,
+              imageRect.x,
+              imageRect.y,
+              imageRect.w,
+              imageRect.h,
+              highlightRegion,
+            );
+          }
 
-          console.log(`[SlideGenerator] Added image for step ${step.sortOrder + 1} (highlight: ${highlightType})`);
+          console.log(
+            `[SlideGenerator] Added image for step ${step.sortOrder + 1} (highlight: ${highlightType})`,
+          );
         } catch (error) {
           console.error(`[SlideGenerator] Error adding image for frame ${frame.id}:`, error);
           slide.addShape("rect", {
-            x: imageX,
-            y: imageY,
-            w: imageW,
-            h: imageH,
+            x: imageRect.x,
+            y: imageRect.y,
+            w: imageRect.w,
+            h: imageRect.h,
             fill: { color: COLORS.lightBg },
           });
           slide.addText("画像を読み込めませんでした", {
-            x: imageX,
-            y: imageY + imageH / 2 - 0.2,
-            w: imageW,
+            x: imageRect.x,
+            y: imageRect.y + imageRect.h / 2 - 0.2,
+            w: imageRect.w,
             h: 0.4,
             fontSize: 14,
             color: COLORS.textMuted,
@@ -741,74 +1227,95 @@ export async function generateSlides(projectId: number): Promise<string> {
         }
       }
 
-      // 右側の情報パネル背景
       slide.addShape("rect", {
-        x: infoX,
-        y: infoY,
-        w: infoW,
-        h: 4.5,
+        x: panelRect.x,
+        y: panelRect.y,
+        w: panelRect.w,
+        h: panelRect.h,
         fill: { color: COLORS.lightBg },
         rectRadius: 0.1,
       });
 
-      // 操作セクション
+      const panelTextX = panelRect.x + slideTemplate.panelPaddingX;
+      const panelTextW = panelRect.w - slideTemplate.panelPaddingX * 2;
+      const operationRaw = ensureTerminalPunctuation(
+        convertToInstructionStyle(removeEmojis(step.operation)),
+      );
+      const detailRaw = ensureTerminalPunctuation(
+        convertToInstructionStyle(removeEmojis(step.description)),
+      );
+
       slide.addText("操作", {
-        x: infoX + 0.15,
-        y: infoY + 0.15,
-        w: infoW - 0.3,
+        x: panelTextX,
+        y: panelRect.y + slideTemplate.operationLabelY,
+        w: panelTextW,
         h: 0.3,
-        fontSize: 11,
+        fontSize: slideTemplate.sectionTitleFontSize,
         bold: true,
         color: COLORS.primary,
       });
 
-      const operationText = truncateAtSentence(
-        ensureTerminalPunctuation(
-          convertToInstructionStyle(removeEmojis(step.operation))
-        ),
-        MAX_OPERATION_CHARS
-      );
+      let operationText: string;
+      let detailText: string;
+      if (slideTemplate.useProjectionTextFormatter) {
+        const operationResult = formatProjectionOperation(
+          operationRaw,
+          slideTemplate.operationConstraint,
+        );
+        const detailResult = formatProjectionDetail(
+          operationRaw,
+          detailRaw,
+          slideTemplate.detailConstraint,
+        );
+        operationText = operationResult.text;
+        detailText = detailResult.text;
+        operationOverflow = operationResult.overflow;
+        detailOverflow = detailResult.overflow;
+      } else {
+        operationText = truncateAtSentence(operationRaw, MAX_OPERATION_CHARS);
+        detailText = truncateAtSentence(
+          ensureTerminalPunctuation(
+            anonymizeOnScreenStepNumbers(detailRaw),
+          ),
+          MAX_DETAIL_CHARS,
+        );
+      }
+
       slide.addText(operationText, {
-        x: infoX + 0.15,
-        y: infoY + 0.45,
-        w: infoW - 0.3,
-        h: 1.0,
-        fontSize: 12,
+        x: panelTextX,
+        y: panelRect.y + slideTemplate.operationTextY,
+        w: panelTextW,
+        h: slideTemplate.operationTextHeight,
+        fontSize: slideTemplate.operationFontSize,
+        bold: isTrainingPreset,
         color: COLORS.text,
         valign: "top",
       });
 
-      // 詳細セクション
       slide.addText("詳細", {
-        x: infoX + 0.15,
-        y: infoY + 1.6,
-        w: infoW - 0.3,
+        x: panelTextX,
+        y: panelRect.y + slideTemplate.detailLabelY,
+        w: panelTextW,
         h: 0.3,
-        fontSize: 11,
+        fontSize: slideTemplate.sectionTitleFontSize,
         bold: true,
         color: COLORS.primary,
       });
 
-      const detailText = truncateAtSentence(
-        ensureTerminalPunctuation(
-          anonymizeOnScreenStepNumbers(
-            convertToInstructionStyle(removeEmojis(step.description))
-          )
-        ),
-        MAX_DETAIL_CHARS
-      );
       slide.addText(detailText, {
-        x: infoX + 0.15,
-        y: infoY + 1.9,
-        w: infoW - 0.3,
-        h: 2.3,
-        fontSize: 11,
-        color: COLORS.textMuted,
+        x: panelTextX,
+        y: panelRect.y + slideTemplate.detailTextY,
+        w: panelTextW,
+        h: slideTemplate.detailTextHeight,
+        fontSize: slideTemplate.detailFontSize,
+        color: isTrainingPreset ? COLORS.text : COLORS.textMuted,
         valign: "top",
       });
 
-      // ノートに全文を追加
-      const notesText = buildNotesText(step);
+      const notesText = buildNotesText(step, {
+        operationOverflow,
+        detailOverflow,
+      });
       slide.addNotes(notesText);
     }
 
