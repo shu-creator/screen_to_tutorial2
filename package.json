@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate"
+    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "pipeline:generate": "tsx server/cli/generatePipeline.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

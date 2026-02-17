@@ -11,6 +11,7 @@ import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
 import { getAvailableVoices, type TTSVoice } from "./_core/tts";
 import { storagePut } from "./storage";
+import { patchStepArtifact } from "./stepsArtifact";
 
 const logger = createLogger("Router");
 
@@ -309,16 +310,64 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
+        const existingStep = await db.getStepById(id, ctx.user.id);
+        if (!existingStep) {
+          throw new Error("ステップが見つかりません");
+        }
         // セキュリティ: ユーザーIDによる所有者チェック
         await db.updateStep(id, data, ctx.user.id);
+        await patchStepArtifact(existingStep.projectId, (artifact) => ({
+          ...artifact,
+          steps: artifact.steps.map((step) => {
+            if (
+              step.legacy_step_db_id !== id &&
+              step.sort_order !== existingStep.sortOrder
+            ) {
+              return step;
+            }
+            return {
+              ...step,
+              ...(data.title !== undefined ? { title: data.title } : {}),
+              ...(data.operation !== undefined
+                ? { operation: data.operation, instruction: data.operation }
+                : {}),
+              ...(data.description !== undefined
+                ? { description: data.description, expected_result: data.description }
+                : {}),
+              ...(data.narration !== undefined ? { narration: data.narration } : {}),
+            };
+          }),
+        }));
         return { success: true };
       }),
 
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        const step = await db.getStepById(input.id, ctx.user.id);
+        if (!step) {
+          throw new Error("ステップが見つかりません");
+        }
         // セキュリティ: ユーザーIDによる所有者チェック
         await db.deleteStep(input.id, ctx.user.id);
+        await patchStepArtifact(step.projectId, (artifact) => {
+          const filtered = artifact.steps
+            .filter(
+              (item) =>
+                item.legacy_step_db_id !== input.id &&
+                item.sort_order !== step.sortOrder,
+            )
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map((item, idx) => ({
+              ...item,
+              sort_order: idx,
+              step_id: `step-${idx + 1}`,
+            }));
+          return {
+            ...artifact,
+            steps: filtered,
+          };
+        });
         return { success: true };
       }),
     
@@ -363,6 +412,30 @@ export const appRouter = router({
           throw new Error("フレームが見つかりません");
         }
         await regenerateStep(input.stepId, input.frameId);
+        const updated = await db.getStepById(input.stepId, ctx.user.id);
+        if (updated) {
+          await patchStepArtifact(updated.projectId, (artifact) => ({
+            ...artifact,
+            steps: artifact.steps.map((item) => {
+              if (
+                item.legacy_step_db_id !== updated.id &&
+                item.sort_order !== updated.sortOrder
+              ) {
+                return item;
+              }
+              return {
+                ...item,
+                frame_id: updated.frameId,
+                title: updated.title,
+                operation: updated.operation,
+                description: updated.description,
+                narration: updated.narration ?? "",
+                instruction: updated.operation,
+                expected_result: updated.description,
+              };
+            }),
+          }));
+        }
         return { success: true };
       }),
 
@@ -379,6 +452,28 @@ export const appRouter = router({
         }
         // ステップの並び順を更新
         await db.reorderSteps(input.projectId, input.stepIds);
+        await patchStepArtifact(input.projectId, (artifact) => {
+          const byLegacyId = new Map(
+            artifact.steps
+              .filter((step) => typeof step.legacy_step_db_id === "number")
+              .map((step) => [step.legacy_step_db_id as number, step]),
+          );
+
+          const reordered = input.stepIds
+            .map((id) => byLegacyId.get(id))
+            .filter((step): step is NonNullable<typeof step> => Boolean(step))
+            .map((step, idx) => ({
+              ...step,
+              sort_order: idx,
+              step_id: `step-${idx + 1}`,
+            }));
+
+          if (reordered.length === artifact.steps.length) {
+            return { ...artifact, steps: reordered };
+          }
+
+          return artifact;
+        });
         return { success: true };
       }),
   }),

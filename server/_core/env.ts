@@ -5,6 +5,8 @@ type AuthMode = "none" | "oauth";
 type LLMProvider = "openai" | "gemini" | "claude";
 type TTSProvider = "openai" | "gemini";
 type SlidePreset = "default" | "training";
+type ASRProvider = "none" | "openai" | "local_whisper";
+type OCRProvider = "none" | "llm";
 
 const DEFAULT_LLM_MODEL: Record<LLMProvider, string> = {
   openai: "gpt-5.2",
@@ -108,6 +110,16 @@ const ttsProvider = parseEnumEnv<TTSProvider>(
   ["openai", "gemini"],
   "openai"
 );
+const asrProvider = parseEnumEnv<ASRProvider>(
+  "ASR_PROVIDER",
+  ["none", "openai", "local_whisper"],
+  "none"
+);
+const ocrProvider = parseEnumEnv<OCRProvider>(
+  "OCR_PROVIDER",
+  ["none", "llm"],
+  "llm"
+);
 const slidePreset = parseEnumEnv<SlidePreset>(
   "SLIDE_PRESET",
   ["default", "training"],
@@ -116,6 +128,7 @@ const slidePreset = parseEnumEnv<SlidePreset>(
 
 const llmModel = process.env.LLM_MODEL ?? DEFAULT_LLM_MODEL[llmProvider];
 const ttsModel = process.env.TTS_MODEL ?? DEFAULT_TTS_MODEL[ttsProvider];
+const asrModel = process.env.ASR_MODEL ?? "whisper-1";
 const llmApiKey = resolveLLMApiKey(llmProvider);
 const ttsApiKey = resolveTTSApiKey(ttsProvider);
 const slideRoiMinAreaRatio = parseNumberEnv(
@@ -143,6 +156,14 @@ const slideSpotlightOpacity = parseNumberEnv(
   0.35,
   { min: 0, max: 1 }
 );
+const frameDedupeHashDistance = parseNumberEnv(
+  "FRAME_DEDUPE_HASH_DISTANCE",
+  6,
+  { min: 0, max: 64 }
+);
+const pipelineCacheDir = process.env.PIPELINE_CACHE_DIR
+  ? path.resolve(process.cwd(), process.env.PIPELINE_CACHE_DIR)
+  : path.resolve(process.cwd(), "data", "cache");
 
 function validateEnvOnStartup(): void {
   const isProduction = process.env.NODE_ENV === "production";
@@ -213,6 +234,11 @@ export const ENV = {
   ttsProvider,
   ttsModel,
   ttsApiKey,
+  asrProvider,
+  asrModel,
+  ocrProvider,
+  pipelineCacheDir,
+  frameDedupeHashDistance,
   slidePreset,
   slideRoiMinAreaRatio,
   slideRoiMaxAreaRatio,
@@ -222,4 +248,11 @@ export const ENV = {
   oauthPortalUrl: process.env.VITE_OAUTH_PORTAL_URL ?? "",
 };
 
-export type { AuthMode, LLMProvider, TTSProvider, SlidePreset };
+export type {
+  AuthMode,
+  LLMProvider,
+  TTSProvider,
+  SlidePreset,
+  ASRProvider,
+  OCRProvider,
+};

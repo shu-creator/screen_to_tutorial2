@@ -11,11 +11,13 @@
 
 ### 2. AI画像解析とステップ構造化
 - LLM（`LLM_PROVIDER` で選択）による画像解析
+- 生成時に `steps.json`（中間表現）を保存し、スライド/動画はこの `steps.json` を優先して生成
 - 各フレームから以下の情報を自動生成：
   - ステップタイトル
   - 操作説明
   - 詳細な説明
   - 音声ナレーション原稿
+  - instruction / expected_result / OCRテキスト / transcript_snippet / confidence
 
 ### 3. ステップ編集機能
 - 抽出されたステップのテキスト編集
@@ -35,6 +37,11 @@
 - テキスト読み上げ（TTS）による音声生成
 - FFmpegによる静止画と音声の合成
 - 最終的な解説動画（MP4）の出力
+
+### 6. ASR / OCR グラウンディング
+- `ASR_PROVIDER` で音声文字起こし（none/openai/local_whisper）を切替
+- `OCR_PROVIDER=llm` でフレームOCRを抽出し、UIラベル根拠を `steps.json` に保持
+- OCR/Transcriptを説明生成プロンプトに注入してハルシネーションを抑制
 
 ## 技術スタック
 
@@ -223,6 +230,19 @@ TTS_MODEL=gpt-4o-mini-tts
 TTS_API_KEY=
 ```
 
+### ASR / OCR / キャッシュ設定
+
+```env
+ASR_PROVIDER=none            # none | openai | local_whisper
+ASR_MODEL=whisper-1
+OCR_PROVIDER=llm             # none | llm
+PIPELINE_CACHE_DIR=./data/cache
+FRAME_DEDUPE_HASH_DISTANCE=6
+```
+
+- LLM/OCR/ASRの結果は `PIPELINE_CACHE_DIR` 配下にキャッシュされます。
+- キャッシュキーは「入力ハッシュ + モデル名 + プロンプトバージョン + パラメータ」です。
+
 ### スライドプリセット設定
 
 ```env
@@ -258,6 +278,16 @@ SLIDE_SPOTLIGHT_OPACITY=0.35
 
 - ✅ 動画アップロード（Base64エンコード、進捗表示付き）
 - ✅ フレーム抽出（OpenCV）
+
+## CLI（最小動作確認）
+
+```bash
+pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true --asr-provider openai --ocr-provider llm
+```
+
+- 出力: `./outputs/project_<id>_steps.json`
+- `--dry-run` を付けるとプロジェクト作成のみ実行します
+- 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`
 - ✅ AIステップ生成（`LLM_PROVIDER`: OpenAI/Gemini/Claude）
 - ✅ TTS音声合成（`TTS_PROVIDER`: OpenAI/Gemini）
 - ✅ スライド生成（PowerPoint）

@@ -5,6 +5,8 @@ import fs from "fs/promises";
 import { readBinaryFromSource, storagePut } from "./storage";
 import * as db from "./db";
 import { nanoid } from "nanoid";
+import { dedupeFramesByDHash, type NormalizedRect } from "./_core/frameAnalysis";
+import { ENV } from "./_core/env";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,6 +38,7 @@ interface ExtractedFrame {
   timestamp: number;
   filename: string;
   diff_score: number;
+  changed_region_bbox?: NormalizedRect | null;
 }
 
 /**
@@ -242,13 +245,62 @@ async function extractFramesWithFFmpeg(
       console.log(`[VideoProcessor] Extracted best frame ${i + 1}/${timestamps.length} at ${timestamp.toFixed(2)}s`);
     }
 
-    return frames;
+    const deduped = await dedupeFramesByDHash(
+      frames.map((frame) => ({
+        filename: frame.filename,
+        timestamp: frame.timestamp,
+        frameNumber: frame.frame_number,
+        diffScore: frame.diff_score,
+      })),
+      (filename) => path.join(outputDir, filename),
+      { maxHammingDistance: ENV.frameDedupeHashDistance },
+    );
+
+    if (deduped.length !== frames.length) {
+      console.log(
+        `[VideoProcessor] Deduped frames by dHash: ${frames.length} -> ${deduped.length}`,
+      );
+    }
+
+    return deduped.slice(0, maxFrames).map((item) => ({
+      frame_number: item.frameNumber,
+      timestamp: item.timestamp,
+      filename: item.filename,
+      diff_score: item.diffScore,
+      changed_region_bbox: item.changedRegionBBox,
+    })) as ExtractedFrame[];
   } catch (error) {
     console.error(`[VideoProcessor] FFmpeg error:`, error);
 
     // フォールバック: 定期的なフレーム抽出
     console.log(`[VideoProcessor] Falling back to regular interval extraction`);
-    return extractFramesAtIntervals(videoPath, outputDir, duration, fps, maxFrames, minInterval);
+    const fallbackFrames = await extractFramesAtIntervals(
+      videoPath,
+      outputDir,
+      duration,
+      fps,
+      maxFrames,
+      minInterval,
+    );
+
+    const deduped = await dedupeFramesByDHash(
+      fallbackFrames.map((frame) => ({
+        filename: frame.filename,
+        timestamp: frame.timestamp,
+        frameNumber: frame.frame_number,
+        diffScore: frame.diff_score,
+      })),
+      (filename) => path.join(outputDir, filename),
+      { maxHammingDistance: ENV.frameDedupeHashDistance },
+    );
+
+    return deduped.slice(0, maxFrames).map((item) => ({
+      frame_number: item.frameNumber,
+      timestamp: item.timestamp,
+      filename: item.filename,
+      diff_score: item.diffScore,
+      changed_region_bbox: item.changedRegionBBox,
+    }));
   }
 }
 
