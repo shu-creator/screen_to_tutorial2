@@ -9,8 +9,59 @@ import { nanoid } from "nanoid";
 import { generateSpeechForLongText, type TTSVoice } from "./_core/tts";
 import { ENV } from "./_core/env";
 import { createTempFilePath, createTempDir, safeTempFileDelete, safeTempDirDelete } from "./tempFileManager";
+import {
+  buildLegacyRenderableStepsFromArtifact,
+  buildStepsArtifactFromDb,
+  loadStepsArtifact,
+  patchStepArtifact,
+  saveStepsArtifact,
+} from "./stepsArtifact";
 
 const execFileAsync = promisify(execFile);
+
+type RenderableStep = {
+  id: number;
+  frameId: number;
+  sortOrder: number;
+  title: string;
+  operation: string;
+  description: string;
+  narration: string | null;
+  audioUrl: string | null;
+  audioKey: string | null;
+};
+
+async function loadRenderableStepsForProject(
+  projectId: number,
+): Promise<{
+  steps: RenderableStep[];
+  frames: Awaited<ReturnType<typeof db.getFramesByProjectId>>;
+}> {
+  const frames = await db.getFramesByProjectId(projectId);
+  const dbSteps = await db.getStepsByProjectId(projectId);
+  const project = await db.getProjectById(projectId);
+
+  let steps: RenderableStep[] = dbSteps.map((step) => ({
+    id: step.id,
+    frameId: step.frameId,
+    sortOrder: step.sortOrder,
+    title: step.title,
+    operation: step.operation,
+    description: step.description,
+    narration: step.narration ?? "",
+    audioUrl: step.audioUrl ?? null,
+    audioKey: step.audioKey ?? null,
+  }));
+
+  const artifact = await loadStepsArtifact(projectId);
+  if (artifact && artifact.steps.length > 0) {
+    steps = buildLegacyRenderableStepsFromArtifact(projectId, artifact, frames);
+  } else if (project && dbSteps.length > 0) {
+    await saveStepsArtifact(projectId, buildStepsArtifactFromDb(project, frames, dbSteps));
+  }
+
+  return { steps, frames };
+}
 
 /**
  * ffprobeを使用して音声ファイルの長さ（秒）を取得
@@ -90,11 +141,13 @@ export async function generateAudioForProject(
 ): Promise<void> {
   console.log(`[VideoGenerator] Starting audio generation for project ${projectId} with voice: ${voice}`);
 
-  const steps = await db.getStepsByProjectId(projectId);
+  const { steps } = await loadRenderableStepsForProject(projectId);
 
   if (steps.length === 0) {
     throw new Error("ステップが見つかりません");
   }
+
+  const audioBySortOrder = new Map<number, { audioUrl: string; audioKey: string }>();
 
   for (const step of steps) {
     if (!step.narration) {
@@ -113,10 +166,13 @@ export async function generateAudioForProject(
       const { url: audioUrl } = await storagePut(fileKey, audioBuffer, "audio/mpeg");
 
       // DBを更新
-      await db.updateStep(step.id, {
-        audioUrl,
-        audioKey: fileKey,
-      });
+      if (step.id > 0) {
+        await db.updateStep(step.id, {
+          audioUrl,
+          audioKey: fileKey,
+        }).catch(() => {});
+      }
+      audioBySortOrder.set(step.sortOrder, { audioUrl, audioKey: fileKey });
 
       // 一時ファイルを削除
       await safeTempFileDelete(tempAudioPath, "VideoGenerator");
@@ -125,6 +181,21 @@ export async function generateAudioForProject(
     } catch (error) {
       console.error(`[VideoGenerator] Error generating audio for step ${step.id}:`, error);
     }
+  }
+
+  if (audioBySortOrder.size > 0) {
+    await patchStepArtifact(projectId, (artifact) => ({
+      ...artifact,
+      steps: artifact.steps.map((step) => {
+        const found = audioBySortOrder.get(step.sort_order);
+        if (!found) return step;
+        return {
+          ...step,
+          audio_url: found.audioUrl,
+          audio_key: found.audioKey,
+        };
+      }),
+    }));
   }
 
   console.log(`[VideoGenerator] Audio generation complete for project ${projectId}`);
@@ -141,8 +212,7 @@ export async function generateVideo(projectId: number): Promise<string> {
     throw new Error("プロジェクトが見つかりません");
   }
 
-  const steps = await db.getStepsByProjectId(projectId);
-  const frames = await db.getFramesByProjectId(projectId);
+  const { steps, frames } = await loadRenderableStepsForProject(projectId);
 
   if (steps.length === 0 || frames.length === 0) {
     throw new Error("ステップまたはフレームが見つかりません");

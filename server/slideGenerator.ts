@@ -8,6 +8,12 @@ import { ENV, type SlidePreset } from "./_core/env";
 import { getProjectById, getStepsByProjectId, getFramesByProjectId } from "./db";
 import { readBinaryFromSource } from "./storage";
 import {
+  buildLegacyRenderableStepsFromArtifact,
+  buildStepsArtifactFromDb,
+  loadStepsArtifact,
+  saveStepsArtifact,
+} from "./stepsArtifact";
+import {
   truncateAtSentence,
   ensureTerminalPunctuation,
   anonymizeOnScreenStepNumbers,
@@ -894,8 +900,39 @@ export async function generateSlides(projectId: number): Promise<string> {
       throw new Error(`Project ${projectId} not found`);
     }
 
-    const steps = await getStepsByProjectId(projectId);
     const frames = await getFramesByProjectId(projectId);
+    const dbSteps = await getStepsByProjectId(projectId);
+
+    type SlideStep = {
+      id: number;
+      frameId: number;
+      sortOrder: number;
+      title: string;
+      operation: string;
+      description: string;
+      narration: string | null;
+      audioUrl: string | null;
+      audioKey: string | null;
+    };
+
+    let steps: SlideStep[] = dbSteps.map((step) => ({
+      id: step.id,
+      frameId: step.frameId,
+      sortOrder: step.sortOrder,
+      title: step.title,
+      operation: step.operation,
+      description: step.description,
+      narration: step.narration ?? null,
+      audioUrl: step.audioUrl ?? null,
+      audioKey: step.audioKey ?? null,
+    }));
+    const artifact = await loadStepsArtifact(projectId);
+    if (artifact && artifact.steps.length > 0) {
+      steps = buildLegacyRenderableStepsFromArtifact(projectId, artifact, frames);
+    } else if (dbSteps.length > 0) {
+      const fallbackArtifact = buildStepsArtifactFromDb(project, frames, dbSteps);
+      await saveStepsArtifact(projectId, fallbackArtifact);
+    }
 
     if (!steps || steps.length === 0) {
       throw new Error(`No steps found for project ${projectId}`);
