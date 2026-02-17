@@ -29,6 +29,7 @@
   - 操作画面のスクリーンショット
   - 操作説明と詳細説明
   - スピーカーノート（ナレーション原稿）
+- `SLIDE_PRESET=training` で研修投影向けレイアウト（文字大きめ・自動ROI・spotlight）を利用可能
 
 ### 5. 音声合成と動画生成
 - テキスト読み上げ（TTS）による音声生成
@@ -221,6 +222,24 @@ TTS_PROVIDER=openai
 TTS_MODEL=gpt-4o-mini-tts
 TTS_API_KEY=
 ```
+
+### スライドプリセット設定
+
+```env
+# default | training
+SLIDE_PRESET=default
+
+# training プリセット向け ROI パラメータ
+SLIDE_ROI_MIN_AREA_RATIO=0.015
+SLIDE_ROI_MAX_AREA_RATIO=0.65
+SLIDE_ROI_PADDING_RATIO=0.15
+SLIDE_ROI_MIN_CROP_WIDTH_PX=900
+SLIDE_SPOTLIGHT_OPACITY=0.35
+```
+
+- `training` は `16:9` のまま「画像:テキスト=65:35」に寄せ、右パネル可読性を優先します。
+- 差分ROIが有効な場合は自動クロップし、ROI外を暗くする spotlight とハイライトを重ねます。
+- クリック系ステップで差分ROIが不確実な場合は中央フォールバックのハイライトを適用します。
 
 - APIキー解決順は `LLM_API_KEY` / `TTS_API_KEY` が最優先です。
 - `LLM_API_KEY` 未設定時はプロバイダーごとのキー（OpenAI/Gemini/Anthropic）を参照します。
