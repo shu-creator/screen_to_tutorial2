@@ -1115,17 +1115,6 @@ export async function generateSlides(projectId: number): Promise<string> {
               }
             }
 
-            if (!candidateRegion && stepIndex + 1 < stepsWithDisplayTitle.length) {
-              const nextFrameId = stepsWithDisplayTitle[stepIndex + 1].frameId;
-              const nextPath = await getFrameTempPath(nextFrameId);
-              if (nextPath) {
-                const detected = await detectChangedRegion(baseImagePath, nextPath);
-                if (isReliableRoiRegion(detected, croppingConfig)) {
-                  candidateRegion = detected;
-                }
-              }
-            }
-
             if (candidateRegion) {
               const cropRect = buildCropRectFromRegion(
                 candidateRegion,
