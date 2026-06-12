@@ -17,6 +17,9 @@ import {
   type StepsArtifact,
   saveStepsArtifact,
 } from "./stepsArtifact";
+import { loadEvidenceArtifact } from "./evidence/artifactStore";
+import type { EvidenceArtifact, EvidenceSegment } from "./evidence/types";
+import { authorSteps, AUTHORING_PROMPT_VERSION } from "./authoring/author";
 
 const logger = createLogger("StepGenerator");
 const STEP_PROMPT_VERSION = "steps-grounded-v1";
@@ -221,6 +224,143 @@ async function writeRunLog(
   await storagePut(key, `${lines.join("\n")}\n`, "application/jsonl");
 }
 
+/**
+ * Phase 2: evidence.json からの一括執筆。
+ * 証拠ダイジェスト全体をLLMに渡してステップを執筆し、機械検証を通して
+ * steps.json v2 を生成する。
+ */
+async function generateStepsFromEvidence(
+  projectId: number,
+  evidence: EvidenceArtifact,
+): Promise<void> {
+  const runId = `run_${Date.now()}`;
+  const runLogLines: string[] = [];
+  const addRunLog = (event: string, payload: Record<string, unknown>) => {
+    runLogLines.push(JSON.stringify({ ts: new Date().toISOString(), event, ...payload }));
+  };
+
+  addRunLog("authoring.start", {
+    projectId,
+    segmentCount: evidence.segments.length,
+    llmProvider: ENV.llmProvider,
+    llmModel: ENV.llmModel,
+    promptVersion: AUTHORING_PROMPT_VERSION,
+  });
+
+  await db.updateProjectProgress(projectId, 74, "ステップを執筆中（一括解析）...");
+
+  const result = await authorSteps(evidence);
+
+  addRunLog("authoring.done", {
+    stepCount: result.steps.length,
+    fallbackCount: result.steps.filter((step) => step.fallback).length,
+    discardedCount: result.discarded.length,
+    needsReviewCount: result.steps.filter((step) => step.needs_review).length,
+    warnings: result.warnings,
+  });
+
+  const segmentById = new Map(
+    evidence.segments.map((segment) => [segment.segment_id, segment]),
+  );
+
+  const artifactSteps: StepArtifact[] = result.steps.map((step, index) => {
+    const sourceSegments = step.source_segment_ids
+      .map((id) => segmentById.get(id))
+      .filter((segment): segment is EvidenceSegment => segment !== undefined);
+    if (sourceSegments.length === 0) {
+      throw new Error(`ステップの根拠セグメントが解決できません: ${step.title}`);
+    }
+
+    const lastSegment = sourceSegments[sourceSegments.length - 1];
+    const frameId = lastSegment.after_frame.frame_id;
+    if (!frameId) {
+      // evidence契約違反（DBフローでは frame_id 必須）。執筆前に検出する
+      throw new Error(
+        `セグメント ${lastSegment.segment_id} に frame_id がありません（evidence契約違反）`,
+      );
+    }
+
+    const bbox = sourceSegments.reduce<StepArtifact["changed_region_bbox"]>(
+      (acc, segment) => {
+        const rect = segment.changed_region_bbox;
+        if (!rect) return acc;
+        if (!acc) return rect;
+        const x = Math.min(acc.x, rect.x);
+        const y = Math.min(acc.y, rect.y);
+        return {
+          x,
+          y,
+          w: Math.min(1, Math.max(acc.x + acc.w, rect.x + rect.w) - x),
+          h: Math.min(1, Math.max(acc.y + acc.h, rect.y + rect.h) - y),
+        };
+      },
+      null,
+    );
+
+    const mergedOcr = Array.from(
+      new Set(sourceSegments.flatMap((segment) => segment.ocr_lines)),
+    ).slice(0, 40);
+    const mergedTranscript = sourceSegments
+      .map((segment) => segment.transcript_snippet.trim())
+      .filter(Boolean)
+      .join(" ");
+
+    return {
+      step_id: `step-${index + 1}`,
+      sort_order: index,
+      frame_id: frameId,
+      t_start: sourceSegments[0].t_start,
+      t_end: Math.max(lastSegment.t_end, sourceSegments[0].t_start + 1),
+      representative_frames: sourceSegments.map((segment) => ({
+        frame_id: segment.after_frame.frame_id ?? undefined,
+        frame_number: 0,
+        timestamp: segment.after_frame.t,
+        image_url: segment.after_frame.image_url,
+      })),
+      changed_region_bbox: bbox,
+      ocr_text: mergedOcr,
+      transcript_snippet: mergedTranscript,
+      instruction: step.instruction,
+      expected_result: step.expected_result,
+      warnings: step.warnings,
+      confidence: step.confidence,
+      title: step.title,
+      operation: step.operation,
+      description: step.description,
+      narration: step.narration,
+      source_segment_ids: step.source_segment_ids,
+      cited_ui_labels: step.cited_ui_labels,
+      needs_review: step.needs_review,
+    };
+  });
+
+  const artifact: StepsArtifact = {
+    version: STEPS_ARTIFACT_VERSION,
+    project_id: projectId,
+    generated_at: new Date().toISOString(),
+    config: {
+      asr_provider: evidence.config.asr_provider,
+      ocr_provider: evidence.config.ocr_provider,
+      llm_provider: ENV.llmProvider,
+      llm_model: ENV.llmModel,
+      prompt_version: AUTHORING_PROMPT_VERSION,
+    },
+    overview: result.overview,
+    steps: artifactSteps,
+  };
+
+  const withLegacyIds = await persistStepsToDb(projectId, artifact);
+  await saveStepsArtifact(projectId, withLegacyIds);
+  await writeRunLog(projectId, runId, runLogLines);
+
+  await db.updateProjectProgress(projectId, 90, "steps.json とステップ保存が完了しました");
+  logger.info("Authoring complete", {
+    projectId,
+    stepCount: artifactSteps.length,
+    needsReview: artifactSteps.filter((step) => step.needs_review).length,
+  });
+}
+
 export async function generateStepsForProject(projectId: number): Promise<void> {
   logger.info(`Starting step generation for project ${projectId}`);
   await ensurePipelineCacheDir();
@@ -231,6 +371,14 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
   if (!project) {
     throw new Error("プロジェクトが見つかりません");
   }
+
+  // Phase 2: evidence.json があれば一括執筆経路を使う
+  const evidence = await loadEvidenceArtifact(projectId);
+  if (evidence && evidence.segments.length > 0) {
+    await generateStepsFromEvidence(projectId, evidence);
+    return;
+  }
+  logger.info("evidence.json が無いため従来のフレーム単位解析を使用します", { projectId });
 
   const frames = await db.getFramesByProjectId(projectId);
   if (frames.length === 0) {
@@ -334,6 +482,9 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
           operation: stepData.operation,
           description: stepData.description,
           narration: stepData.narration,
+          source_segment_ids: [],
+          cited_ui_labels: [],
+          needs_review: false,
         });
         addRunLog("step.generated", {
           index,
@@ -373,6 +524,9 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
           operation: "操作を分析できませんでした",
           description: "このステップは手動で編集してください。",
           narration: "",
+          source_segment_ids: [],
+          cited_ui_labels: [],
+          needs_review: true,
         });
         addRunLog("step.failed", {
           index,
@@ -400,6 +554,7 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
         llm_model: ENV.llmModel,
         prompt_version: STEP_PROMPT_VERSION,
       },
+      overview: null,
       steps: artifactSteps,
     };
 

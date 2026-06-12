@@ -2,6 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,6 +64,7 @@ function SortableStepCard({
   onRegenerate,
   isRegenerating,
   frame,
+  review,
 }: {
   step: StepData;
   index: number;
@@ -73,6 +75,7 @@ function SortableStepCard({
   onRegenerate: (stepId: number, frameId: number) => void;
   isRegenerating: boolean;
   frame?: FrameData;
+  review?: { needsReview: boolean; warnings: string[]; confidence: number };
 }) {
   const {
     attributes,
@@ -146,7 +149,22 @@ function SortableStepCard({
                 </div>
               ) : (
                 <>
-                  <CardTitle>{step.title}</CardTitle>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <CardTitle>{step.title}</CardTitle>
+                    {review?.needsReview && (
+                      <Badge
+                        variant="destructive"
+                        title={review.warnings.join(" / ") || "信頼度が低いステップです"}
+                      >
+                        要レビュー
+                      </Badge>
+                    )}
+                  </div>
+                  {review?.needsReview && review.warnings.length > 0 && (
+                    <p className="text-xs text-destructive mt-1">
+                      {review.warnings.join(" / ")}
+                    </p>
+                  )}
                   <CardDescription className="mt-2">
                     <strong>操作:</strong> {step.operation}
                   </CardDescription>
@@ -239,6 +257,10 @@ export default function ProjectDetail() {
     { projectId },
     { enabled: isValidProjectId }
   );
+  const { data: artifactInfo, refetch: refetchArtifactInfo } = trpc.step.artifactInfo.useQuery(
+    { projectId },
+    { enabled: !isNaN(projectId) }
+  );
   const { data: steps, isLoading: stepsLoading, refetch: refetchSteps } = trpc.step.listByProject.useQuery(
     { projectId },
     { enabled: isValidProjectId }
@@ -273,6 +295,7 @@ export default function ProjectDetail() {
           refetchProject();
           refetchFrames();
           refetchSteps();
+      refetchArtifactInfo();
           return; // ポーリング終了
         }
       } catch (error) {
@@ -337,6 +360,7 @@ export default function ProjectDetail() {
           try {
             await reorderStepsMutation.mutateAsync({ projectId, stepIds });
             refetchSteps();
+      refetchArtifactInfo();
             toast.success("ステップの順序を更新しました");
           } catch (error) {
             toast.error("順序の更新に失敗しました");
@@ -396,6 +420,7 @@ export default function ProjectDetail() {
       // ポーリングで結果を確認
       const pollInterval = setInterval(() => {
         refetchSteps();
+      refetchArtifactInfo();
       }, 3000);
       
       setTimeout(() => {
@@ -412,6 +437,7 @@ export default function ProjectDetail() {
       await updateStepMutation.mutateAsync({ id: stepId, ...data });
       toast.success("ステップを更新しました");
       refetchSteps();
+      refetchArtifactInfo();
       setEditingStepId(null);
     } catch (error) {
       toast.error("ステップの更新に失敗しました");
@@ -425,6 +451,7 @@ export default function ProjectDetail() {
       await deleteStepMutation.mutateAsync({ id: stepId });
       toast.success("ステップを削除しました");
       refetchSteps();
+      refetchArtifactInfo();
     } catch (error) {
       toast.error("ステップの削除に失敗しました");
     }
@@ -436,6 +463,7 @@ export default function ProjectDetail() {
       await regenerateStepMutation.mutateAsync({ stepId, frameId });
       toast.success("ステップをAIで再生成しました");
       refetchSteps();
+      refetchArtifactInfo();
     } catch (error) {
       toast.error("ステップの再生成に失敗しました");
     } finally {
@@ -474,6 +502,7 @@ export default function ProjectDetail() {
       // 音声生成後にステップを再取得（audioUrlを更新するため）
       setVideoGenerationProgress({ progress: 50, message: "音声生成完了。動画を生成中..." });
       await refetchSteps();
+      refetchArtifactInfo();
 
       // 2. 動画を生成
       setVideoGenerationProgress({ progress: 60, message: "フレームと音声を結合中..." });
@@ -795,6 +824,24 @@ export default function ProjectDetail() {
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
             ) : steps && steps.length > 0 ? (
+              <>
+              {artifactInfo?.overview && (
+                <Card className="border-primary/30">
+                  <CardHeader>
+                    <CardTitle className="text-lg">{artifactInfo.overview.task_title}</CardTitle>
+                    {artifactInfo.overview.preconditions.length > 0 && (
+                      <CardDescription>
+                        前提: {artifactInfo.overview.preconditions.join(" / ")}
+                      </CardDescription>
+                    )}
+                    {artifactInfo.overview.completion_criteria && (
+                      <CardDescription>
+                        完了条件: {artifactInfo.overview.completion_criteria}
+                      </CardDescription>
+                    )}
+                  </CardHeader>
+                </Card>
+              )}
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
@@ -817,11 +864,13 @@ export default function ProjectDetail() {
                         onRegenerate={handleRegenerateStep}
                         isRegenerating={regeneratingStepId === step.id}
                         frame={frames?.find((f) => f.id === step.frameId)}
+                        review={artifactInfo?.reviewByStepId?.[step.id]}
                       />
                     ))}
                   </div>
                 </SortableContext>
               </DndContext>
+              </>
             ) : (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12">

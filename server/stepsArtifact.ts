@@ -1,8 +1,20 @@
 import { z } from "zod";
+import { createLogger } from "./_core/logger";
 import { readBinaryFromSource, storageGet, storagePut } from "./storage";
 import type { Frame, Project, Step } from "../drizzle/schema";
 
-export const STEPS_ARTIFACT_VERSION = "1.0";
+const logger = createLogger("StepsArtifact");
+
+/**
+ * v2（Phase 2）: overview / source_segment_ids / cited_ui_labels / needs_review を追加。
+ * v1 は読み込み時に自動マイグレーションされる。
+ * 未知バージョンはエラー（サイレントにnullへフォールバックしない。
+ * docs/plans/phase-2-step-authoring.md 参照）。
+ */
+export const STEPS_ARTIFACT_VERSION = "2.0";
+const STEPS_ARTIFACT_VERSION_V1 = "1.0";
+/** retry等で明示的に無効化されたartifactのバージョンマーカー */
+const INVALIDATED_VERSION = "invalidated";
 
 const NormalizedBBoxSchema = z.object({
   x: z.number().min(0).max(1),
@@ -39,9 +51,21 @@ export const StepArtifactSchema = z.object({
   narration: z.string().optional().default(""),
   audio_url: z.string().optional(),
   audio_key: z.string().optional(),
+  // v2: evidence.json への根拠リンクと機械検証結果
+  source_segment_ids: z.array(z.string()).optional().default([]),
+  cited_ui_labels: z.array(z.string()).optional().default([]),
+  needs_review: z.boolean().optional().default(false),
 });
 
 export type StepArtifact = z.infer<typeof StepArtifactSchema>;
+
+export const OverviewSchema = z.object({
+  task_title: z.string(),
+  preconditions: z.array(z.string()),
+  completion_criteria: z.string(),
+});
+
+export type Overview = z.infer<typeof OverviewSchema>;
 
 export const StepsArtifactSchema = z.object({
   version: z.string().min(1),
@@ -54,6 +78,8 @@ export const StepsArtifactSchema = z.object({
     llm_model: z.string(),
     prompt_version: z.string(),
   }),
+  // v2: マニュアル全体の概要。v1からのマイグレーション時はnull
+  overview: OverviewSchema.nullable().optional().default(null),
   steps: z.array(StepArtifactSchema),
 });
 
@@ -76,15 +102,81 @@ export function getStepsArtifactStorageKey(projectId: number): string {
   return `projects/${projectId}/artifacts/steps.json`;
 }
 
+/** v1 artifact を v2 へマイグレーションする（追加フィールドにデフォルトを埋める） */
+function migrateV1ToV2(raw: Record<string, unknown>): unknown {
+  const steps = Array.isArray(raw.steps) ? raw.steps : [];
+  return {
+    ...raw,
+    version: STEPS_ARTIFACT_VERSION,
+    overview: raw.overview ?? null,
+    steps: steps.map((step) => ({
+      source_segment_ids: [],
+      cited_ui_labels: [],
+      needs_review: false,
+      ...(step as Record<string, unknown>),
+    })),
+  };
+}
+
 export async function loadStepsArtifact(projectId: number): Promise<StepsArtifact | null> {
   const key = getStepsArtifactStorageKey(projectId);
+
+  let raw: Record<string, unknown>;
   try {
     const file = await storageGet(key);
     const buffer = await readBinaryFromSource(file.url);
-    const parsed = JSON.parse(buffer.toString("utf8"));
-    return StepsArtifactSchema.parse(parsed);
+    raw = JSON.parse(buffer.toString("utf8")) as Record<string, unknown>;
   } catch {
+    // 未生成（ファイルなし）は正常系
     return null;
+  }
+
+  const version = typeof raw.version === "string" ? raw.version : "";
+
+  if (version === INVALIDATED_VERSION) {
+    // retry等で明示的に無効化済み。再生成までartifactなし扱い
+    return null;
+  }
+
+  try {
+    if (version === STEPS_ARTIFACT_VERSION_V1) {
+      return StepsArtifactSchema.parse(migrateV1ToV2(raw));
+    }
+    if (version === STEPS_ARTIFACT_VERSION) {
+      return StepsArtifactSchema.parse(raw);
+    }
+  } catch (error) {
+    logger.warn("steps.json のパースに失敗しました", {
+      projectId,
+      version,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  // 未知バージョンはデータ問題: サイレントなnullフォールバック（=DBへの
+  // 静かな切替）を避け、明示的にエラーにする
+  throw new Error(
+    `未対応の steps.json バージョンです: ${version}（対応: ${STEPS_ARTIFACT_VERSION_V1}, ${STEPS_ARTIFACT_VERSION}）`,
+  );
+}
+
+/** retry等でフレームが再生成される際に古いステップartifactを無効化する */
+export async function invalidateStepsArtifact(projectId: number): Promise<void> {
+  const key = getStepsArtifactStorageKey(projectId);
+  try {
+    const file = await storageGet(key);
+    const raw = JSON.parse(
+      (await readBinaryFromSource(file.url)).toString("utf8"),
+    ) as Record<string, unknown>;
+    const invalidated = {
+      ...raw,
+      version: INVALIDATED_VERSION,
+      invalidated_at: new Date().toISOString(),
+    };
+    await storagePut(key, JSON.stringify(invalidated, null, 2), "application/json");
+  } catch {
+    // 存在しなければ何もしない
   }
 }
 
@@ -180,6 +272,9 @@ export function buildStepsArtifactFromDb(
       narration: step.narration ?? "",
       audio_url: step.audioUrl ?? undefined,
       audio_key: step.audioKey ?? undefined,
+      source_segment_ids: [],
+      cited_ui_labels: [],
+      needs_review: false,
     };
   });
 
@@ -194,6 +289,7 @@ export function buildStepsArtifactFromDb(
       llm_model: "legacy",
       prompt_version: "legacy-adapter-v1",
     },
+    overview: null,
     steps: artifactSteps,
   };
 }

@@ -1,6 +1,12 @@
 # Phase 2: ステップ執筆の一括化 + 機械検証（steps.json v2）
 
-ステータス: 未着手
+ステータス: 実装済み（2026-06-12）。実装メモ:
+- `server/authoring/`（digest / author / verification）として実装。LLM呼び出しはチャンク数回のみ
+- 機械検証・フォールバック・チャンク執筆・暫定overview引き継ぎ・retry時のartifact無効化まで実装済み
+- LLM部分はモック（vi.mock）でテスト（24件）。**実LLMでの出力品質確認とG1/G2/G3の実測は実データ待ち**
+  （APIキー設定後に `pnpm pipeline:generate` → `pnpm eval` で実施。受け入れ基準の品質項目は未消化）
+- confidence式の係数較正（実G2との相関確認）も実データ待ち
+
 規模: L（PR 2本に分割推奨）
 依存: Phase 1（evidence.json が入力契約）
 

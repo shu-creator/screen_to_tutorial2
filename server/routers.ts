@@ -11,7 +11,8 @@ import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
 import { getAvailableVoices, type TTSVoice } from "./_core/tts";
 import { storagePut } from "./storage";
-import { patchStepArtifact } from "./stepsArtifact";
+import { invalidateStepsArtifact, loadStepsArtifact, patchStepArtifact } from "./stepsArtifact";
+import { invalidateEvidenceArtifact } from "./evidence/artifactStore";
 
 const logger = createLogger("Router");
 
@@ -148,6 +149,11 @@ export const appRouter = router({
         // 既存のフレームとステップを削除
         await db.deleteFramesByProjectId(projectId);
         await db.deleteStepsByProjectId(projectId);
+
+        // 古いartifactを無効化（削除済みフレームを参照する steps.json /
+        // evidence.json がスライド・動画生成に使われる経路を塞ぐ）
+        await invalidateStepsArtifact(projectId);
+        await invalidateEvidenceArtifact(projectId);
 
         // エラーメッセージをクリア
         await db.clearProjectError(projectId);
@@ -298,6 +304,32 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         // セキュリティ: ユーザーIDによる所有者チェック
         return db.getStepsByProjectId(input.projectId, ctx.user.id);
+      }),
+
+    // Phase 2: steps.json v2 のメタ情報（overview / 機械検証結果）をUIへ提供
+    artifactInfo: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId, ctx.user.id);
+        if (!project) {
+          throw new Error("プロジェクトが見つかりません");
+        }
+        const empty: Record<number, { needsReview: boolean; warnings: string[]; confidence: number }> = {};
+        const artifact = await loadStepsArtifact(input.projectId).catch(() => null);
+        if (!artifact) {
+          return { overview: null, reviewByStepId: empty };
+        }
+        const reviewByStepId = { ...empty };
+        for (const step of artifact.steps) {
+          if (step.legacy_step_db_id) {
+            reviewByStepId[step.legacy_step_db_id] = {
+              needsReview: step.needs_review,
+              warnings: step.warnings,
+              confidence: step.confidence,
+            };
+          }
+        }
+        return { overview: artifact.overview, reviewByStepId };
       }),
 
     update: protectedProcedure
