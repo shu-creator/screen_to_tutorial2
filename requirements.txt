@@ -1,3 +1,8 @@
-# Python dependencies for video processing
-numpy>=2.4.0
-opencv-python-headless>=4.8.0
+# Python dependencies
+# 合成評価データセット生成（eval/generate_dataset.py）
+pillow>=10.0.0
+
+# ローカルOCRエンジン（scripts/ocr_server.py）は以下のいずれかを使用（任意）:
+#   pip install paddlepaddle paddleocr   # 推奨（モデルDLが必要）
+#   apt install tesseract-ocr tesseract-ocr-jpn
+# どちらも無い環境ではLLM-OCRへ自動フォールバックする

@@ -20,14 +20,19 @@
 
 ## フェーズ一覧
 
-| Phase | 内容 | 規模 | 依存 | 詳細プラン |
-|-------|------|------|------|-----------|
-| 0 | 評価基盤 + ベースライン測定 + 早期改善実験 | M | なし | [phase-0](./plans/phase-0-eval-harness.md) |
-| 1 | 証拠抽出パイプライン刷新（evidence.json） | L | 0 | [phase-1](./plans/phase-1-evidence-extraction.md) |
-| 2 | ステップ執筆の一括化 + 機械検証（steps.json v2） | L | 1 | [phase-2](./plans/phase-2-step-authoring.md) |
-| 3 | スライド品質改善 + ヒューリスティック退役 | M | 2 | [phase-3](./plans/phase-3-slide-quality.md) |
-| 4 | クリップベース動画生成 | M | 2 | [phase-4](./plans/phase-4-clip-video.md) |
-| 5 | 負債整理（単一ソース化・ストリーミング・死にコード削除） | M | 2 | [phase-5](./plans/phase-5-consolidation.md) |
+| Phase | 内容 | 規模 | 依存 | 状態 | 詳細プラン |
+|-------|------|------|------|------|-----------|
+| 0 | 評価基盤 + ベースライン測定 + 早期改善実験 | M | なし | 実装済み（実測は実データ待ち） | [phase-0](./plans/phase-0-eval-harness.md) |
+| 1 | 証拠抽出パイプライン刷新（evidence.json） | L | 0 | 実装済み | [phase-1](./plans/phase-1-evidence-extraction.md) |
+| 2 | ステップ執筆の一括化 + 機械検証（steps.json v2） | L | 1 | 実装済み（LLM品質実測待ち） | [phase-2](./plans/phase-2-step-authoring.md) |
+| 3 | スライド品質改善 + ヒューリスティック退役 | M | 2 | 実装済み（退役は一部保留） | [phase-3](./plans/phase-3-slide-quality.md) |
+| 4 | クリップベース動画生成 | M | 2 | 実装済み | [phase-4](./plans/phase-4-clip-video.md) |
+| 5 | 負債整理（単一ソース化・ストリーミング・死にコード削除） | M | 2 | 実装済み（5.1単一ソース化は保留） | [phase-5](./plans/phase-5-consolidation.md) |
+
+**実装ステータス補足（2026-06-12）**: 全フェーズのコード実装が完了。実行環境にLLM APIキーと
+実録画が無いため、「実データでのG1-G3測定によるマージゲート」は未消化のまま実装を進めた。
+残タスク: (1) APIキー設定+実録画追加 → `pnpm eval` でベースライン確定と品質実測、
+(2) Phase 3のヒューリスティック退役判断、(3) Phase 2のconfidence較正、(4) 5.1の単一ソース化判断。
 
 規模感: S = 1セッション程度 / M = 数セッション / L = 大きめ・PR複数に分割推奨
 

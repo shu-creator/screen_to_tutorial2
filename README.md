@@ -4,20 +4,18 @@
 
 ## 主な機能
 
-### 1. 動画アップロードとフレーム抽出
-- MP4/MOV形式の画面録画をアップロード
-- OpenCVによるフレーム間差分検知
-- 重要な操作手順を自動でキーフレームとして抽出
+### 1. 動画アップロードと操作セグメント抽出
+- MP4/MOV形式の画面録画をアップロード（ディスクストリーミング、メモリ全載せなし）
+- ピクセル差分率の状態機械による操作セグメンテーション（タイピング等の連続入力は自動で1操作に集約）
+- 各セグメントに before/after 画像・変化領域bbox・OCR・発話を紐付けた `evidence.json` を生成
 
-### 2. AI画像解析とステップ構造化
-- LLM（`LLM_PROVIDER` で選択）による画像解析
-- 生成時に `steps.json`（中間表現）を保存し、スライド/動画はこの `steps.json` を優先して生成
-- 各フレームから以下の情報を自動生成：
-  - ステップタイトル
-  - 操作説明
-  - 詳細な説明
-  - 音声ナレーション原稿
-  - instruction / expected_result / OCRテキスト / transcript_snippet / confidence
+### 2. AIステップ執筆と構造化（2フェーズ生成）
+- **証拠抽出**（決定的・LLMなし）→ **一括執筆**（証拠全体をLLMに渡しステップの統合・破棄を裁量）
+- UIラベル引用はOCR実測と機械照合し、不一致は警告+要レビューとしてマーク
+- マニュアル全体の概要（タスク名・前提・完了条件）も生成
+- 出力は `steps.json` v2（中間表現）。スライド/動画はこれを優先して生成
+- 各ステップ: タイトル / 操作 / 説明 / ナレーション原稿 / instruction / expected_result /
+  根拠セグメント / cited_ui_labels / confidence / needs_review
 
 ### 3. ステップ編集機能
 - 抽出されたステップのテキスト編集
@@ -34,14 +32,18 @@
 - `SLIDE_PRESET=training` で研修投影向けレイアウト（文字大きめ・自動ROI・spotlight）を利用可能
 
 ### 5. 音声合成と動画生成
-- テキスト読み上げ（TTS）による音声生成
-- FFmpegによる静止画と音声の合成
-- 最終的な解説動画（MP4）の出力
+- **元録画のクリップ切り出し + ナレーション**による解説動画（MP4）
+- 音声モード: 自動 / TTS / 元録画の音声 / ミックス / 無音
+- overview駆動のイントロ・アウトロカード、クリップ不可時は静止画フォールバック
 
 ### 6. ASR / OCR グラウンディング
-- `ASR_PROVIDER` で音声文字起こし（none/openai/local_whisper）を切替
-- `OCR_PROVIDER=llm` でフレームOCRを抽出し、UIラベル根拠を `steps.json` に保持
-- OCR/Transcriptを説明生成プロンプトに注入してハルシネーションを抑制
+- `ASR_PROVIDER` で音声文字起こし（none/openai/local_whisper）を切替。発話は操作に先行する前提のリードウィンドウで割り当て
+- `OCR_PROVIDER=engine` でローカルOCRエンジン（PaddleOCR/Tesseract自動選択、無ければLLM-OCRへフォールバック）
+- OCR/Transcript/差分bboxを執筆プロンプトに注入し、引用ラベルは機械検証してハルシネーションを抑制
+
+### 7. 評価ハーネス
+- `pnpm eval` でステップ分割F1・UIラベル正確性・非ステップ混入率・セグメント境界Recallを測定
+- 合成評価データセットを `pnpm eval:dataset` で決定的に再生成可能（詳細: [eval/README.md](./eval/README.md)）
 
 ## 技術スタック
 
@@ -59,8 +61,8 @@
 - MySQL/TiDB
 
 ### 画像・動画処理
-- OpenCV（Python）
-- FFmpeg
+- FFmpeg（サンプリング・クリップ切り出し・差分解析）
+- PaddleOCR / Tesseract（ローカルOCR、任意）
 - PptxGenJS
 
 ### AI・機械学習
@@ -83,14 +85,19 @@ screen_to_tutorial/
 ├── server/                # バックエンドコード
 │   ├── routers.ts         # tRPCルーター
 │   ├── db.ts              # データベースクエリヘルパー
-│   ├── videoProcessor.ts  # 動画処理エンジン
-│   ├── stepGenerator.ts   # AIステップ生成
+│   ├── videoProcessor.ts  # 動画処理オーケストレーション
+│   ├── evidence/          # 証拠抽出（セグメンテーション・evidence.json）
+│   ├── authoring/         # 一括ステップ執筆 + 機械検証
+│   ├── stepGenerator.ts   # ステップ生成エントリポイント
 │   ├── slideGenerator.ts  # スライド生成
-│   └── videoGenerator.ts  # 動画・音声生成
+│   ├── videoGenerator.ts  # 動画・音声生成
+│   ├── videoClips.ts      # クリップ切り出し・音声調停
+│   └── eval/              # 評価メトリクス・ランナー
 ├── drizzle/               # データベーススキーマ
 │   └── schema.ts
-├── scripts/               # Pythonスクリプト
-│   └── extract_frames.py  # フレーム抽出スクリプト
+├── eval/                  # 評価データセット・合成データ生成
+├── scripts/
+│   └── ocr_server.py      # ローカルOCRエンジンサーバー
 ```
 
 ## データベーススキーマ
@@ -235,9 +242,13 @@ TTS_API_KEY=
 ```env
 ASR_PROVIDER=none            # none | openai | local_whisper
 ASR_MODEL=whisper-1
-OCR_PROVIDER=llm             # none | llm
+ASR_LEAD_MS=3000             # 発話→操作の先行を考慮した参照ウィンドウ
+OCR_PROVIDER=llm             # none | llm | engine（ローカルOCR、フォールバック付き）
 PIPELINE_CACHE_DIR=./data/cache
 FRAME_DEDUPE_HASH_DISTANCE=6
+
+# 証拠抽出 / クリップ動画のパラメータは .env.example を参照
+# (EVIDENCE_SAMPLE_FPS, EVIDENCE_DIFF_HIGH/LOW, CLIP_PAD_*, CLIP_MAX_DURATION_S)
 ```
 
 - LLM/OCR/ASRの結果は `PIPELINE_CACHE_DIR` 配下にキャッシュされます。
@@ -276,12 +287,12 @@ SLIDE_SPOTLIGHT_OPACITY=0.35
 
 ## 実装済み機能
 
-- ✅ 動画アップロード（マルチパート、進捗表示付き）
-- ✅ フレーム抽出（FFmpegシーン検出 + dHash重複除去）
-- ✅ AIステップ生成（`LLM_PROVIDER`: OpenAI/Gemini/Claude）
+- ✅ 動画アップロード（マルチパート、ディスクストリーミング、進捗表示付き）
+- ✅ 操作セグメント抽出（ピクセル差分状態機械 + タイピング集約 + evidence.json）
+- ✅ AIステップ一括執筆 + UIラベル機械検証（`LLM_PROVIDER`: OpenAI/Gemini/Claude）
 - ✅ TTS音声合成（`TTS_PROVIDER`: OpenAI/Gemini）
 - ✅ スライド生成（PowerPoint）
-- ✅ 動画生成（FFmpeg）
+- ✅ クリップベース動画生成（元録画切り出し+音声モード選択）
 - ✅ ダウンロード機能（スライド/動画）
 - ✅ プロジェクト検索・フィルタリング
 - ✅ 一括削除機能
@@ -293,11 +304,18 @@ SLIDE_SPOTLIGHT_OPACITY=0.35
 ## CLI（最小動作確認）
 
 ```bash
-pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true --asr-provider openai --ocr-provider llm
+# フルパイプライン（DB + LLM APIキーが必要）
+pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true --asr-provider openai --ocr-provider engine
+
+# 証拠抽出のみ（DB・LLM不要）
+pnpm evidence:extract -- --video ./sample.mp4 --outdir ./outputs/evidence
+
+# 評価（合成データセット生成 → 測定）
+pnpm eval:dataset
+pnpm eval
 ```
 
-- 出力: `./outputs/project_<id>_steps.json`
-- `--dry-run` を付けるとプロジェクト作成のみ実行します
+- `pipeline:generate` の出力: `./outputs/project_<id>_steps.json`（`--dry-run` でプロジェクト作成のみ）
 - 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`
 
 ## 今後の計画

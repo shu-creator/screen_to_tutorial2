@@ -13,7 +13,7 @@ import fs from "fs/promises";
 import path from "path";
 import { ENV } from "../_core/env";
 import { createLogger } from "../_core/logger";
-import { hashBinary } from "../_core/pipelineCache";
+import { hashFile } from "../_core/pipelineCache";
 import { extractFrameOcrUnified } from "../_core/ocr";
 import { getSharedOcrEngine } from "../_core/ocrEngine";
 import {
@@ -122,8 +122,7 @@ export async function extractEvidence(
 
   await fs.mkdir(options.framesDir, { recursive: true });
 
-  const videoBuffer = await fs.readFile(videoPath);
-  const videoSha256 = hashBinary(videoBuffer);
+  const videoSha256 = await hashFile(videoPath);
 
   // 1. サンプリングとセグメント検出
   await onProgress(0.05, "動画をサンプリングしています...");

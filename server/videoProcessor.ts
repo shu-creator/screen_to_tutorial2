@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import fs from "fs/promises";
-import { readBinaryFromSource, storagePut } from "./storage";
+import { resolveToLocalFile, storagePut } from "./storage";
 import * as db from "./db";
 import { nanoid } from "nanoid";
 import { dedupeFramesByDHash, type NormalizedRect } from "./_core/frameAnalysis";
@@ -373,15 +373,15 @@ export async function processVideo(
   const tempDir = path.join("/tmp", `frames_${projectId}_${Date.now()}`);
   await fs.mkdir(tempDir, { recursive: true });
 
-  // 動画をダウンロード（URLの場合）
-  const videoPath = path.join(tempDir, "video.mp4");
-  console.log(`[VideoProcessor] Downloading video from: ${videoUrl}`);
+  // 動画をローカルパスに解決（ローカルストレージならコピーなし、
+  // リモートURLのみ一時ファイルへダウンロード）
+  console.log(`[VideoProcessor] Resolving video source: ${videoUrl}`);
   console.log(`[VideoProcessor] Using video key: ${videoKey}`);
-  await downloadFile(videoUrl, videoPath, videoKey);
+  const resolvedVideo = await resolveToLocalFile(videoUrl, ".mp4");
+  const videoPath = resolvedVideo.path;
 
-  // ダウンロードしたファイルの検証
   const videoStats = await fs.stat(videoPath);
-  console.log(`[VideoProcessor] Video downloaded to: ${videoPath}, size: ${videoStats.size} bytes`);
+  console.log(`[VideoProcessor] Video resolved to: ${videoPath}, size: ${videoStats.size} bytes`);
 
   if (videoStats.size === 0) {
     throw new Error("ダウンロードした動画ファイルが空です。URLが正しいか確認してください。");
@@ -573,15 +573,4 @@ async function processWithEvidencePipeline(
 
   await saveEvidenceArtifact(projectId, artifact);
   await db.updateProjectProgress(projectId, 70, "フレームの処理が完了しました");
-}
-
-/**
- * ローカルファイルをダウンロード（URLまたはローカルパスから）
- */
-export async function downloadFile(source: string, destination: string, videoKey?: string): Promise<void> {
-  console.log(`[downloadFile] Source URL: ${source}`);
-  console.log(`[downloadFile] Video key: ${videoKey}`);
-
-  const buffer = await readBinaryFromSource(source);
-  await fs.writeFile(destination, buffer);
 }

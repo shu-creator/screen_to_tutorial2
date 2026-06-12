@@ -147,6 +147,27 @@ export async function storagePut(
   return { key, url: keyToPublicUrl(key) };
 }
 
+/**
+ * ローカルファイルをストレージへ移動して登録する（メモリへの全載せを回避）。
+ * 同一ファイルシステムなら rename、跨る場合は copy+unlink。
+ */
+export async function storagePutFromFile(
+  relKey: string,
+  sourcePath: string,
+  _contentType = "application/octet-stream"
+): Promise<{ key: string; url: string }> {
+  const key = normalizeKey(relKey);
+  const filePath = keyToFsPath(key);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  try {
+    await fs.rename(sourcePath, filePath);
+  } catch {
+    await fs.copyFile(sourcePath, filePath);
+    await fs.unlink(sourcePath).catch(() => {});
+  }
+  return { key, url: keyToPublicUrl(key) };
+}
+
 export async function storageGet(
   relKey: string
 ): Promise<{ key: string; url: string }> {

@@ -6,7 +6,7 @@ import { promisify } from "util";
 import { createLogger } from "./logger";
 import { ENV } from "./env";
 import { getCachedJson, hashBinary, setCachedJson } from "./pipelineCache";
-import { readBinaryFromSource } from "../storage";
+import { resolveToLocalFile } from "../storage";
 
 const logger = createLogger("ASR");
 const execFileAsync = promisify(execFile);
@@ -233,14 +233,11 @@ export async function transcribeVideoSource(
     };
   }
 
-  const tempVideoPath = createTempPath("asr_video", ".mp4");
+  const resolvedVideo = await resolveToLocalFile(videoSource, ".mp4");
   let audioPath: string | null = null;
 
   try {
-    const videoBuffer = await readBinaryFromSource(videoSource);
-    await fs.writeFile(tempVideoPath, videoBuffer);
-
-    audioPath = await extractAudio(tempVideoPath);
+    audioPath = await extractAudio(resolvedVideo.path);
     if (!audioPath) {
       return {
         provider,
@@ -267,7 +264,7 @@ export async function transcribeVideoSource(
       warnings: [`Unsupported ASR provider: ${provider}`],
     };
   } finally {
-    await fs.unlink(tempVideoPath).catch(() => {});
+    await resolvedVideo.cleanup();
     if (audioPath) {
       await fs.unlink(audioPath).catch(() => {});
     }
