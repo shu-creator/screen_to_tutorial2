@@ -433,11 +433,15 @@ export const appRouter = router({
           throw new Error("プロジェクトが見つかりません");
         }
 
+        await db.updateProjectStatus(input.projectId, "processing");
+        await db.updateProjectProgress(input.projectId, 66, "ステップ生成を開始しています...");
+
         // バックグラウンドでステップ生成を実行
         generateStepsForProject(input.projectId)
           .then(async () => {
             // 進捗を100%に更新
             await db.updateProjectProgress(input.projectId, 100, "ステップ生成が完了しました");
+            await db.updateProjectStatus(input.projectId, "completed");
             logger.info("Steps generated successfully", { projectId: input.projectId });
           })
           .catch(async (error) => {

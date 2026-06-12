@@ -100,6 +100,7 @@ jspm_packages/
 # Temporary folders
 tmp/
 temp/
+outputs/
 
 # Local storage data
 data/

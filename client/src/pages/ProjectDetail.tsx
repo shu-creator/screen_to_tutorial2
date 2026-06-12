@@ -95,21 +95,21 @@ function SortableStepCard({
   return (
     <Card ref={setNodeRef} style={style} className={isDragging ? "shadow-lg" : ""}>
       <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex gap-4 flex-1">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row">
             {/* ドラッグハンドル */}
             <button
               {...attributes}
               {...listeners}
-              className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
+              className="cursor-grab self-start p-1 text-muted-foreground hover:text-foreground active:cursor-grabbing"
               aria-label="ドラッグして並び替え"
             >
               <GripVertical className="h-5 w-5" />
             </button>
-            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary font-bold text-primary-foreground">
               {index + 1}
             </div>
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               {isEditing ? (
                 <div className="space-y-4">
                   <div>
@@ -190,7 +190,7 @@ function SortableStepCard({
           </div>
           {/* フレームプレビュー */}
           {frame && !isEditing && (
-            <div className="flex-shrink-0 w-40 aspect-video bg-muted rounded overflow-hidden">
+            <div className="aspect-video w-full overflow-hidden rounded bg-muted sm:w-40">
               <img
                 src={frame.imageUrl}
                 alt={`ステップ ${index + 1} のフレーム`}
@@ -198,7 +198,7 @@ function SortableStepCard({
               />
             </div>
           )}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2 lg:w-36 lg:flex-col">
             <div className="flex gap-2">
               <Button
                 variant="ghost"
@@ -221,7 +221,7 @@ function SortableStepCard({
                 size="sm"
                 onClick={() => onRegenerate(step.id, step.frameId)}
                 disabled={isRegenerating}
-                className="w-full"
+                className="w-full sm:w-auto lg:w-full"
               >
                 {isRegenerating ? (
                   <>
@@ -417,11 +417,17 @@ export default function ProjectDetail() {
     try {
       await generateStepsMutation.mutateAsync({ projectId });
       toast.success("ステップの生成を開始しました");
-      
+      setProgressData({
+        progress: 66,
+        message: "ステップ生成を開始しています...",
+      });
+      refetchProject();
+
       // ポーリングで結果を確認
       const pollInterval = setInterval(() => {
         refetchSteps();
-      refetchArtifactInfo();
+        refetchArtifactInfo();
+        refetchProject();
       }, 3000);
       
       setTimeout(() => {
@@ -593,16 +599,16 @@ export default function ProjectDetail() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start gap-4">
             <Link href="/projects">
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-3xl font-bold text-foreground">{project.title}</h1>
+            <div className="min-w-0">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <h1 className="break-all text-2xl font-bold text-foreground sm:text-3xl">{project.title}</h1>
                 {project.status === "processing" && (
                   <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-yellow-100 text-yellow-700">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -625,7 +631,7 @@ export default function ProjectDetail() {
               <p className="text-muted-foreground mt-1">{project.description}</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               onClick={slideUrl ? () => downloadFile(slideUrl, `${project.title}.pptx`) : handleGenerateSlides}
@@ -761,7 +767,7 @@ export default function ProjectDetail() {
 
         {/* Tabs */}
         <Tabs defaultValue="frames" className="w-full">
-          <TabsList>
+          <TabsList className="flex w-full justify-start overflow-x-auto">
             <TabsTrigger value="frames">
               <ImageIcon className="h-4 w-4 mr-2" />
               フレーム ({frames?.length || 0})
