@@ -1,0 +1,11 @@
+{
+  "case_id": "real-app-workflow-01",
+  "description": "実録画: 本アプリ（Manus版プロトタイプ）のプロジェクト作成〜動画アップロード〜ステップ確認〜スライド/動画生成の一連操作",
+  "synthetic": false,
+  "source": "macOS画面収録 2026-01-18 20.56.19.mov（自作デモ操作）を ffmpeg -c copy で video.mp4 にリマックス",
+  "video_sha256": "b13f2cf6c7da2d19c97339f359e50ec4915eaa28fbb34318a237e2f9c46f3115",
+  "duration_ms": 302418,
+  "fps": 60,
+  "resolution": "2940x1912",
+  "has_narration": false
+}
