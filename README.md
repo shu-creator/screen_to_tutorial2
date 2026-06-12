@@ -276,18 +276,8 @@ SLIDE_SPOTLIGHT_OPACITY=0.35
 
 ## 実装済み機能
 
-- ✅ 動画アップロード（Base64エンコード、進捗表示付き）
-- ✅ フレーム抽出（OpenCV）
-
-## CLI（最小動作確認）
-
-```bash
-pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true --asr-provider openai --ocr-provider llm
-```
-
-- 出力: `./outputs/project_<id>_steps.json`
-- `--dry-run` を付けるとプロジェクト作成のみ実行します
-- 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`
+- ✅ 動画アップロード（マルチパート、進捗表示付き）
+- ✅ フレーム抽出（FFmpegシーン検出 + dHash重複除去）
 - ✅ AIステップ生成（`LLM_PROVIDER`: OpenAI/Gemini/Claude）
 - ✅ TTS音声合成（`TTS_PROVIDER`: OpenAI/Gemini）
 - ✅ スライド生成（PowerPoint）
@@ -300,27 +290,23 @@ pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true 
 - ✅ 処理の再試行（パラメータ調整可能）
 - ✅ レート制限
 
-## 今後の改善点
+## CLI（最小動作確認）
 
-1. **マルチパートアップロード対応**
-   - 大容量ファイルの効率的なアップロード
-   - アップロード再開機能
+```bash
+pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true --asr-provider openai --ocr-provider llm
+```
 
-2. **ステップの並べ替え機能**
-   - ドラッグ&ドロップによる並べ替え
-   - sortOrderの自動更新
+- 出力: `./outputs/project_<id>_steps.json`
+- `--dry-run` を付けるとプロジェクト作成のみ実行します
+- 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`
 
-3. **画像の差し替え機能**
-   - 手動で画像をアップロードして差し替え
-   - フレームの再抽出
+## 今後の計画
 
-4. **エクスポート設定**
-   - スライドテンプレートの選択
-   - 動画解像度・フォーマットの設定
+生成品質（ステップ分割・グラウンディング・動画出力）の刷新計画が進行中です。詳細は以下を参照してください。
 
-5. **バッチ処理**
-   - 複数の動画を一括処理
-   - プロジェクトのテンプレート化
+- [要件定義](./docs/requirements.md)
+- [ロードマップ](./docs/roadmap.md)
+- フェーズ別詳細プラン: [docs/plans/](./docs/plans/)
 
 ## ライセンス
 
