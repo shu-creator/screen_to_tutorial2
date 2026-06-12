@@ -124,34 +124,7 @@ export function anonymizeOnScreenStepNumbers(text: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * 同一 title が複数ある場合に displayTitle を付与する。
- * 2回目 → "（続き）"、3回目以降 → "（続きN）" を付ける。
- * 返り値は入力と同じ順序で displayTitle を含む配列。
- */
-export function uniquifyTitles<T extends { title: string }>(
-  steps: T[],
-): (T & { displayTitle: string })[] {
-  const countMap = new Map<string, number>();
-
-  return steps.map((step) => {
-    const count = (countMap.get(step.title) ?? 0) + 1;
-    countMap.set(step.title, count);
-
-    let displayTitle: string;
-    if (count === 1) {
-      displayTitle = step.title;
-    } else if (count === 2) {
-      displayTitle = `${step.title}（続き）`;
-    } else {
-      displayTitle = `${step.title}（続き${count - 1}）`;
-    }
-
-    return { ...step, displayTitle };
-  });
-}
-
-/**
- * buildDisplayTitleMap — uniquifyTitles の Map 版。
+ * buildDisplayTitleMap — 重複タイトルに「（続き）」を付与した displayTitle のMapを返す。
  * steps の各 id に対して displayTitle を返す。
  */
 export function buildDisplayTitleMap(

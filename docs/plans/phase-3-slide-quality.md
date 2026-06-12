@@ -1,6 +1,15 @@
 # Phase 3: スライド品質改善 + ヒューリスティック退役
 
-ステータス: 未着手
+ステータス: 実装済み（2026-06-12）。実装メモ:
+- 表紙のoverview駆動化・完了スライド・needs_reviewのスピーカーノート警告・
+  trainingプリセットのartifact bbox優先（無い場合のみ従来の再計算にフォールバック）を実装
+- defaultプリセットのハイライトはクロップ空間で動作するため従来の再計算を維持
+  （artifact bboxはフルフレーム座標。座標変換の導入は実データでの効果確認後）
+- 退役済み: `uniquifyTitles`（テスト以外から未参照の死にコード）
+- **退役保留（実データの評価値待ち）**: `anonymizeOnScreenStepNumbers` /
+  `applyFinalStepCompletionFix` / `buildDisplayTitleMap` — 退役条件の表を参照
+- cited_ui_labels とハイライトの連動は実データでの効果確認後に判断
+
 規模: M
 依存: Phase 2（steps.json v2）。Phase 4 と並行可
 

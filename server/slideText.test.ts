@@ -4,7 +4,6 @@ import {
   truncateAtSentence,
   ensureTerminalPunctuation,
   anonymizeOnScreenStepNumbers,
-  uniquifyTitles,
   buildDisplayTitleMap,
   fixFinalStepIfHover,
   applyFinalStepCompletionFix,
@@ -182,56 +181,6 @@ describe("anonymizeOnScreenStepNumbers", () => {
 // ---------------------------------------------------------------------------
 // 4) uniquifyTitles
 // ---------------------------------------------------------------------------
-describe("uniquifyTitles", () => {
-  it("重複がなければ displayTitle は元のタイトルのまま", () => {
-    const steps = [
-      { title: "ログイン" },
-      { title: "設定変更" },
-      { title: "保存" },
-    ];
-    const result = uniquifyTitles(steps);
-    expect(result[0].displayTitle).toBe("ログイン");
-    expect(result[1].displayTitle).toBe("設定変更");
-    expect(result[2].displayTitle).toBe("保存");
-  });
-
-  it("同一タイトルが2回目で '（続き）' が付く", () => {
-    const steps = [
-      { title: "設定変更" },
-      { title: "設定変更" },
-    ];
-    const result = uniquifyTitles(steps);
-    expect(result[0].displayTitle).toBe("設定変更");
-    expect(result[1].displayTitle).toBe("設定変更（続き）");
-  });
-
-  it("同一タイトルが3回以上で '（続きN）' が付く", () => {
-    const steps = [
-      { title: "入力" },
-      { title: "入力" },
-      { title: "入力" },
-      { title: "入力" },
-    ];
-    const result = uniquifyTitles(steps);
-    expect(result[0].displayTitle).toBe("入力");
-    expect(result[1].displayTitle).toBe("入力（続き）");
-    expect(result[2].displayTitle).toBe("入力（続き2）");
-    expect(result[3].displayTitle).toBe("入力（続き3）");
-  });
-
-  it("元のプロパティが保持される", () => {
-    const steps = [{ title: "A", sortOrder: 0, extra: 42 }];
-    const result = uniquifyTitles(steps);
-    expect(result[0].sortOrder).toBe(0);
-    expect((result[0] as any).extra).toBe(42);
-    expect(result[0].displayTitle).toBe("A");
-  });
-
-  it("空配列は空配列を返す", () => {
-    expect(uniquifyTitles([])).toEqual([]);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // 4b) buildDisplayTitleMap
 // ---------------------------------------------------------------------------

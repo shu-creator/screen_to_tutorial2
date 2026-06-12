@@ -934,6 +934,20 @@ export async function generateSlides(projectId: number): Promise<string> {
       await saveStepsArtifact(projectId, fallbackArtifact);
     }
 
+    // Phase 3: artifact（v2）のbbox・検証結果・overviewをスライドに反映する
+    const artifactStepByDbId = new Map<
+      number,
+      NonNullable<typeof artifact>["steps"][number]
+    >();
+    if (artifact) {
+      for (const artifactStep of artifact.steps) {
+        if (artifactStep.legacy_step_db_id) {
+          artifactStepByDbId.set(artifactStep.legacy_step_db_id, artifactStep);
+        }
+      }
+    }
+    const overview = artifact?.overview ?? null;
+
     if (!steps || steps.length === 0) {
       throw new Error(`No steps found for project ${projectId}`);
     }
@@ -982,7 +996,7 @@ export async function generateSlides(projectId: number): Promise<string> {
       fill: { color: COLORS.primaryDark },
     });
 
-    titleSlide.addText(removeEmojis(project.title), {
+    titleSlide.addText(removeEmojis(overview?.task_title || project.title), {
       x: 0.5,
       y: 1.8,
       w: 9.0,
@@ -994,8 +1008,12 @@ export async function generateSlides(projectId: number): Promise<string> {
       valign: "middle",
     });
 
-    if (project.description) {
-      titleSlide.addText(removeEmojis(project.description), {
+    const coverDescription =
+      overview && overview.preconditions.length > 0
+        ? `前提: ${overview.preconditions.join(" / ")}`
+        : project.description;
+    if (coverDescription) {
+      titleSlide.addText(removeEmojis(coverDescription), {
         x: 0.5,
         y: 3.2,
         w: 9.0,
@@ -1141,7 +1159,15 @@ export async function generateSlides(projectId: number): Promise<string> {
             const targetAspect = imageRect.w / imageRect.h;
             let candidateRegion: NormalizedRect | null = null;
 
-            if (stepIndex > 0) {
+            // artifactのbbox（証拠抽出/生成時に算出済み）を優先し、
+            // 無い場合のみ従来のffmpeg差分再計算にフォールバックする
+            const artifactBBox =
+              artifactStepByDbId.get(step.id)?.changed_region_bbox ?? null;
+            if (artifactBBox && isReliableRoiRegion(artifactBBox, croppingConfig)) {
+              candidateRegion = artifactBBox;
+            }
+
+            if (!candidateRegion && stepIndex > 0) {
               const prevFrameId = stepsWithDisplayTitle[stepIndex - 1].frameId;
               const prevPath = await getFrameTempPath(prevFrameId);
               if (prevPath) {
@@ -1349,11 +1375,46 @@ export async function generateSlides(projectId: number): Promise<string> {
         valign: "top",
       });
 
-      const notesText = buildNotesText(step, {
+      let notesText = buildNotesText(step, {
         operationOverflow,
         detailOverflow,
       });
+      const artifactStep = artifactStepByDbId.get(step.id);
+      if (artifactStep?.needs_review) {
+        const reviewReasons =
+          artifactStep.warnings.length > 0
+            ? artifactStep.warnings.join(" / ")
+            : "信頼度が低い生成結果です";
+        notesText = `【要レビュー】${reviewReasons}\n配布前にこのステップを確認してください。\n\n${notesText}`;
+      }
       slide.addNotes(notesText);
+    }
+
+    // === 完了スライド（overviewがある場合のみ） ===
+    if (overview?.completion_criteria) {
+      const closingSlide = pptx.addSlide();
+      closingSlide.background = { color: COLORS.primary };
+      closingSlide.addText("完了", {
+        x: 0.5,
+        y: 1.6,
+        w: 9.0,
+        h: 1.0,
+        fontSize: 36,
+        bold: true,
+        color: COLORS.white,
+        align: "center",
+        valign: "middle",
+      });
+      closingSlide.addText(removeEmojis(`完了条件: ${overview.completion_criteria}`), {
+        x: 0.8,
+        y: 2.9,
+        w: 8.4,
+        h: 1.2,
+        fontSize: 18,
+        color: COLORS.white,
+        align: "center",
+        valign: "top",
+      });
     }
 
     // PPTXファイルを一時ファイルに保存
