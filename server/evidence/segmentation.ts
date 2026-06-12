@@ -272,6 +272,13 @@ export function detectTransitions(
   const mediumStartAreaRatio = 0.005;
   const microInputDiffRate = 0.00005;
   const microInputAreaRatio = 0.001;
+  // stall前の変化を独立したactionセグメントとして分割する価値があるとみなす経験的下限（画面面積の5%）。
+  // メニュー展開・画面遷移は通常これを超え、スピナー・カーソル残像は下回る。
+  // stallAreaRatio（待機UI bboxの上限）とは役割が異なる独立基準のため連動させない
+  // （旧実装の min(stallAreaRatio, 0.05) は stallAreaRatio を小さく設定すると
+  // 分割基準まで連動して下がる意図外相互作用があった）。
+  // 下限未満の場合は遷移全体を waiting 扱いにする（フォールバック）。
+  const preStallActionAreaRatio = 0.05;
   const isMicroInputCandidate = (diff: FrameDiff): boolean => {
     const area = rectArea(diff.changedBBox);
     return (
@@ -322,6 +329,8 @@ export function detectTransitions(
   let stalledRegion: NormalizedRect | null = null;
   let stalledBBox: NormalizedRect | null = null;
   let stalledCalmRun = 0;
+  // stall領域外の中間diffを蓄積し、stableFrames回連続でwaitingをエスケープする（P2-1）
+  let stalledEscapeDiffs: FrameDiff[] = [];
 
   for (const diff of diffs) {
     if (state === "stable") {
@@ -338,8 +347,10 @@ export function detectTransitions(
     }
 
     if (state === "stalled") {
+      // (1) calm: 安定化方向
       if (diff.diffRate < options.lowThreshold) {
         stalledCalmRun += 1;
+        stalledEscapeDiffs = []; // calm時はエスケープrun をリセット
         if (stalledCalmRun >= options.stableFrames) {
           transitions.push({
             startIndex: stalledStart,
@@ -355,14 +366,17 @@ export function detectTransitions(
       }
 
       stalledCalmRun = 0;
+      // (2) stall領域内の変化
       const insideStallRegion =
         stalledRegion !== null &&
         diff.changedBBox !== null &&
         rectContains(stalledRegion, diff.changedBBox);
       if (insideStallRegion) {
         stalledBBox = unionBBox(stalledBBox, diff.changedBBox);
+        stalledEscapeDiffs = []; // stall領域内ならエスケープrun をリセット
         continue;
       }
+      // (3) isTransitionStart: 明確な遷移開始でwaitingをクローズ
       if (isTransitionStart(diff)) {
         transitions.push({
           startIndex: stalledStart,
@@ -377,6 +391,33 @@ export function detectTransitions(
         transitionDiffs = [diff];
         stallWindow = [diff];
         stallCandidateStart = null;
+        stalledEscapeDiffs = []; // 遷移移行時もリセット
+        continue;
+      }
+      // (4) 中間diff: stall領域外かつisTransitionStart未満の変化
+      // stableFrames回連続したらwaitingをクローズして遷移再開する
+      // （stableFramesは「状態遷移を確定させる連続フレーム数」として流用する）
+      stalledEscapeDiffs.push(diff);
+      if (stalledEscapeDiffs.length >= options.stableFrames) {
+        transitions.push({
+          startIndex: stalledStart,
+          stabilizedIndex: stalledEscapeDiffs[0].index, // エスケープrun先頭でwaitingをクローズ
+          changedBBox: stalledBBox,
+          activity: "waiting",
+        });
+        state = "transition";
+        transitionStart = stalledEscapeDiffs[0].index;
+        bbox = stalledEscapeDiffs.reduce<NormalizedRect | null>(
+          (acc, d) => unionBBox(acc, d.changedBBox),
+          null
+        );
+        calmRun = 0;
+        transitionDiffs = [...stalledEscapeDiffs];
+        stallWindow = [...stalledEscapeDiffs];
+        stallCandidateStart = null;
+        stalledRegion = null;
+        stalledBBox = null;
+        stalledEscapeDiffs = [];
       }
       continue;
     }
@@ -417,11 +458,11 @@ export function detectTransitions(
             transitionStart,
             stallCandidateStart - 1
           );
-          const preStallActionAreaRatio = Math.min(stallAreaRatio, 0.05);
           const hasPreStallAction =
             actionBBox !== null &&
             rectArea(actionBBox) > preStallActionAreaRatio;
           if (stallCandidateStart > transitionStart && hasPreStallAction) {
+            // pre-stall actionあり: actionセグメントをpushしてstalled状態へ
             transitions.push({
               startIndex: transitionStart,
               stabilizedIndex: stallCandidateStart,
@@ -444,6 +485,27 @@ export function detectTransitions(
             transitionDiffs = [];
             stallWindow = [];
             stallCandidateStart = null;
+            stalledEscapeDiffs = [];
+            continue;
+          } else {
+            // pre-stall actionなし（スピナーのみ等）: 遷移全体をwaitingとしてstalled状態へ
+            stalledStart = transitionStart;
+            stalledBBox = bboxFromDiffs(
+              transitionDiffs,
+              transitionStart,
+              diff.index
+            );
+            stalledRegion =
+              stalledBBox !== null
+                ? padRect(stalledBBox, coalesceBBoxPadRatio)
+                : windowBBox;
+            stalledCalmRun = 0;
+            state = "stalled";
+            bbox = null;
+            transitionDiffs = [];
+            stallWindow = [];
+            stallCandidateStart = null;
+            stalledEscapeDiffs = [];
             continue;
           }
         }
@@ -532,6 +594,14 @@ function rectIoU(a: NormalizedRect, b: NormalizedRect): number {
   return union > 0 ? intersection / union : 0;
 }
 
+/**
+ * detectTransitions の stall 検出とは独立した第二のヒューリスティック（セグメント単位の反復小領域 run の検出）。
+ * stall 起源で既に activity="waiting" のセグメントも再走査対象に含める。
+ * 理由:
+ *   (1) markRun は waiting を付与するのみで action へ格下げしないため安全。
+ *   (2) stall 起源 waiting の前後にある小領域 action セグメントを同一 run として束ねて
+ *       waiting に分類できるようにするため。
+ */
 export function classifyWaitingRuns(
   segments: OperationSegment[],
   options: Partial<

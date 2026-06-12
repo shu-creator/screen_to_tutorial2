@@ -187,6 +187,29 @@ const evidenceCoalesceMaxGapMs = parseNumberEnv(
   1000,
   { min: 0 }
 );
+const evidenceStallWindowFrames = parseNumberEnv(
+  "EVIDENCE_STALL_WINDOW_FRAMES",
+  12,
+  { min: 1 }
+);
+const evidenceStallAreaRatio = parseNumberEnv(
+  "EVIDENCE_STALL_AREA_RATIO",
+  0.35,
+  { min: 0, max: 1 }
+);
+const evidenceStallAfterMs = parseNumberEnv("EVIDENCE_STALL_AFTER_MS", 6000, {
+  min: 0,
+});
+const evidenceWaitingRunAreaRatio = parseNumberEnv(
+  "EVIDENCE_WAITING_RUN_AREA_RATIO",
+  0.35,
+  { min: 0, max: 1 }
+);
+const evidenceWaitingRunMinSpanMs = parseNumberEnv(
+  "EVIDENCE_WAITING_RUN_MIN_SPAN_MS",
+  10000,
+  { min: 0 }
+);
 const asrLeadMs = parseNumberEnv("ASR_LEAD_MS", 3000, { min: 0 });
 
 // Phase 4: クリップ動画パラメータ（docs/plans/phase-4-clip-video.md）
@@ -284,6 +307,11 @@ export const ENV = {
   evidenceDiffLow,
   evidenceStableFrames,
   evidenceCoalesceMaxGapMs,
+  evidenceStallWindowFrames,
+  evidenceStallAreaRatio,
+  evidenceStallAfterMs,
+  evidenceWaitingRunAreaRatio,
+  evidenceWaitingRunMinSpanMs,
   asrLeadMs,
   clipPadBeforeMs,
   clipPadAfterMs,

@@ -44,6 +44,11 @@ export interface ExtractEvidenceOptions {
   diffLow?: number;
   stableFrames?: number;
   coalesceMaxGapMs?: number;
+  stallWindowFrames?: number;
+  stallAreaRatio?: number;
+  stallAfterMs?: number;
+  waitingRunAreaRatio?: number;
+  waitingRunMinSpanMs?: number;
   asrLeadMs?: number;
   asrProvider?: typeof ENV.asrProvider;
   ocrProvider?: typeof ENV.ocrProvider;
@@ -121,6 +126,14 @@ export async function extractEvidence(
   const stableFrames = options.stableFrames ?? ENV.evidenceStableFrames;
   const coalesceMaxGapMs =
     options.coalesceMaxGapMs ?? ENV.evidenceCoalesceMaxGapMs;
+  const stallWindowFrames =
+    options.stallWindowFrames ?? ENV.evidenceStallWindowFrames;
+  const stallAreaRatio = options.stallAreaRatio ?? ENV.evidenceStallAreaRatio;
+  const stallAfterMs = options.stallAfterMs ?? ENV.evidenceStallAfterMs;
+  const waitingRunAreaRatio =
+    options.waitingRunAreaRatio ?? ENV.evidenceWaitingRunAreaRatio;
+  const waitingRunMinSpanMs =
+    options.waitingRunMinSpanMs ?? ENV.evidenceWaitingRunMinSpanMs;
   const asrLeadMs = options.asrLeadMs ?? ENV.asrLeadMs;
   const asrProvider = options.asrProvider ?? ENV.asrProvider;
   const ocrProvider = options.ocrProvider ?? ENV.ocrProvider;
@@ -147,6 +160,11 @@ export async function extractEvidence(
       lowThreshold: diffLow,
       stableFrames,
       coalesceMaxGapMs,
+      stallWindowFrames,
+      stallAreaRatio,
+      stallAfterMs,
+      waitingRunAreaRatio,
+      waitingRunMinSpanMs,
     }
   );
   logger.info(`Detected ${segments.length} operation segments`);

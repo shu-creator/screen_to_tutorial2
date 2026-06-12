@@ -243,6 +243,128 @@ describe("detectSegments (end-to-end pure)", () => {
     expect(segments[1].transitionStartMs).toBeGreaterThanOrEqual(1000);
     expect(segments[1].changedBBox?.w).toBeLessThan(0.15);
   });
+
+  it("stall領域外の中間diffが stableFrames 回連続したら waiting をクローズして遷移再開する（P2-1）", () => {
+    // W=100, H=50 (5000px)
+    // fps=4, stableFrames=2, stallWindowFrames=3, stallAfterMs=1000, stallAreaRatio=0.02
+    // highThreshold=0.01 に上げることで中間diff(diffRate=0.002)がisTransitionStart=falseになる
+    //
+    // 中間diffはスピナーAにy=40の変化を重ねて作る。
+    // midOnA: spinnerA + (x=0,y=40,w=10,h=1)=200 → diff vs spinnerA: 10px only at y=40
+    //   diffRate=10/5000=0.002, bbox=(0,0.8,0.1,0.02), area=0.002
+    //   isTransitionStart=false: diffRate(0.002)<=highThreshold(0.01), area(0.002)<mediumStartAreaRatio(0.005)
+    // midOnB: spinnerA + (x=10,y=40,w=10,h=1)=200 → diff vs midOnA: 20px
+    //   diffRate=20/5000=0.004, isTransitionStart=false (area=0.004<0.005)
+    const base = flatFrame(100);
+    const action = withRect(base, { x: 0, y: 0, w: 50, h: 25 }, 150);
+    const spinnerA = withRect(action, { x: 40, y: 18, w: 6, h: 6 }, 220);
+    const spinnerB = withRect(action, { x: 41, y: 18, w: 6, h: 6 }, 220);
+    // stall領域外の中間diff: スピナーAにy=40の変化を重ねる（spinner部分はそのまま維持）
+    const midOnA = withRect(spinnerA, { x: 0, y: 40, w: 10, h: 1 }, 200);
+    const midOnB = withRect(spinnerA, { x: 10, y: 40, w: 10, h: 1 }, 200);
+
+    const frames = [
+      base,     // 0
+      base,     // 1
+      base,     // 2
+      base,     // 3
+      action,   // 4  ← diff[4] action大変化(50x25px=0.25) → transition開始(transitionStart=4)
+      spinnerA, // 5  ← diff[5]
+      spinnerB, // 6  ← diff[6]
+      spinnerA, // 7  ← diff[7] stallWindow=[5,6,7], stallCandidateStart=5, stalledForMs=500ms
+      spinnerB, // 8  ← diff[8] stalledForMs=750ms
+      spinnerA, // 9  ← diff[9] stalledForMs=(9-5)*250=1000ms >= 1000ms
+                //     actionBBox=(0,0,0.5,0.5) area=0.25>preStallActionAreaRatio(0.05) → hasPreStallAction=true
+                //     action{start=4,stabilized=5}をpush、stalledStart=5でstalled状態へ
+      midOnA,   // 10 ← diff[10] 中間diff1回目: spinnerA→midOnA = 10px at y=40
+                //     changedBBox=(0,0.8,0.1,0.02), not inside stalledRegion(0.36..0.51, 0.32..0.52)
+                //     isTransitionStart=false → stalledEscapeDiffs=[diff[10]]
+      midOnB,   // 11 ← diff[11] 中間diff2回目: midOnA→midOnB = 20px at y=40
+                //     isTransitionStart=false → stalledEscapeDiffs=[diff[10],diff[11]]
+                //     .length=2 >= stableFrames=2 → escape!
+                //     waiting{start=5,stabilized=stalledEscapeDiffs[0].index=10}をpush
+                //     transition再開(transitionStart=10)
+      base,     // 12 ← diff[12] calmRun=0（midOnB→base は大きい変化）
+      base,     // 13 ← diff[13] calm1
+      base,     // 14 ← diff[14] calm2 → action{start=10,stabilized=13}
+    ];
+
+    const segments = detectSegments(frames, W, H, {
+      fps: 4,
+      highThreshold: 0.01,
+      lowThreshold: 0.0005,
+      stableFrames: 2,
+      stallWindowFrames: 3,
+      stallAfterMs: 1000,
+      stallAreaRatio: 0.02,
+    });
+
+    // waiting セグメントが存在し、tEndMs が中間diff開始フレーム付近でクローズされている
+    const waitingSeg = segments.find(s => s.activity === "waiting");
+    expect(waitingSeg).toBeDefined();
+    // stabilizedIndex=10 → tEndMs=10*(1000/4)=2500ms（動画末尾まで延長されていない）
+    expect(waitingSeg!.tEndMs).toBeLessThan(frames.length * (1000 / 4));
+    expect(waitingSeg!.tEndMs).toBe(10 * (1000 / 4)); // 2500ms
+
+    // waiting の直後に別セグメントが存在し、その transitionStartMs が waiting の tEndMs と一致する
+    const waitingIdx = segments.indexOf(waitingSeg!);
+    const nextSeg = segments[waitingIdx + 1];
+    expect(nextSeg).toBeDefined();
+    expect(nextSeg.transitionStartMs).toBe(waitingSeg!.tEndMs);
+  });
+
+  it("遷移開始直後からスピナーのみの場合は遷移全体を waiting にする（P2-2）", () => {
+    // W=100, H=50 (5000px)
+    // fps=4, stableFrames=2, stallWindowFrames=3, stallAfterMs=1000, stallAreaRatio=0.02
+    // スピナーのみ（pre-stall action なし）: actionBBox面積(0.0072) < preStallActionAreaRatio(0.05)
+    const base = flatFrame(100);
+    const spinnerA = withRect(base, { x: 40, y: 18, w: 6, h: 6 }, 220);
+    const spinnerB = withRect(base, { x: 41, y: 18, w: 6, h: 6 }, 220);
+
+    // spinnerA - base: diffRate=36/5000=0.0072, bbox=(0.4,0.36,0.06,0.12), area=0.0072
+    // mediumLocalChange: diffRate(0.0072)>0.0005 && area(0.0072)>=0.005 && area<=0.02 → true
+    // → isTransitionStart=true → transition開始（pre-stall action なし）
+    const frames = [
+      base,     // 0
+      base,     // 1
+      base,     // 2
+      base,     // 3
+      spinnerA, // 4  ← diff[4]: isTransitionStart=true → transition開始(transitionStart=4)
+      spinnerB, // 5  ← diff[5]
+      spinnerA, // 6  ← diff[6]
+                //     stallWindow=[4,5,6], windowBBox≈(0.4,0.36,0.07,0.12), area=0.0084<=0.02
+                //     stallCandidateStart = max(4, transitionStart+1=5) = 5
+                //     stalledForMs=(6-5)*250=250ms
+      spinnerB, // 7  ← diff[7]: stalledForMs=500ms
+      spinnerA, // 8  ← diff[8]: stalledForMs=750ms
+      spinnerB, // 9  ← diff[9]: stalledForMs=(9-5)*250=1000ms >= 1000ms
+                //     actionBBox=bboxFromDiffs(transitionDiffs,4,4)=spinner bbox, area=0.0072
+                //     hasPreStallAction: 0.0072 > 0.05? No → フォールバック
+                //     stalledStart=transitionStart=4, 遷移全体をwaitingとしてstalled状態へ
+      base,     // 10 ← diff[10]: calm1
+      base,     // 11 ← diff[11]: calm2 → waiting{start=4, stabilized=10} push
+    ];
+
+    const segments = detectSegments(frames, W, H, {
+      fps: 4,
+      highThreshold: 0.01,
+      lowThreshold: 0.0005,
+      stableFrames: 2,
+      stallWindowFrames: 3,
+      stallAfterMs: 1000,
+      stallAreaRatio: 0.02,
+    });
+
+    // action セグメントとして分割されず、当該区間が activity="waiting" の1個のみ
+    expect(segments).toHaveLength(1);
+    expect(segments[0].activity).toBe("waiting");
+
+    // waiting の changedBBox がスピナー領域相当の小ささ
+    const waitingBBox = segments[0].changedBBox;
+    expect(waitingBBox).not.toBeNull();
+    expect(waitingBBox!.w).toBeLessThan(0.15);
+    expect(waitingBBox!.h).toBeLessThan(0.20);
+  });
 });
 
 describe("classifyWaitingRuns", () => {

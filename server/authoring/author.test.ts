@@ -287,8 +287,39 @@ describe("authorSteps", () => {
       segment_id: "seg-1",
       reason: "activity=waiting",
     });
+    expect(result.discarded.filter(d => d.segment_id === "seg-1")).toHaveLength(1);
     expect(result.warnings.join("\n")).toContain(
       'step "待機を説明する" 不採用: activity=waiting のセグメントのみを参照'
     );
+  });
+
+  it("LLMがdiscarded_segmentsにもseg-1を宣言し、かつseg-1のみ参照のwaitingステップを返すケースでdiscardedへの二重追加が起きない", async () => {
+    const evidence = makeEvidence([
+      makeSegment("seg-1", 0, 2000, { activity: "waiting" }),
+      makeSegment("seg-2", 2000, 4000),
+    ]);
+
+    invokeLLMMock.mockResolvedValueOnce(
+      llmResponse({
+        overview,
+        steps: [
+          validStep(["seg-1"], "待機を説明する"),
+          validStep(["seg-2"], "操作する"),
+        ],
+        // LLMが waiting の seg-1 を discarded_segments にも宣言してくる
+        discarded_segments: [{ segment_id: "seg-1", reason: "LLMが直接破棄宣言" }],
+      })
+    );
+
+    const result = await authorSteps(evidence);
+
+    // 実経路: discarded_segments ループが先に handled.add("seg-1") するため（先勝ち）、
+    // seg-1 を参照するステップは「チャンク外/重複セグメント参照」で不採用となり、
+    // waiting 不採用パス・未割り当てループでの再追加は発生しない。
+    // よって seg-1 は discarded に1件だけ存在し、reason は LLM 宣言由来になる。
+    expect(result.discarded.filter(d => d.segment_id === "seg-1")).toHaveLength(1);
+    expect(result.discarded.find(d => d.segment_id === "seg-1")?.reason).toBe("LLMが直接破棄宣言");
+    // seg-2 は採用されているのでステップに含まれる
+    expect(result.steps.some(s => s.source_segment_ids.includes("seg-2"))).toBe(true);
   });
 });
