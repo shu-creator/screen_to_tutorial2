@@ -179,7 +179,13 @@ async function main(): Promise<void> {
   console.log(`steps.json exported: ${outputPath}`);
 }
 
-void main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+void main()
+  .then(async () => {
+    const { getSharedOcrEngine } = await import("../_core/ocrEngine");
+    await getSharedOcrEngine().shutdown();
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });

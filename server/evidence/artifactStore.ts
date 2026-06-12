@@ -39,7 +39,12 @@ export async function loadEvidenceArtifact(
   }
 
   try {
-    return parseEvidenceArtifact(JSON.parse(raw));
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (parsed.version === "invalidated") {
+      // retry等による意図的な無効化は正常系（再生成までartifactなし扱い）
+      return null;
+    }
+    return parseEvidenceArtifact(parsed);
   } catch (error) {
     // パース失敗・未知バージョンはデータ問題なので必ず警告を残す
     logger.warn("evidence.json の読み込みに失敗しました", {

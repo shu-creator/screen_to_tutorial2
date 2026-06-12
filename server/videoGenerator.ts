@@ -23,6 +23,7 @@ import {
   buildClipSegment,
   buildTitleCard,
   concatSegments,
+  getVideoResolution,
   planClip,
   resolveAudioMode,
   type AudioMode,
@@ -231,7 +232,14 @@ async function buildStillImageSegment(
   imagePath: string,
   audioPath: string | null,
   segmentPath: string,
+  targetWidth: number,
+  targetHeight: number,
 ): Promise<void> {
+  // concat互換性のため全セグメント共通の解像度へ正規化する
+  const normalizeFilter =
+    `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,` +
+    `pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2:color=black`;
+
   if (audioPath) {
     const audioDuration = await getAudioDuration(audioPath);
     await execFileAsync("ffmpeg", [
@@ -239,6 +247,7 @@ async function buildStillImageSegment(
       "-loop", "1",
       "-i", imagePath,
       "-i", audioPath,
+      "-vf", normalizeFilter,
       "-c:v", "libx264",
       "-tune", "stillimage",
       "-c:a", "aac",
@@ -260,6 +269,7 @@ async function buildStillImageSegment(
     "-i", imagePath,
     "-f", "lavfi",
     "-i", "anullsrc=r=44100:cl=stereo",
+    "-vf", normalizeFilter,
     "-c:v", "libx264",
     "-c:a", "aac",
     "-ar", "44100",
@@ -329,9 +339,15 @@ export async function generateVideo(
   // 元録画をローカルに解決（取得できなければ全編静止画モード）
   let sourceVideo: { path: string; cleanup: () => Promise<void> } | null = null;
   let videoDurationMs = 0;
+  // concat互換性のため全セグメントを共通解像度に正規化する（元録画準拠、無ければFHD）
+  let targetWidth = 1920;
+  let targetHeight = 1080;
   try {
     sourceVideo = await resolveToLocalFile(project.videoUrl, ".mp4");
     videoDurationMs = await getVideoDurationMs(sourceVideo.path);
+    const resolution = await getVideoResolution(sourceVideo.path);
+    targetWidth = resolution.width;
+    targetHeight = resolution.height;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     warnings.push(`元録画を取得できないため静止画モードで生成します: ${message.substring(0, 120)}`);
@@ -349,6 +365,8 @@ export async function generateVideo(
       const built = await buildTitleCard({
         title: artifact.overview.task_title,
         subtitle: `全${steps.length}ステップ`,
+        width: targetWidth,
+        height: targetHeight,
         outputPath: introPath,
       }).catch(() => null);
       if (built) {
@@ -397,6 +415,8 @@ export async function generateVideo(
             mode,
             ttsAudioPath: audioPath,
             outputPath: segmentPath,
+            targetWidth,
+            targetHeight,
           });
           warnings.push(...result.warnings.map((w) => `step ${step.sortOrder + 1}: ${w}`));
           videoSegments.push(segmentPath);
@@ -414,7 +434,7 @@ export async function generateVideo(
       const imageBuffer = await readBinaryFromSource(frame.imageUrl);
       const imagePath = path.join(tempDir, `frame_${step.id}.jpg`);
       await fs.writeFile(imagePath, imageBuffer);
-      await buildStillImageSegment(imagePath, audioPath, segmentPath);
+      await buildStillImageSegment(imagePath, audioPath, segmentPath, targetWidth, targetHeight);
       videoSegments.push(segmentPath);
     }
 
@@ -424,6 +444,8 @@ export async function generateVideo(
       const built = await buildTitleCard({
         title: "完了",
         subtitle: artifact.overview.completion_criteria,
+        width: targetWidth,
+        height: targetHeight,
         outputPath: outroPath,
       }).catch(() => null);
       if (built) videoSegments.push(built);

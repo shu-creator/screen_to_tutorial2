@@ -8,7 +8,7 @@ import { nanoid } from "nanoid";
 import { dedupeFramesByDHash, type NormalizedRect } from "./_core/frameAnalysis";
 import { ENV } from "./_core/env";
 import { extractEvidence } from "./evidence/extract";
-import { saveEvidenceArtifact } from "./evidence/artifactStore";
+import { invalidateEvidenceArtifact, saveEvidenceArtifact } from "./evidence/artifactStore";
 
 const execFileAsync = promisify(execFile);
 
@@ -403,7 +403,11 @@ export async function processVideo(
       console.warn(
         `[VideoProcessor] Evidence pipeline failed, falling back to scene detection: ${message}`,
       );
+      // 部分的に保存されたフレーム行と evidence.json を無効化する
+      // （削除済み frame_id を参照する evidence が後段の執筆に使われる事故を防ぐ）
       await db.deleteFramesByProjectId(projectId);
+      await invalidateEvidenceArtifact(projectId);
+      await db.updateProjectProgress(projectId, 10, "互換モードで再抽出しています...");
     }
 
     // ffmpegでフレームを抽出（旧経路）
@@ -495,6 +499,8 @@ export async function processVideo(
   } finally {
     // 一時ディレクトリをクリーンアップ（リトライ付き）
     await cleanupTempDir(tempDir, "VideoProcessor");
+    // リモートURL由来の一時動画を削除（ローカルストレージ原本はno-op）
+    await resolvedVideo.cleanup();
   }
 }
 

@@ -216,7 +216,9 @@ export function buildLegacyRenderableStepsFromArtifact(
       }
 
       return {
-        id: step.legacy_step_db_id ?? index + 1,
+        // legacy_step_db_id 欠落時は非正値にして updateStep 等の id>0 ガードに
+        // かからないようにする（無関係なDB行の更新事故防止）
+        id: step.legacy_step_db_id ?? -(index + 1),
         projectId,
         frameId,
         sortOrder: step.sort_order,

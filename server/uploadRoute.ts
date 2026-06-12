@@ -96,10 +96,20 @@ uploadRouter.post("/video", async (req: MaybeAuthenticatedRequest, res: Response
     let headerBuffer = Buffer.alloc(0);
     let totalSize = 0;
     let sizeLimitExceeded = false;
+    let diskError = false;
+
+    // ディスク書き込みエラー（ENOSPC等）でプロセスを落とさない
+    writeStream.on("error", (err: Error) => {
+      diskError = true;
+      logger.error("Temp file write error", { userId: user.id }, err);
+      uploadError = "一時ファイルの書き込みに失敗しました（ディスク容量を確認してください）";
+      file.resume(); // 残りを読み捨てる
+      fs.unlink(tempPath).catch(() => {});
+    });
 
     file.on("data", (chunk: Buffer) => {
-      if (sizeLimitExceeded) {
-        return; // Already exceeded, skip
+      if (sizeLimitExceeded || diskError) {
+        return; // Already exceeded/failed, skip
       }
 
       totalSize += chunk.length;
@@ -113,7 +123,11 @@ uploadRouter.post("/video", async (req: MaybeAuthenticatedRequest, res: Response
       if (headerBuffer.length < HEADER_BYTES) {
         headerBuffer = Buffer.concat([headerBuffer, chunk]).subarray(0, HEADER_BYTES);
       }
-      writeStream.write(chunk);
+      // バックプレッシャー: 書き込みバッファが詰まったら受信側を止める（NFR-5）
+      if (!writeStream.write(chunk)) {
+        file.pause();
+        writeStream.once("drain", () => file.resume());
+      }
     });
 
     file.on("limit", () => {
@@ -123,6 +137,10 @@ uploadRouter.post("/video", async (req: MaybeAuthenticatedRequest, res: Response
 
     file.on("end", async () => {
       await new Promise<void>((resolve) => writeStream.end(resolve));
+
+      if (diskError) {
+        return; // uploadError 設定済み・temp削除済み
+      }
 
       if (sizeLimitExceeded) {
         uploadError = `ファイルサイズが制限（${MAX_FILE_SIZE / 1024 / 1024}MB）を超えています`;
@@ -221,6 +239,12 @@ uploadRouter.post("/video", async (req: MaybeAuthenticatedRequest, res: Response
     if (!res.headersSent) {
       res.status(500).json({ error: "アップロード処理中にエラーが発生しました" });
     }
+  });
+
+  // クライアント切断時はパース処理を打ち切る（一時ファイルは file ハンドラ側で削除）
+  req.on("aborted", () => {
+    logger.warn("Upload aborted by client", { userId: user?.id });
+    req.unpipe(busboy);
   });
 
   req.pipe(busboy);

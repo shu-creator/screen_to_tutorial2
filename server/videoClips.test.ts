@@ -97,6 +97,9 @@ describe.skipIf(!canRun)("videoClips 統合テスト", () => {
       mode: "silent",
       ttsAudioPath: null,
       outputPath: out,
+      // 元録画(1280x720)と異なるターゲットを指定し、正規化が効くことを検証
+      targetWidth: 960,
+      targetHeight: 540,
     });
     expect(warnings).toEqual([]);
     const duration = parseFloat(probe(out, "format=duration"));
@@ -104,6 +107,9 @@ describe.skipIf(!canRun)("videoClips 統合テスト", () => {
     expect(duration).toBeLessThan(2.9);
     // 音声トラックが存在する（concat互換性の要件）
     expect(probe(out, "stream=codec_type", "a")).toContain("audio");
+    // 解像度がターゲットへ正規化される（concat demuxer は全セグメント同一
+    // ストリームパラメータが前提。タイトルカード混在時の破損防止）
+    expect(probe(out, "stream=width,height", "v")).toBe("960,540");
   });
 
   it("ttsモード: TTSがクリップより長い場合は末尾が静止フレームで延長される", { timeout: 120_000 }, async () => {
@@ -121,6 +127,8 @@ describe.skipIf(!canRun)("videoClips 統合テスト", () => {
       mode: "tts",
       ttsAudioPath: tts,
       outputPath: out,
+      targetWidth: 1280,
+      targetHeight: 720,
     });
     const duration = parseFloat(probe(out, "format=duration"));
     // 映像がTTS長（5秒）まで延長される
@@ -136,6 +144,8 @@ describe.skipIf(!canRun)("videoClips 統合テスト", () => {
       mode: "original",
       ttsAudioPath: null,
       outputPath: out,
+      targetWidth: 1280,
+      targetHeight: 720,
     });
     expect(warnings.join()).toContain("切替");
     expect(fs.existsSync(out)).toBe(true);
@@ -160,6 +170,8 @@ describe.skipIf(!canRun)("videoClips 統合テスト", () => {
       mode: "silent",
       ttsAudioPath: null,
       outputPath: clip,
+      targetWidth: 1280,
+      targetHeight: 720,
     });
 
     const finalPath = path.join(workDir, "final.mp4");

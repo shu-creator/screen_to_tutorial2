@@ -105,6 +105,43 @@ async function getMediaDurationSec(mediaPath: string): Promise<number> {
   return duration;
 }
 
+/** 動画の解像度を取得する（偶数に丸める。x264の要件） */
+export async function getVideoResolution(
+  videoPath: string,
+): Promise<{ width: number; height: number }> {
+  const { stdout } = await execFileAsync(
+    "ffprobe",
+    [
+      "-v", "quiet",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height",
+      "-of", "csv=p=0",
+      videoPath,
+    ],
+    { timeout: 30_000 },
+  );
+  const [widthRaw, heightRaw] = stdout.trim().split(",");
+  const width = Number(widthRaw);
+  const height = Number(heightRaw);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return { width: 1920, height: 1080 };
+  }
+  return { width: width - (width % 2), height: height - (height % 2) };
+}
+
+/**
+ * 解像度正規化フィルタ。
+ * concat demuxer は全セグメント同一ストリームパラメータが前提のため、
+ * すべてのセグメント（クリップ・静止画・タイトルカード）を共通解像度へ
+ * アスペクト維持+パディングで揃える。
+ */
+function scalePadFilter(width: number, height: number): string {
+  return (
+    `scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
+    `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`
+  );
+}
+
 async function hasAudioStream(videoPath: string): Promise<boolean> {
   try {
     const { stdout } = await execFileAsync(
@@ -148,8 +185,12 @@ export async function buildClipSegment(options: {
   /** TTSナレーション音声（tts/mixed時に使用） */
   ttsAudioPath: string | null;
   outputPath: string;
+  /** 全セグメント共通の出力解像度（concat互換性のため必須） */
+  targetWidth: number;
+  targetHeight: number;
 }): Promise<{ warnings: string[] }> {
-  const { videoPath, plan, mode, ttsAudioPath, outputPath } = options;
+  const { videoPath, plan, mode, ttsAudioPath, outputPath, targetWidth, targetHeight } = options;
+  const normalizeFilter = scalePadFilter(targetWidth, targetHeight);
   const warnings: string[] = [...plan.warnings];
 
   const startSec = (plan.startMs / 1000).toFixed(3);
@@ -172,7 +213,15 @@ export async function buildClipSegment(options: {
   if (effectiveMode === "original") {
     await execFileAsync(
       "ffmpeg",
-      ["-y", ...inputArgs, "-map", "0:v:0", "-map", "0:a:0", ...COMMON_OUTPUT_ARGS, outputPath],
+      [
+        "-y",
+        ...inputArgs,
+        "-vf", normalizeFilter,
+        "-map", "0:v:0",
+        "-map", "0:a:0",
+        ...COMMON_OUTPUT_ARGS,
+        outputPath,
+      ],
       { timeout: 300_000 },
     );
     return { warnings };
@@ -186,6 +235,7 @@ export async function buildClipSegment(options: {
         ...inputArgs,
         "-f", "lavfi",
         "-i", "anullsrc=r=44100:cl=stereo",
+        "-vf", normalizeFilter,
         "-map", "0:v:0",
         "-map", "1:a:0",
         "-t", clipDurSec.toFixed(3),
@@ -204,8 +254,8 @@ export async function buildClipSegment(options: {
 
   const videoFilter =
     freezeSec > 0.01
-      ? `tpad=stop_mode=clone:stop_duration=${freezeSec.toFixed(3)}`
-      : "null";
+      ? `${normalizeFilter},tpad=stop_mode=clone:stop_duration=${freezeSec.toFixed(3)}`
+      : normalizeFilter;
 
   if (effectiveMode === "tts") {
     await execFileAsync(
@@ -266,17 +316,10 @@ async function findFontFile(): Promise<string | null> {
   return null;
 }
 
-function escapeDrawtext(text: string): string {
-  return text
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "\\'")
-    .replace(/:/g, "\\:")
-    .replace(/%/g, "\\%");
-}
-
 /**
  * タイトルカード（イントロ/アウトロ）を生成する。
  * 使用可能なフォントが見つからない環境では null を返す（呼び出し側でスキップ）。
+ * テキストはエスケープ問題（引用符・コロン等）を避けるため textfile= で渡す。
  */
 export async function buildTitleCard(options: {
   title: string;
@@ -295,31 +338,49 @@ export async function buildTitleCard(options: {
   const width = options.width ?? 1920;
   const height = options.height ?? 1080;
 
-  const filters = [
-    `drawtext=fontfile=${fontFile}:text='${escapeDrawtext(options.title)}':fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-40`,
-  ];
-  if (options.subtitle) {
-    filters.push(
-      `drawtext=fontfile=${fontFile}:text='${escapeDrawtext(options.subtitle)}':fontsize=32:fontcolor=0xDDDDDD:x=(w-text_w)/2:y=(h-text_h)/2+60`,
+  const os = await import("os");
+  const textFiles: string[] = [];
+  const writeTextFile = async (text: string): Promise<string> => {
+    const filePath = path.join(
+      os.tmpdir(),
+      `titlecard_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.txt`,
     );
-  }
+    await fs.writeFile(filePath, text, "utf8");
+    textFiles.push(filePath);
+    return filePath;
+  };
 
-  await execFileAsync(
-    "ffmpeg",
-    [
-      "-y",
-      "-f", "lavfi",
-      "-i", `color=c=0x1f2c44:s=${width}x${height}:d=${duration}`,
-      "-f", "lavfi",
-      "-i", "anullsrc=r=44100:cl=stereo",
-      "-vf", filters.join(","),
-      "-t", duration.toString(),
-      ...COMMON_OUTPUT_ARGS,
-      options.outputPath,
-    ],
-    { timeout: 120_000 },
-  );
-  return options.outputPath;
+  try {
+    const titleFile = await writeTextFile(options.title);
+    const filters = [
+      `drawtext=fontfile=${fontFile}:textfile=${titleFile}:fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-40`,
+    ];
+    if (options.subtitle) {
+      const subtitleFile = await writeTextFile(options.subtitle);
+      filters.push(
+        `drawtext=fontfile=${fontFile}:textfile=${subtitleFile}:fontsize=32:fontcolor=0xDDDDDD:x=(w-text_w)/2:y=(h-text_h)/2+60`,
+      );
+    }
+
+    await execFileAsync(
+      "ffmpeg",
+      [
+        "-y",
+        "-f", "lavfi",
+        "-i", `color=c=0x1f2c44:s=${width}x${height}:d=${duration}`,
+        "-f", "lavfi",
+        "-i", "anullsrc=r=44100:cl=stereo",
+        "-vf", filters.join(","),
+        "-t", duration.toString(),
+        ...COMMON_OUTPUT_ARGS,
+        options.outputPath,
+      ],
+      { timeout: 120_000 },
+    );
+    return options.outputPath;
+  } finally {
+    await Promise.all(textFiles.map((file) => fs.unlink(file).catch(() => {})));
+  }
 }
 
 /** セグメント群を1本のmp4へ連結する（再エンコードで音声同期を確保） */
