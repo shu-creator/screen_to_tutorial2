@@ -133,6 +133,8 @@ const SYSTEM_PROMPT = `あなたは業務画面チュートリアルの執筆者
 - 各ステップの source_segment_ids には根拠となるセグメントIDを必ず入れる（時系列順・重複なし）
 - 連続した同種の操作（例: 複数フィールドへの入力）は1ステップに統合してよい
 - スクロールのみ・ロード待ち・無意味なカーソル移動のセグメントは discarded_segments に入れて破棄する
+- activity=waiting のセグメント（進捗バー・スピナー・処理待ち）は steps に使わず必ず discarded_segments に割り当てる
+- 1つのstepの source_segment_ids は原則1〜2個。3個以上まとめるのは同一操作の連続（タイピング等）に限る
 - UIラベル（ボタン名・項目名）はOCRテキストに実在するものだけを「」で引用し、cited_ui_labels にも列挙する。OCRにないラベルは推測しない
 - 1ステップは「目的1つ・操作1つ・結果1つ」。instruction は短い命令文1文、expected_result は画面変化を1文で
 - narration は全ステップ通して読み上げたとき自然につながる文体にする（「まず」「次に」「最後に」等の接続）
@@ -142,26 +144,32 @@ const SYSTEM_PROMPT = `あなたは業務画面チュートリアルの執筆者
 function buildChunkUserContent(
   globalContext: string,
   chunk: AuthoringChunk,
-  interimOverview: Overview | null,
+  interimOverview: Overview | null
 ): Array<
   | { type: "text"; text: string }
-  | { type: "image_url"; image_url: { url: string; detail: "high" | "low" | "auto" } }
+  | {
+      type: "image_url";
+      image_url: { url: string; detail: "high" | "low" | "auto" };
+    }
 > {
   const header: string[] = [globalContext];
   if (chunk.totalChunks > 1) {
     header.push(
-      `これは ${chunk.totalChunks} チャンク中 ${chunk.chunkIndex + 1} 番目のセグメント群です。`,
+      `これは ${chunk.totalChunks} チャンク中 ${chunk.chunkIndex + 1} 番目のセグメント群です。`
     );
     if (interimOverview) {
       header.push(
-        `ここまでの暫定overview: ${JSON.stringify(interimOverview)}。これと矛盾しないように執筆し、必要なら改善したoverviewを返してください。`,
+        `ここまでの暫定overview: ${JSON.stringify(interimOverview)}。これと矛盾しないように執筆し、必要なら改善したoverviewを返してください。`
       );
     }
   }
 
   const content: Array<
     | { type: "text"; text: string }
-    | { type: "image_url"; image_url: { url: string; detail: "high" | "low" | "auto" } }
+    | {
+        type: "image_url";
+        image_url: { url: string; detail: "high" | "low" | "auto" };
+      }
   > = [{ type: "text", text: header.join("\n") }];
 
   for (const digest of chunk.digests) {
@@ -178,21 +186,27 @@ async function invokeAuthoringLLM(
   globalContext: string,
   chunk: AuthoringChunk,
   interimOverview: Overview | null,
-  cacheKeyBase: Record<string, unknown>,
+  cacheKeyBase: Record<string, unknown>
 ): Promise<RawAuthoringResponse> {
   const cacheKey = {
     ...cacheKeyBase,
     chunkIndex: chunk.chunkIndex,
-    segmentIds: chunk.digests.map((digest) => digest.segment.segment_id),
+    segmentIds: chunk.digests.map(digest => digest.segment.segment_id),
     interimOverview,
   };
-  const cached = await getCachedJson<RawAuthoringResponse>("authoring", cacheKey);
+  const cached = await getCachedJson<RawAuthoringResponse>(
+    "authoring",
+    cacheKey
+  );
   if (cached) return cached;
 
   const response = await invokeLLM({
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: buildChunkUserContent(globalContext, chunk, interimOverview) },
+      {
+        role: "user",
+        content: buildChunkUserContent(globalContext, chunk, interimOverview),
+      },
     ],
     response_format: { type: "json_schema", json_schema: AUTHORING_SCHEMA },
   });
@@ -212,7 +226,7 @@ async function invokeAuthoringLLM(
 export function buildFallbackStep(
   segment: EvidenceSegment,
   index: number,
-  reason: string,
+  reason: string
 ): AuthoredStep {
   return {
     source_segment_ids: [segment.segment_id],
@@ -241,16 +255,18 @@ function sanitizeText(value: string | undefined, fallback: string): string {
  */
 export async function authorSteps(
   evidence: EvidenceArtifact,
-  options: { chunkSize?: number } = {},
+  options: { chunkSize?: number } = {}
 ): Promise<AuthoringResult> {
   const chunkSize = options.chunkSize ?? DEFAULT_CHUNK_SIZE;
   const chunks = chunkSegments(evidence, chunkSize);
   const globalContext = buildGlobalContext(evidence);
-  const segmentById = new Map(evidence.segments.map((segment) => [segment.segment_id, segment]));
+  const segmentById = new Map(
+    evidence.segments.map(segment => [segment.segment_id, segment])
+  );
   const segmentOrder = new Map(
     [...evidence.segments]
       .sort((a, b) => a.t_start - b.t_start)
-      .map((segment, index) => [segment.segment_id, index] as const),
+      .map((segment, index) => [segment.segment_id, index] as const)
   );
 
   const cacheKeyBase = {
@@ -267,19 +283,28 @@ export async function authorSteps(
   let overview: Overview | null = null;
 
   for (const chunk of chunks) {
-    const chunkSegmentIds = new Set(chunk.digests.map((digest) => digest.segment.segment_id));
+    const chunkSegmentIds = new Set(
+      chunk.digests.map(digest => digest.segment.segment_id)
+    );
     const handled = new Set<string>();
 
     let response: RawAuthoringResponse | null = null;
     try {
-      response = await invokeAuthoringLLM(globalContext, chunk, overview, cacheKeyBase);
+      response = await invokeAuthoringLLM(
+        globalContext,
+        chunk,
+        overview,
+        cacheKeyBase
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.warn("チャンク執筆に失敗。フォールバックステップを生成します", {
         chunkIndex: chunk.chunkIndex,
         message,
       });
-      warnings.push(`chunk ${chunk.chunkIndex} authoring failed: ${message.substring(0, 160)}`);
+      warnings.push(
+        `chunk ${chunk.chunkIndex} authoring failed: ${message.substring(0, 160)}`
+      );
     }
 
     if (response) {
@@ -287,26 +312,36 @@ export async function authorSteps(
 
       // 破棄宣言の検証（チャンク外のIDは無視）
       for (const discarded of response.discarded_segments ?? []) {
-        if (chunkSegmentIds.has(discarded.segment_id) && !handled.has(discarded.segment_id)) {
+        if (
+          chunkSegmentIds.has(discarded.segment_id) &&
+          !handled.has(discarded.segment_id)
+        ) {
           handled.add(discarded.segment_id);
           allDiscarded.push(discarded);
         }
       }
 
       // ステップの検証
-      const acceptedSegmentLists: string[][] = allSteps.map((step) => step.source_segment_ids);
+      const acceptedSegmentLists: string[][] = allSteps.map(
+        step => step.source_segment_ids
+      );
       for (const rawStep of response.steps ?? []) {
-        const integrity = checkSegmentIntegrity(rawStep.source_segment_ids, segmentOrder);
+        const integrity = checkSegmentIntegrity(
+          rawStep.source_segment_ids,
+          segmentOrder
+        );
         if (!integrity.ok) {
           warnings.push(`step "${rawStep.title}" 不採用: ${integrity.reason}`);
           continue;
         }
         // チャンク外・処理済みセグメントを参照するステップは不採用
         const outOfChunk = rawStep.source_segment_ids.some(
-          (id) => !chunkSegmentIds.has(id) || handled.has(id),
+          id => !chunkSegmentIds.has(id) || handled.has(id)
         );
         if (outOfChunk) {
-          warnings.push(`step "${rawStep.title}" 不採用: チャンク外/重複セグメント参照`);
+          warnings.push(
+            `step "${rawStep.title}" 不採用: チャンク外/重複セグメント参照`
+          );
           continue;
         }
         const cross = checkCrossStepIntegrity([
@@ -319,12 +354,28 @@ export async function authorSteps(
         }
 
         const sourceSegments = rawStep.source_segment_ids
-          .map((id) => segmentById.get(id))
-          .filter((segment): segment is EvidenceSegment => segment !== undefined);
+          .map(id => segmentById.get(id))
+          .filter(
+            (segment): segment is EvidenceSegment => segment !== undefined
+          );
+        if (
+          sourceSegments.length > 0 &&
+          sourceSegments.every(
+            segment => (segment.activity ?? "action") === "waiting"
+          )
+        ) {
+          warnings.push(
+            `step "${rawStep.title}" 不採用: activity=waiting のセグメントのみを参照`
+          );
+          continue;
+        }
 
-        const labelCheck = verifyCitedLabels(rawStep.cited_ui_labels ?? [], sourceSegments);
+        const labelCheck = verifyCitedLabels(
+          rawStep.cited_ui_labels ?? [],
+          sourceSegments
+        );
         const hasTranscript = sourceSegments.some(
-          (segment) => segment.transcript_snippet.trim().length > 0,
+          segment => segment.transcript_snippet.trim().length > 0
         );
         const confidence = computeCalibratedConfidence({
           labelVerifiedRatio: labelCheck.verifiedRatio,
@@ -336,7 +387,7 @@ export async function authorSteps(
         const stepWarnings: string[] = [];
         if (labelCheck.unverified.length > 0) {
           stepWarnings.push(
-            `OCRで確認できないUIラベル引用: ${labelCheck.unverified.join(", ")}`,
+            `OCRで確認できないUIラベル引用: ${labelCheck.unverified.join(", ")}`
           );
         }
 
@@ -344,11 +395,22 @@ export async function authorSteps(
           source_segment_ids: rawStep.source_segment_ids,
           title: sanitizeText(rawStep.title, `ステップ ${allSteps.length + 1}`),
           instruction: sanitizeText(rawStep.instruction, "操作を実行する"),
-          expected_result: sanitizeText(rawStep.expected_result, "画面が更新される"),
-          operation: sanitizeText(rawStep.operation, rawStep.instruction ?? "操作を実行する"),
-          description: sanitizeText(rawStep.description, "画面の内容を確認してください。"),
+          expected_result: sanitizeText(
+            rawStep.expected_result,
+            "画面が更新される"
+          ),
+          operation: sanitizeText(
+            rawStep.operation,
+            rawStep.instruction ?? "操作を実行する"
+          ),
+          description: sanitizeText(
+            rawStep.description,
+            "画面の内容を確認してください。"
+          ),
           narration: (rawStep.narration ?? "").trim(),
-          cited_ui_labels: (rawStep.cited_ui_labels ?? []).map((label) => label.trim()).filter(Boolean),
+          cited_ui_labels: (rawStep.cited_ui_labels ?? [])
+            .map(label => label.trim())
+            .filter(Boolean),
           confidence,
           needs_review: needsReview(confidence, labelCheck.unverified.length),
           warnings: stepWarnings,
@@ -365,13 +427,22 @@ export async function authorSteps(
     for (const digest of chunk.digests) {
       const segmentId = digest.segment.segment_id;
       if (!handled.has(segmentId)) {
-        allSteps.push(
-          buildFallbackStep(
-            digest.segment,
-            allSteps.length,
-            response ? "LLMがセグメントを割り当てませんでした" : "チャンク執筆失敗",
-          ),
-        );
+        if ((digest.segment.activity ?? "action") === "waiting") {
+          allDiscarded.push({
+            segment_id: segmentId,
+            reason: "activity=waiting",
+          });
+        } else {
+          allSteps.push(
+            buildFallbackStep(
+              digest.segment,
+              allSteps.length,
+              response
+                ? "LLMがセグメントを割り当てませんでした"
+                : "チャンク執筆失敗"
+            )
+          );
+        }
         handled.add(segmentId);
       }
     }
@@ -385,12 +456,11 @@ export async function authorSteps(
   });
 
   return {
-    overview:
-      overview ?? {
-        task_title: "操作手順",
-        preconditions: [],
-        completion_criteria: "",
-      },
+    overview: overview ?? {
+      task_title: "操作手順",
+      preconditions: [],
+      completion_criteria: "",
+    },
     steps: allSteps,
     discarded: allDiscarded,
     warnings,

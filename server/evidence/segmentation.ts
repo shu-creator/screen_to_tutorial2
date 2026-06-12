@@ -44,6 +44,16 @@ export interface SegmentationOptions {
   coalesceMaxGapMs: number;
   /** coalescing時のbbox近接判定: 各bboxをこの比率だけ拡張して交差判定 */
   coalesceBBoxPadRatio: number;
+  /** 停滞判定に使う直近フレーム数。fps=4で約3秒を見てスピナー周期を吸収する */
+  stallWindowFrames: number;
+  /** 停滞とみなす直近変化bbox合併領域の最大面積比。画面の約1/3以下を待機UI扱いする */
+  stallAreaRatio: number;
+  /** 小領域変化が待機として継続したとみなす最短時間。短いクリック/入力とは分離する */
+  stallAfterMs: number;
+  /** 反復待機runに含める各bboxの最大面積比。stallAreaRatioと揃え小領域待機に限定する */
+  waitingRunAreaRatio: number;
+  /** 反復待機runの最短スパン。短いタイピング連続をwaiting化しない */
+  waitingRunMinSpanMs: number;
 }
 
 export const DEFAULT_SEGMENTATION_OPTIONS: SegmentationOptions = {
@@ -57,7 +67,14 @@ export const DEFAULT_SEGMENTATION_OPTIONS: SegmentationOptions = {
   fps: 4,
   coalesceMaxGapMs: 1000,
   coalesceBBoxPadRatio: 0.04,
+  stallWindowFrames: 12,
+  stallAreaRatio: 0.35,
+  stallAfterMs: 6000,
+  waitingRunAreaRatio: 0.35,
+  waitingRunMinSpanMs: 10000,
 };
+
+export type OperationActivity = "action" | "waiting";
 
 export interface OperationSegment {
   /** セグメント区間: 直前の安定開始（または0）〜 遷移後の安定化時刻（ms） */
@@ -73,6 +90,8 @@ export interface OperationSegment {
   changedBBox: NormalizedRect | null;
   /** coalescingで合体した変化点の数（1 = 合体なし） */
   coalescedFrom: number;
+  /** 操作セグメントか、進捗バー・スピナー等の待機区間か */
+  activity: OperationActivity;
 }
 
 /** 2フレーム間の変化率と変化領域bboxを計算する */
@@ -81,7 +100,7 @@ export function computeFrameDiff(
   curr: Buffer,
   width: number,
   height: number,
-  pixelThreshold: number,
+  pixelThreshold: number
 ): { diffRate: number; changedBBox: NormalizedRect | null } {
   const total = width * height;
   let changed = 0;
@@ -123,7 +142,7 @@ export function computeDiffTimeline(
   frames: GrayFrame[],
   width: number,
   height: number,
-  pixelThreshold = 24,
+  pixelThreshold = 24
 ): FrameDiff[] {
   const diffs: FrameDiff[] = [];
   for (let i = 1; i < frames.length; i++) {
@@ -132,7 +151,7 @@ export function computeDiffTimeline(
       frames[i].pixels,
       width,
       height,
-      pixelThreshold,
+      pixelThreshold
     );
     diffs.push({ index: i, diffRate, changedBBox });
   }
@@ -141,7 +160,7 @@ export function computeDiffTimeline(
 
 export function unionBBox(
   a: NormalizedRect | null,
-  b: NormalizedRect | null,
+  b: NormalizedRect | null
 ): NormalizedRect | null {
   if (!a) return b;
   if (!b) return a;
@@ -164,6 +183,40 @@ function padRect(rect: NormalizedRect, padRatio: number): NormalizedRect {
   };
 }
 
+function rectArea(rect: NormalizedRect | null): number {
+  return rect ? rect.w * rect.h : 0;
+}
+
+function rectContains(outer: NormalizedRect, inner: NormalizedRect): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.w <= outer.x + outer.w &&
+    inner.y + inner.h <= outer.y + outer.h
+  );
+}
+
+function bboxFromDiffs(
+  diffs: FrameDiff[],
+  startIndex: number,
+  endIndex: number
+): NormalizedRect | null {
+  let bbox: NormalizedRect | null = null;
+  for (const diff of diffs) {
+    if (diff.index >= startIndex && diff.index <= endIndex) {
+      bbox = unionBBox(bbox, diff.changedBBox);
+    }
+  }
+  return bbox;
+}
+
+function recentUnionBBox(diffs: FrameDiff[]): NormalizedRect | null {
+  return diffs.reduce<NormalizedRect | null>(
+    (bbox, diff) => unionBBox(bbox, diff.changedBBox),
+    null
+  );
+}
+
 export function rectsIntersect(a: NormalizedRect, b: NormalizedRect): boolean {
   return (
     a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
@@ -177,6 +230,7 @@ interface RawTransition {
   /** 安定化フレーム（このフレーム以降 stableFrames 連続で low 未満） */
   stabilizedIndex: number;
   changedBBox: NormalizedRect | null;
+  activity?: OperationActivity;
 }
 
 /**
@@ -188,21 +242,141 @@ interface RawTransition {
 export function detectTransitions(
   diffs: FrameDiff[],
   frameCount: number,
-  options: Pick<SegmentationOptions, "highThreshold" | "lowThreshold" | "stableFrames">,
+  options: Pick<
+    SegmentationOptions,
+    "highThreshold" | "lowThreshold" | "stableFrames"
+  > &
+    Partial<
+      Pick<
+        SegmentationOptions,
+        | "fps"
+        | "stallWindowFrames"
+        | "stallAreaRatio"
+        | "stallAfterMs"
+        | "coalesceBBoxPadRatio"
+      >
+    >
 ): RawTransition[] {
   const transitions: RawTransition[] = [];
-  let inTransition = false;
+  const fps = options.fps ?? DEFAULT_SEGMENTATION_OPTIONS.fps;
+  const stallWindowFrames =
+    options.stallWindowFrames ?? DEFAULT_SEGMENTATION_OPTIONS.stallWindowFrames;
+  const stallAreaRatio =
+    options.stallAreaRatio ?? DEFAULT_SEGMENTATION_OPTIONS.stallAreaRatio;
+  const stallAfterMs =
+    options.stallAfterMs ?? DEFAULT_SEGMENTATION_OPTIONS.stallAfterMs;
+  const coalesceBBoxPadRatio =
+    options.coalesceBBoxPadRatio ??
+    DEFAULT_SEGMENTATION_OPTIONS.coalesceBBoxPadRatio;
+  const frameMs = 1000 / fps;
+  const mediumStartAreaRatio = 0.005;
+  const microInputDiffRate = 0.00005;
+  const microInputAreaRatio = 0.001;
+  const isMicroInputCandidate = (diff: FrameDiff): boolean => {
+    const area = rectArea(diff.changedBBox);
+    return (
+      diff.diffRate > microInputDiffRate &&
+      area > 0 &&
+      area <= microInputAreaRatio
+    );
+  };
+  const microStartIndices = new Set<number>();
+  for (let i = 0; i < diffs.length; i++) {
+    const diff = diffs[i];
+    if (!isMicroInputCandidate(diff) || diff.changedBBox === null) continue;
+    const padded = padRect(diff.changedBBox, coalesceBBoxPadRatio);
+    for (
+      let j = i + 1;
+      j < diffs.length && diffs[j].index - diff.index <= fps;
+      j++
+    ) {
+      const next = diffs[j];
+      if (
+        isMicroInputCandidate(next) &&
+        next.changedBBox !== null &&
+        rectsIntersect(padded, padRect(next.changedBBox, coalesceBBoxPadRatio))
+      ) {
+        microStartIndices.add(diff.index);
+        break;
+      }
+    }
+  }
+  const isTransitionStart = (diff: FrameDiff): boolean => {
+    if (diff.diffRate > options.highThreshold) return true;
+    const area = rectArea(diff.changedBBox);
+    const mediumLocalChange =
+      diff.diffRate > options.lowThreshold &&
+      area >= mediumStartAreaRatio &&
+      area <= stallAreaRatio;
+    const microInputChange = microStartIndices.has(diff.index);
+    return mediumLocalChange || microInputChange;
+  };
+  let state: "stable" | "transition" | "stalled" = "stable";
   let transitionStart = 0;
   let bbox: NormalizedRect | null = null;
   let calmRun = 0;
+  let transitionDiffs: FrameDiff[] = [];
+  let stallWindow: FrameDiff[] = [];
+  let stallCandidateStart: number | null = null;
+  let stalledStart = 0;
+  let stalledRegion: NormalizedRect | null = null;
+  let stalledBBox: NormalizedRect | null = null;
+  let stalledCalmRun = 0;
 
   for (const diff of diffs) {
-    if (!inTransition) {
-      if (diff.diffRate > options.highThreshold) {
-        inTransition = true;
+    if (state === "stable") {
+      if (isTransitionStart(diff)) {
+        state = "transition";
         transitionStart = diff.index;
         bbox = diff.changedBBox;
         calmRun = 0;
+        transitionDiffs = [diff];
+        stallWindow = [diff];
+        stallCandidateStart = null;
+      }
+      continue;
+    }
+
+    if (state === "stalled") {
+      if (diff.diffRate < options.lowThreshold) {
+        stalledCalmRun += 1;
+        if (stalledCalmRun >= options.stableFrames) {
+          transitions.push({
+            startIndex: stalledStart,
+            stabilizedIndex: diff.index - options.stableFrames + 1,
+            changedBBox: stalledBBox,
+            activity: "waiting",
+          });
+          state = "stable";
+          stalledRegion = null;
+          stalledBBox = null;
+        }
+        continue;
+      }
+
+      stalledCalmRun = 0;
+      const insideStallRegion =
+        stalledRegion !== null &&
+        diff.changedBBox !== null &&
+        rectContains(stalledRegion, diff.changedBBox);
+      if (insideStallRegion) {
+        stalledBBox = unionBBox(stalledBBox, diff.changedBBox);
+        continue;
+      }
+      if (isTransitionStart(diff)) {
+        transitions.push({
+          startIndex: stalledStart,
+          stabilizedIndex: diff.index,
+          changedBBox: stalledBBox,
+          activity: "waiting",
+        });
+        state = "transition";
+        transitionStart = diff.index;
+        bbox = diff.changedBBox;
+        calmRun = 0;
+        transitionDiffs = [diff];
+        stallWindow = [diff];
+        stallCandidateStart = null;
       }
       continue;
     }
@@ -215,21 +389,84 @@ export function detectTransitions(
           startIndex: transitionStart,
           stabilizedIndex: diff.index - options.stableFrames + 1,
           changedBBox: bbox,
+          activity: "action",
         });
-        inTransition = false;
+        state = "stable";
         bbox = null;
       }
     } else {
       calmRun = 0;
+      transitionDiffs.push(diff);
+      stallWindow.push(diff);
+      if (stallWindow.length > stallWindowFrames) {
+        stallWindow.shift();
+      }
+
+      const windowBBox = recentUnionBBox(stallWindow);
+      const smallStallWindow =
+        stallWindow.length >= stallWindowFrames &&
+        windowBBox !== null &&
+        rectArea(windowBBox) <= stallAreaRatio;
+      if (smallStallWindow) {
+        const windowStart = Math.max(stallWindow[0].index, transitionStart + 1);
+        stallCandidateStart = stallCandidateStart ?? windowStart;
+        const stalledForMs = (diff.index - stallCandidateStart) * frameMs;
+        if (stalledForMs >= stallAfterMs) {
+          const actionBBox = bboxFromDiffs(
+            transitionDiffs,
+            transitionStart,
+            stallCandidateStart - 1
+          );
+          const preStallActionAreaRatio = Math.min(stallAreaRatio, 0.05);
+          const hasPreStallAction =
+            actionBBox !== null &&
+            rectArea(actionBBox) > preStallActionAreaRatio;
+          if (stallCandidateStart > transitionStart && hasPreStallAction) {
+            transitions.push({
+              startIndex: transitionStart,
+              stabilizedIndex: stallCandidateStart,
+              changedBBox: actionBBox,
+              activity: "action",
+            });
+            stalledStart = stallCandidateStart;
+            stalledBBox = bboxFromDiffs(
+              transitionDiffs,
+              stallCandidateStart,
+              diff.index
+            );
+            stalledRegion =
+              stalledBBox !== null
+                ? padRect(stalledBBox, coalesceBBoxPadRatio)
+                : windowBBox;
+            stalledCalmRun = 0;
+            state = "stalled";
+            bbox = null;
+            transitionDiffs = [];
+            stallWindow = [];
+            stallCandidateStart = null;
+            continue;
+          }
+        }
+      } else {
+        stallCandidateStart = null;
+      }
       bbox = unionBBox(bbox, diff.changedBBox);
     }
   }
 
-  if (inTransition) {
+  if (state === "transition") {
     transitions.push({
       startIndex: transitionStart,
       stabilizedIndex: frameCount - 1,
       changedBBox: bbox,
+      activity: "action",
+    });
+  } else if (state === "stalled") {
+    transitions.push({
+      startIndex: stalledStart,
+      stabilizedIndex: frameCount - 1,
+      changedBBox: stalledBBox,
+      activity: "waiting",
     });
   }
 
@@ -244,7 +481,10 @@ export function detectTransitions(
  */
 export function coalesceTransitions(
   transitions: RawTransition[],
-  options: Pick<SegmentationOptions, "fps" | "coalesceMaxGapMs" | "coalesceBBoxPadRatio">,
+  options: Pick<
+    SegmentationOptions,
+    "fps" | "coalesceMaxGapMs" | "coalesceBBoxPadRatio"
+  >
 ): Array<RawTransition & { coalescedFrom: number }> {
   const result: Array<RawTransition & { coalescedFrom: number }> = [];
   const frameMs = 1000 / options.fps;
@@ -253,14 +493,23 @@ export function coalesceTransitions(
     const last = result[result.length - 1];
     if (last) {
       const gapMs = (transition.startIndex - last.stabilizedIndex) * frameMs;
-      const bothHaveBBox = last.changedBBox !== null && transition.changedBBox !== null;
+      const bothHaveBBox =
+        last.changedBBox !== null && transition.changedBBox !== null;
+      const sameActivity =
+        (last.activity ?? "action") === (transition.activity ?? "action");
       const nearby =
         bothHaveBBox &&
         rectsIntersect(
-          padRect(last.changedBBox as NormalizedRect, options.coalesceBBoxPadRatio),
-          padRect(transition.changedBBox as NormalizedRect, options.coalesceBBoxPadRatio),
+          padRect(
+            last.changedBBox as NormalizedRect,
+            options.coalesceBBoxPadRatio
+          ),
+          padRect(
+            transition.changedBBox as NormalizedRect,
+            options.coalesceBBoxPadRatio
+          )
         );
-      if (gapMs < options.coalesceMaxGapMs && nearby) {
+      if (sameActivity && gapMs < options.coalesceMaxGapMs && nearby) {
         last.stabilizedIndex = transition.stabilizedIndex;
         last.changedBBox = unionBBox(last.changedBBox, transition.changedBBox);
         last.coalescedFrom += 1;
@@ -269,6 +518,76 @@ export function coalesceTransitions(
     }
     result.push({ ...transition, coalescedFrom: 1 });
   }
+
+  return result;
+}
+
+function rectIoU(a: NormalizedRect, b: NormalizedRect): number {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.w, b.x + b.w);
+  const y2 = Math.min(a.y + a.h, b.y + b.h);
+  const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const union = rectArea(a) + rectArea(b) - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+export function classifyWaitingRuns(
+  segments: OperationSegment[],
+  options: Partial<
+    Pick<SegmentationOptions, "waitingRunAreaRatio" | "waitingRunMinSpanMs">
+  > = {}
+): OperationSegment[] {
+  const waitingRunAreaRatio =
+    options.waitingRunAreaRatio ??
+    DEFAULT_SEGMENTATION_OPTIONS.waitingRunAreaRatio;
+  const waitingRunMinSpanMs =
+    options.waitingRunMinSpanMs ??
+    DEFAULT_SEGMENTATION_OPTIONS.waitingRunMinSpanMs;
+  const result = segments.map(segment => ({
+    ...segment,
+    activity: segment.activity ?? "action",
+  }));
+  let runStart = 0;
+
+  function isSmall(segment: OperationSegment): boolean {
+    return (
+      segment.changedBBox !== null &&
+      rectArea(segment.changedBBox) <= waitingRunAreaRatio
+    );
+  }
+
+  function markRun(endExclusive: number): void {
+    const runLength = endExclusive - runStart;
+    if (runLength < 3) return;
+    const spanMs = result[endExclusive - 1].tEndMs - result[runStart].tStartMs;
+    if (spanMs < waitingRunMinSpanMs) return;
+    for (let i = runStart; i < endExclusive; i++) {
+      result[i] = { ...result[i], activity: "waiting" };
+    }
+  }
+
+  for (let i = 0; i < result.length; i++) {
+    const current = result[i];
+    if (!isSmall(current)) {
+      markRun(i);
+      runStart = i + 1;
+      continue;
+    }
+
+    if (i > runStart) {
+      const previous = result[i - 1];
+      const adjacent =
+        previous.changedBBox !== null &&
+        current.changedBBox !== null &&
+        rectIoU(previous.changedBBox, current.changedBBox) >= 0.4;
+      if (!adjacent) {
+        markRun(i);
+        runStart = i;
+      }
+    }
+  }
+  markRun(result.length);
 
   return result;
 }
@@ -284,15 +603,23 @@ export function detectSegments(
   frames: GrayFrame[],
   width: number,
   height: number,
-  options: Partial<SegmentationOptions> & { pixelThreshold?: number } = {},
+  options: Partial<SegmentationOptions> & { pixelThreshold?: number } = {}
 ): OperationSegment[] {
-  const opts: SegmentationOptions = { ...DEFAULT_SEGMENTATION_OPTIONS, ...options };
+  const opts: SegmentationOptions = {
+    ...DEFAULT_SEGMENTATION_OPTIONS,
+    ...options,
+  };
   if (opts.lowThreshold >= opts.highThreshold) {
     throw new Error("lowThreshold は highThreshold より小さい必要があります");
   }
   const frameMs = 1000 / opts.fps;
 
-  const diffs = computeDiffTimeline(frames, width, height, options.pixelThreshold ?? 24);
+  const diffs = computeDiffTimeline(
+    frames,
+    width,
+    height,
+    options.pixelThreshold ?? 24
+  );
   const transitions = detectTransitions(diffs, frames.length, opts);
   const coalesced = coalesceTransitions(transitions, opts);
 
@@ -308,6 +635,7 @@ export function detectSegments(
       afterFrameIndex: transition.stabilizedIndex,
       changedBBox: transition.changedBBox,
       coalescedFrom: transition.coalescedFrom,
+      activity: transition.activity ?? "action",
     });
     prevStabilized = transition.stabilizedIndex;
   }
@@ -322,6 +650,7 @@ export function detectSegments(
       afterFrameIndex: 0,
       changedBBox: null,
       coalescedFrom: 1,
+      activity: "action",
     });
   } else if (segments.length > 0) {
     // 先頭セグメントの before は「初期画面」なので null 扱いにしない
@@ -333,7 +662,7 @@ export function detectSegments(
     }
   }
 
-  return segments;
+  return classifyWaitingRuns(segments, opts);
 }
 
 /**
@@ -344,7 +673,7 @@ export function detectSegments(
 export function computeFullFrameDHash(
   pixels: Buffer,
   width: number,
-  height: number,
+  height: number
 ): string {
   // 9x8 に平均プーリング
   const gw = 9;

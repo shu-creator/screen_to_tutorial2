@@ -58,6 +58,8 @@ export const evidenceSegmentSchema = z.object({
   transcript_snippet: z.string(),
   /** 合体した変化点数（1 = 合体なし）。タイピング検知の手がかり */
   coalesced_from: z.number(),
+  /** 操作か待機か。旧artifactでは未定義を action として扱う */
+  activity: z.enum(["action", "waiting"]).optional(),
   warnings: z.array(z.string()),
 });
 
@@ -96,7 +98,7 @@ export function parseEvidenceArtifact(raw: unknown): EvidenceArtifact {
   const parsed = evidenceArtifactSchema.parse(raw);
   if (parsed.version !== EVIDENCE_ARTIFACT_VERSION) {
     throw new Error(
-      `未対応の evidence.json バージョンです: ${parsed.version}（対応: ${EVIDENCE_ARTIFACT_VERSION}）`,
+      `未対応の evidence.json バージョンです: ${parsed.version}（対応: ${EVIDENCE_ARTIFACT_VERSION}）`
     );
   }
   return parsed;

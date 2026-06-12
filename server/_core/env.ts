@@ -9,7 +9,7 @@ type ASRProvider = "none" | "openai" | "local_whisper";
 type OCRProvider = "none" | "llm" | "engine";
 
 const DEFAULT_LLM_MODEL: Record<LLMProvider, string> = {
-  openai: "gpt-5.2",
+  openai: "gpt-5.4",
   gemini: "gemini-3-flash-preview",
   claude: "claude-sonnet-4-5",
 };
@@ -60,10 +60,14 @@ function parseNumberEnv(
   }
 
   if (options?.min !== undefined && parsed < options.min) {
-    throw new Error(`環境変数 ${key} は ${options.min} 以上である必要があります`);
+    throw new Error(
+      `環境変数 ${key} は ${options.min} 以上である必要があります`
+    );
   }
   if (options?.max !== undefined && parsed > options.max) {
-    throw new Error(`環境変数 ${key} は ${options.max} 以下である必要があります`);
+    throw new Error(
+      `環境変数 ${key} は ${options.max} 以下である必要があります`
+    );
   }
 
   return parsed;
@@ -131,31 +135,27 @@ const ttsModel = process.env.TTS_MODEL ?? DEFAULT_TTS_MODEL[ttsProvider];
 const asrModel = process.env.ASR_MODEL ?? "whisper-1";
 const llmApiKey = resolveLLMApiKey(llmProvider);
 const ttsApiKey = resolveTTSApiKey(ttsProvider);
-const slideRoiMinAreaRatio = parseNumberEnv(
-  "SLIDE_ROI_MIN_AREA_RATIO",
-  0.015,
-  { min: 0, max: 1 }
-);
-const slideRoiMaxAreaRatio = parseNumberEnv(
-  "SLIDE_ROI_MAX_AREA_RATIO",
-  0.65,
-  { min: 0, max: 1 }
-);
-const slideRoiPaddingRatio = parseNumberEnv(
-  "SLIDE_ROI_PADDING_RATIO",
-  0.15,
-  { min: 0, max: 0.5 }
-);
+const slideRoiMinAreaRatio = parseNumberEnv("SLIDE_ROI_MIN_AREA_RATIO", 0.015, {
+  min: 0,
+  max: 1,
+});
+const slideRoiMaxAreaRatio = parseNumberEnv("SLIDE_ROI_MAX_AREA_RATIO", 0.65, {
+  min: 0,
+  max: 1,
+});
+const slideRoiPaddingRatio = parseNumberEnv("SLIDE_ROI_PADDING_RATIO", 0.15, {
+  min: 0,
+  max: 0.5,
+});
 const slideRoiMinCropWidthPx = parseNumberEnv(
   "SLIDE_ROI_MIN_CROP_WIDTH_PX",
   900,
   { min: 100 }
 );
-const slideSpotlightOpacity = parseNumberEnv(
-  "SLIDE_SPOTLIGHT_OPACITY",
-  0.35,
-  { min: 0, max: 1 }
-);
+const slideSpotlightOpacity = parseNumberEnv("SLIDE_SPOTLIGHT_OPACITY", 0.35, {
+  min: 0,
+  max: 1,
+});
 const frameDedupeHashDistance = parseNumberEnv(
   "FRAME_DEDUPE_HASH_DISTANCE",
   6,
@@ -166,17 +166,34 @@ const pipelineCacheDir = process.env.PIPELINE_CACHE_DIR
   : path.resolve(process.cwd(), "data", "cache");
 
 // Phase 1: 証拠抽出パラメータ（docs/plans/phase-1-evidence-extraction.md）
-const evidenceSampleFps = parseNumberEnv("EVIDENCE_SAMPLE_FPS", 4, { min: 1, max: 15 });
-const evidenceDiffHigh = parseNumberEnv("EVIDENCE_DIFF_HIGH", 0.0004, { min: 0, max: 1 });
-const evidenceDiffLow = parseNumberEnv("EVIDENCE_DIFF_LOW", 0.00015, { min: 0, max: 1 });
-const evidenceStableFrames = parseNumberEnv("EVIDENCE_STABLE_FRAMES", 2, { min: 1, max: 10 });
-const evidenceCoalesceMaxGapMs = parseNumberEnv("EVIDENCE_COALESCE_MAX_GAP_MS", 1000, { min: 0 });
+const evidenceSampleFps = parseNumberEnv("EVIDENCE_SAMPLE_FPS", 4, {
+  min: 1,
+  max: 15,
+});
+const evidenceDiffHigh = parseNumberEnv("EVIDENCE_DIFF_HIGH", 0.0004, {
+  min: 0,
+  max: 1,
+});
+const evidenceDiffLow = parseNumberEnv("EVIDENCE_DIFF_LOW", 0.00015, {
+  min: 0,
+  max: 1,
+});
+const evidenceStableFrames = parseNumberEnv("EVIDENCE_STABLE_FRAMES", 2, {
+  min: 1,
+  max: 10,
+});
+const evidenceCoalesceMaxGapMs = parseNumberEnv(
+  "EVIDENCE_COALESCE_MAX_GAP_MS",
+  1000,
+  { min: 0 }
+);
 const asrLeadMs = parseNumberEnv("ASR_LEAD_MS", 3000, { min: 0 });
 
 // Phase 4: クリップ動画パラメータ（docs/plans/phase-4-clip-video.md）
 const clipPadBeforeMs = parseNumberEnv("CLIP_PAD_BEFORE_MS", 500, { min: 0 });
 const clipPadAfterMs = parseNumberEnv("CLIP_PAD_AFTER_MS", 800, { min: 0 });
-const clipMaxDurationMs = parseNumberEnv("CLIP_MAX_DURATION_S", 20, { min: 1 }) * 1000;
+const clipMaxDurationMs =
+  parseNumberEnv("CLIP_MAX_DURATION_S", 20, { min: 1 }) * 1000;
 
 function validateEnvOnStartup(): void {
   const isProduction = process.env.NODE_ENV === "production";
@@ -204,10 +221,14 @@ function validateEnvOnStartup(): void {
 
     const requiredVars = ["JWT_SECRET", "DATABASE_URL"];
     if (authMode === "oauth") {
-      requiredVars.push("OAUTH_SERVER_URL", "VITE_APP_ID", "VITE_OAUTH_PORTAL_URL");
+      requiredVars.push(
+        "OAUTH_SERVER_URL",
+        "VITE_APP_ID",
+        "VITE_OAUTH_PORTAL_URL"
+      );
     }
 
-    const missing = requiredVars.filter((key) => !process.env[key]);
+    const missing = requiredVars.filter(key => !process.env[key]);
     if (missing.length > 0) {
       throw new Error(
         `本番環境では以下の環境変数が必須です: ${missing.join(", ")}`

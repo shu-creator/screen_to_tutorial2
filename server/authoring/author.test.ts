@@ -17,7 +17,7 @@ function makeSegment(
   id: string,
   tStart: number,
   tEnd: number,
-  overrides: Partial<EvidenceSegment> = {},
+  overrides: Partial<EvidenceSegment> = {}
 ): EvidenceSegment {
   return {
     segment_id: id,
@@ -68,7 +68,11 @@ function llmResponse(payload: unknown) {
   };
 }
 
-const validStep = (ids: string[], title: string, labels: string[] = ["保存"]) => ({
+const validStep = (
+  ids: string[],
+  title: string,
+  labels: string[] = ["保存"]
+) => ({
   source_segment_ids: ids,
   title,
   instruction: `「${labels[0] ?? "保存"}」をクリックする`,
@@ -102,7 +106,7 @@ describe("authorSteps", () => {
         overview,
         steps: [validStep(["seg-1", "seg-2"], "入力して保存する")],
         discarded_segments: [{ segment_id: "seg-3", reason: "スクロールのみ" }],
-      }),
+      })
     );
 
     const result = await authorSteps(evidence);
@@ -110,7 +114,9 @@ describe("authorSteps", () => {
     expect(result.steps).toHaveLength(1);
     expect(result.steps[0].source_segment_ids).toEqual(["seg-1", "seg-2"]);
     expect(result.steps[0].needs_review).toBe(false);
-    expect(result.discarded).toEqual([{ segment_id: "seg-3", reason: "スクロールのみ" }]);
+    expect(result.discarded).toEqual([
+      { segment_id: "seg-3", reason: "スクロールのみ" },
+    ]);
     expect(result.overview.task_title).toBe("顧客登録");
     expect(invokeLLMMock).toHaveBeenCalledTimes(1);
   });
@@ -123,7 +129,7 @@ describe("authorSteps", () => {
         overview,
         steps: [validStep(["seg-1"], "操作する", ["架空のボタン"])],
         discarded_segments: [],
-      }),
+      })
     );
 
     const result = await authorSteps(evidence);
@@ -143,12 +149,12 @@ describe("authorSteps", () => {
         overview,
         steps: [validStep(["seg-1"], "操作1")],
         discarded_segments: [],
-      }),
+      })
     );
 
     const result = await authorSteps(evidence);
     expect(result.steps).toHaveLength(2);
-    const fallback = result.steps.find((step) => step.fallback);
+    const fallback = result.steps.find(step => step.fallback);
     expect(fallback?.source_segment_ids).toEqual(["seg-2"]);
     expect(fallback?.needs_review).toBe(true);
   });
@@ -169,13 +175,13 @@ describe("authorSteps", () => {
           validStep(["seg-2", "seg-1"], "順序逆転"),
         ],
         discarded_segments: [],
-      }),
+      })
     );
 
     const result = await authorSteps(evidence);
     // seg-1: 操作1が採用 / seg-2: 全候補が不採用なのでフォールバック
-    expect(result.steps.filter((step) => !step.fallback)).toHaveLength(1);
-    expect(result.steps.filter((step) => step.fallback)).toHaveLength(1);
+    expect(result.steps.filter(step => !step.fallback)).toHaveLength(1);
+    expect(result.steps.filter(step => step.fallback)).toHaveLength(1);
     expect(result.warnings.length).toBeGreaterThanOrEqual(3);
   });
 
@@ -189,12 +195,12 @@ describe("authorSteps", () => {
 
     const result = await authorSteps(evidence);
     expect(result.steps).toHaveLength(2);
-    expect(result.steps.every((step) => step.fallback)).toBe(true);
+    expect(result.steps.every(step => step.fallback)).toBe(true);
   });
 
   it("チャンク分割時は暫定overviewを引き継ぎ、チャンク数分のLLM呼び出しになる", async () => {
     const segments = Array.from({ length: 5 }, (_, i) =>
-      makeSegment(`seg-${i + 1}`, i * 1000, (i + 1) * 1000),
+      makeSegment(`seg-${i + 1}`, i * 1000, (i + 1) * 1000)
     );
     const evidence = makeEvidence(segments);
 
@@ -208,17 +214,14 @@ describe("authorSteps", () => {
             validStep(["seg-3"], "操作3"),
           ],
           discarded_segments: [],
-        }),
+        })
       )
       .mockResolvedValueOnce(
         llmResponse({
           overview: { ...overview, task_title: "顧客登録（改善版）" },
-          steps: [
-            validStep(["seg-4"], "操作4"),
-            validStep(["seg-5"], "操作5"),
-          ],
+          steps: [validStep(["seg-4"], "操作4"), validStep(["seg-5"], "操作5")],
           discarded_segments: [],
-        }),
+        })
       );
 
     const result = await authorSteps(evidence, { chunkSize: 3 });
@@ -248,10 +251,44 @@ describe("authorSteps", () => {
           validStep(["seg-1"], "先の操作"),
         ],
         discarded_segments: [],
-      }),
+      })
     );
 
     const result = await authorSteps(evidence);
-    expect(result.steps.map((step) => step.title)).toEqual(["先の操作", "後の操作"]);
+    expect(result.steps.map(step => step.title)).toEqual([
+      "先の操作",
+      "後の操作",
+    ]);
+  });
+
+  it("activity=waiting のみを根拠にしたステップは不採用にして discarded にする", async () => {
+    const evidence = makeEvidence([
+      makeSegment("seg-1", 0, 2000, { activity: "waiting" }),
+      makeSegment("seg-2", 2000, 4000),
+    ]);
+
+    invokeLLMMock.mockResolvedValueOnce(
+      llmResponse({
+        overview,
+        steps: [
+          validStep(["seg-1"], "待機を説明する"),
+          validStep(["seg-2"], "操作する"),
+        ],
+        discarded_segments: [],
+      })
+    );
+
+    const result = await authorSteps(evidence);
+
+    expect(result.steps.map(step => step.source_segment_ids)).toEqual([
+      ["seg-2"],
+    ]);
+    expect(result.discarded).toContainEqual({
+      segment_id: "seg-1",
+      reason: "activity=waiting",
+    });
+    expect(result.warnings.join("\n")).toContain(
+      'step "待機を説明する" 不採用: activity=waiting のセグメントのみを参照'
+    );
   });
 });

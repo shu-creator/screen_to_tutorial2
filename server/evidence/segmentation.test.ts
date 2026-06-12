@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyWaitingRuns,
   coalesceTransitions,
   computeDiffTimeline,
   computeFrameDiff,
@@ -24,7 +25,7 @@ function flatFrame(value: number): GrayFrame {
 function withRect(
   base: GrayFrame,
   rect: { x: number; y: number; w: number; h: number },
-  value: number,
+  value: number
 ): GrayFrame {
   const pixels = Buffer.from(base.pixels);
   for (let y = rect.y; y < rect.y + rect.h; y++) {
@@ -84,7 +85,9 @@ describe("detectTransitions", () => {
     const frames: GrayFrame[] = [base, base];
     // 毎フレーム変化し続ける
     for (let i = 0; i < 4; i++) {
-      frames.push(withRect(base, { x: i * 10, y: 0, w: 50, h: 25 }, 200 + i * 10));
+      frames.push(
+        withRect(base, { x: i * 10, y: 0, w: 50, h: 25 }, 200 + i * 10)
+      );
     }
     const diffs = computeDiffTimeline(frames, W, H);
     const transitions = detectTransitions(diffs, frames.length, opts);
@@ -102,7 +105,9 @@ describe("detectTransitions", () => {
 
 describe("coalesceTransitions", () => {
   const opts = { fps: 4, coalesceMaxGapMs: 1000, coalesceBBoxPadRatio: 0.04 };
-  const bboxAt = (x: number): { x: number; y: number; w: number; h: number } => ({
+  const bboxAt = (
+    x: number
+  ): { x: number; y: number; w: number; h: number } => ({
     x,
     y: 0.3,
     w: 0.05,
@@ -157,9 +162,18 @@ describe("detectSegments (end-to-end pure)", () => {
     const after1 = withRect(base, { x: 0, y: 0, w: 50, h: 25 }, 200);
     const after2 = withRect(after1, { x: 60, y: 30, w: 30, h: 15 }, 30);
     const frames = [
-      base, base, base, base,          // 0-3: 初期安定
-      after1, after1, after1, after1,  // 4: 遷移 → 5から安定
-      after2, after2, after2, after2,  // 8: 遷移 → 9から安定
+      base,
+      base,
+      base,
+      base, // 0-3: 初期安定
+      after1,
+      after1,
+      after1,
+      after1, // 4: 遷移 → 5から安定
+      after2,
+      after2,
+      after2,
+      after2, // 8: 遷移 → 9から安定
     ];
     const segments = detectSegments(frames, W, H, { fps: 4 });
     expect(segments).toHaveLength(2);
@@ -186,8 +200,97 @@ describe("detectSegments (end-to-end pure)", () => {
 
   it("low >= high の設定はエラー", () => {
     expect(() =>
-      detectSegments([flatFrame(0)], W, H, { highThreshold: 0.001, lowThreshold: 0.001 }),
+      detectSegments([flatFrame(0)], W, H, {
+        highThreshold: 0.001,
+        lowThreshold: 0.001,
+      })
     ).toThrow();
+  });
+
+  it("小領域スピナーが動き続ける区間をstall closeし waiting セグメントにする", () => {
+    const base = flatFrame(100);
+    const action = withRect(base, { x: 0, y: 0, w: 50, h: 25 }, 150);
+    const spinnerA = withRect(action, { x: 40, y: 18, w: 6, h: 6 }, 220);
+    const spinnerB = withRect(action, { x: 41, y: 18, w: 6, h: 6 }, 220);
+    const frames = [
+      base,
+      base,
+      base,
+      base,
+      action,
+      spinnerA,
+      spinnerB,
+      spinnerA,
+      spinnerB,
+      spinnerA,
+      spinnerB,
+      spinnerA,
+      action,
+      action,
+      action,
+    ];
+
+    const segments = detectSegments(frames, W, H, {
+      fps: 4,
+      stallWindowFrames: 3,
+      stallAfterMs: 1000,
+      stallAreaRatio: 0.02,
+    });
+
+    expect(segments.length).toBeGreaterThanOrEqual(2);
+    expect(segments[0].activity).toBe("action");
+    expect(segments[1].activity).toBe("waiting");
+    expect(segments[1].transitionStartMs).toBeGreaterThanOrEqual(1000);
+    expect(segments[1].changedBBox?.w).toBeLessThan(0.15);
+  });
+});
+
+describe("classifyWaitingRuns", () => {
+  const segment = (
+    index: number,
+    bbox: { x: number; y: number; w: number; h: number },
+    overrides: Partial<ReturnType<typeof detectSegments>[number]> = {}
+  ): ReturnType<typeof detectSegments>[number] => ({
+    tStartMs: index * 4000,
+    tEndMs: (index + 1) * 4000,
+    transitionStartMs: index * 4000 + 250,
+    beforeFrameIndex: index,
+    afterFrameIndex: index + 1,
+    changedBBox: bbox,
+    coalescedFrom: 1,
+    activity: "action",
+    ...overrides,
+  });
+
+  it("同一bboxの進捗バー反復runを waiting にする", () => {
+    const segments = [
+      segment(0, { x: 0.3, y: 0.2, w: 0.32, h: 0.04 }),
+      segment(1, { x: 0.3, y: 0.2, w: 0.32, h: 0.04 }),
+      segment(2, { x: 0.3, y: 0.2, w: 0.32, h: 0.04 }),
+    ];
+
+    const classified = classifyWaitingRuns(segments, {
+      waitingRunAreaRatio: 0.35,
+      waitingRunMinSpanMs: 10000,
+    });
+
+    expect(classified.map(item => item.activity)).toEqual([
+      "waiting",
+      "waiting",
+      "waiting",
+    ]);
+  });
+
+  it("coalescing済みの1文字タイピング1セグメントは waiting にしない", () => {
+    const classified = classifyWaitingRuns([
+      segment(
+        0,
+        { x: 0.4, y: 0.4, w: 0.06, h: 0.06 },
+        { tEndMs: 12000, coalescedFrom: 3 }
+      ),
+    ]);
+
+    expect(classified[0].activity).toBe("action");
   });
 });
 
@@ -195,7 +298,7 @@ describe("unionBBox / rectsIntersect", () => {
   it("unionBBox は2つの矩形を包含する", () => {
     const union = unionBBox(
       { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
-      { x: 0.5, y: 0.5, w: 0.2, h: 0.2 },
+      { x: 0.5, y: 0.5, w: 0.2, h: 0.2 }
     );
     expect(union).toEqual({ x: 0.1, y: 0.1, w: 0.6, h: 0.6 });
   });
@@ -209,10 +312,16 @@ describe("unionBBox / rectsIntersect", () => {
 
   it("rectsIntersect は交差を判定する", () => {
     expect(
-      rectsIntersect({ x: 0, y: 0, w: 0.5, h: 0.5 }, { x: 0.4, y: 0.4, w: 0.5, h: 0.5 }),
+      rectsIntersect(
+        { x: 0, y: 0, w: 0.5, h: 0.5 },
+        { x: 0.4, y: 0.4, w: 0.5, h: 0.5 }
+      )
     ).toBe(true);
     expect(
-      rectsIntersect({ x: 0, y: 0, w: 0.3, h: 0.3 }, { x: 0.5, y: 0.5, w: 0.3, h: 0.3 }),
+      rectsIntersect(
+        { x: 0, y: 0, w: 0.3, h: 0.3 },
+        { x: 0.5, y: 0.5, w: 0.3, h: 0.3 }
+      )
     ).toBe(false);
   });
 });
@@ -221,7 +330,7 @@ describe("computeFullFrameDHash（比較実験用）", () => {
   it("同一フレームのハッシュは一致する", () => {
     const a = flatFrame(100);
     expect(computeFullFrameDHash(a.pixels, W, H)).toBe(
-      computeFullFrameDHash(a.pixels, W, H),
+      computeFullFrameDHash(a.pixels, W, H)
     );
   });
 
@@ -232,7 +341,7 @@ describe("computeFullFrameDHash（比較実験用）", () => {
 
     const dhashDistance = hammingDistance(
       computeFullFrameDHash(base.pixels, W, H),
-      computeFullFrameDHash(typed.pixels, W, H),
+      computeFullFrameDHash(typed.pixels, W, H)
     );
     const pixelDiff = computeFrameDiff(base.pixels, typed.pixels, W, H, 24);
 

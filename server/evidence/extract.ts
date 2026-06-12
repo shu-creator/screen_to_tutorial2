@@ -28,7 +28,11 @@ import {
   type OperationSegment,
 } from "./segmentation";
 import { extractFullFrame, sampleGrayTimeline } from "./timeline";
-import { EVIDENCE_ARTIFACT_VERSION, type EvidenceArtifact, type EvidenceSegment } from "./types";
+import {
+  EVIDENCE_ARTIFACT_VERSION,
+  type EvidenceArtifact,
+  type EvidenceSegment,
+} from "./types";
 
 const logger = createLogger("Evidence");
 
@@ -62,7 +66,7 @@ export interface ExtractedEvidence {
 export function assignTranscriptSnippets(
   segments: Array<Pick<OperationSegment, "transitionStartMs" | "tEndMs">>,
   transcript: TranscriptSegment[],
-  leadMs: number,
+  leadMs: number
 ): string[] {
   const assigned: string[][] = segments.map(() => []);
 
@@ -72,7 +76,8 @@ export function assignTranscriptSnippets(
     for (let i = 0; i < segments.length; i++) {
       const windowStart = segments[i].transitionStartMs - leadMs;
       const windowEnd = segments[i].tEndMs;
-      const overlaps = speech.endMs >= windowStart && speech.startMs <= windowEnd;
+      const overlaps =
+        speech.endMs >= windowStart && speech.startMs <= windowEnd;
       if (!overlaps) continue;
       const distance = Math.abs(segments[i].transitionStartMs - speech.startMs);
       if (distance < bestDistance) {
@@ -85,14 +90,14 @@ export function assignTranscriptSnippets(
     }
   }
 
-  return assigned.map((texts) => texts.filter(Boolean).join(" "));
+  return assigned.map(texts => texts.filter(Boolean).join(" "));
 }
 
 /** 差分bbox周辺（パディング付き）に重なるOCR行を抽出する（純関数） */
 export function computeOcrFocus(
   regions: Array<{ text: string; x: number; y: number; w: number; h: number }>,
   bbox: NormalizedRect | null,
-  padRatio = 0.04,
+  padRatio = 0.04
 ): string[] {
   if (!bbox) return [];
   const padded: NormalizedRect = {
@@ -102,19 +107,20 @@ export function computeOcrFocus(
     h: bbox.h + padRatio * 2,
   };
   return regions
-    .filter((region) => rectsIntersect(padded, region))
-    .map((region) => region.text);
+    .filter(region => rectsIntersect(padded, region))
+    .map(region => region.text);
 }
 
 export async function extractEvidence(
   videoPath: string,
-  options: ExtractEvidenceOptions,
+  options: ExtractEvidenceOptions
 ): Promise<ExtractedEvidence> {
   const sampleFps = options.sampleFps ?? ENV.evidenceSampleFps;
   const diffHigh = options.diffHigh ?? ENV.evidenceDiffHigh;
   const diffLow = options.diffLow ?? ENV.evidenceDiffLow;
   const stableFrames = options.stableFrames ?? ENV.evidenceStableFrames;
-  const coalesceMaxGapMs = options.coalesceMaxGapMs ?? ENV.evidenceCoalesceMaxGapMs;
+  const coalesceMaxGapMs =
+    options.coalesceMaxGapMs ?? ENV.evidenceCoalesceMaxGapMs;
   const asrLeadMs = options.asrLeadMs ?? ENV.asrLeadMs;
   const asrProvider = options.asrProvider ?? ENV.asrProvider;
   const ocrProvider = options.ocrProvider ?? ENV.ocrProvider;
@@ -128,31 +134,43 @@ export async function extractEvidence(
   await onProgress(0.05, "動画をサンプリングしています...");
   const timeline = await sampleGrayTimeline(videoPath, { fps: sampleFps });
   logger.info(
-    `Sampled ${timeline.frames.length} frames @${sampleFps}fps (${timeline.durationMs}ms)`,
+    `Sampled ${timeline.frames.length} frames @${sampleFps}fps (${timeline.durationMs}ms)`
   );
 
-  const segments = detectSegments(timeline.frames, timeline.width, timeline.height, {
-    fps: sampleFps,
-    highThreshold: diffHigh,
-    lowThreshold: diffLow,
-    stableFrames,
-    coalesceMaxGapMs,
-  });
+  const segments = detectSegments(
+    timeline.frames,
+    timeline.width,
+    timeline.height,
+    {
+      fps: sampleFps,
+      highThreshold: diffHigh,
+      lowThreshold: diffLow,
+      stableFrames,
+      coalesceMaxGapMs,
+    }
+  );
   logger.info(`Detected ${segments.length} operation segments`);
   await onProgress(0.2, `${segments.length}個の操作セグメントを検出しました`);
 
   // 2. ASR（音声なし動画は警告付きでスキップされる）
   const transcript: TranscriptionResult = await transcribeVideoSource(
     videoPath,
-    asrProvider,
+    asrProvider
   );
-  const snippets = assignTranscriptSnippets(segments, transcript.segments, asrLeadMs);
+  const snippets = assignTranscriptSnippets(
+    segments,
+    transcript.segments,
+    asrLeadMs
+  );
   await onProgress(0.35, "音声の文字起こしが完了しました");
 
   // 3. 代表フレーム抽出 + OCR
   const frameMs = 1000 / sampleFps;
   const evidenceSegments: EvidenceSegment[] = [];
-  const frameFiles = new Map<string, { before: string | null; after: string }>();
+  const frameFiles = new Map<
+    string,
+    { before: string | null; after: string }
+  >();
 
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];
@@ -174,7 +192,11 @@ export async function extractEvidence(
     let ocrLines: string[] = [];
     let ocrFocus: string[] = [];
     try {
-      const ocr = await extractFrameOcrUnified(afterPath, segment.afterFrameIndex, ocrProvider);
+      const ocr = await extractFrameOcrUnified(
+        afterPath,
+        segment.afterFrameIndex,
+        ocrProvider
+      );
       ocrLines = ocr.lines;
       ocrFocus = computeOcrFocus(ocr.regions, segment.changedBBox);
       warnings.push(...ocr.warnings);
@@ -190,21 +212,32 @@ export async function extractEvidence(
       transition_start: segment.transitionStartMs,
       before_frame:
         beforePath !== null && beforeTimeMs !== null
-          ? { t: beforeTimeMs, image_key: beforePath, image_url: beforePath, frame_id: null }
+          ? {
+              t: beforeTimeMs,
+              image_key: beforePath,
+              image_url: beforePath,
+              frame_id: null,
+            }
           : null,
-      after_frame: { t: afterTimeMs, image_key: afterPath, image_url: afterPath, frame_id: null },
+      after_frame: {
+        t: afterTimeMs,
+        image_key: afterPath,
+        image_url: afterPath,
+        frame_id: null,
+      },
       changed_region_bbox: segment.changedBBox,
       ocr_lines: ocrLines,
       ocr_focus: ocrFocus,
       transcript_snippet: snippets[i] ?? "",
       coalesced_from: segment.coalescedFrom,
+      activity: segment.activity,
       warnings,
     });
     frameFiles.set(segmentId, { before: beforePath, after: afterPath });
 
     await onProgress(
       0.35 + 0.6 * ((i + 1) / segments.length),
-      `証拠を抽出中 (${i + 1}/${segments.length})`,
+      `証拠を抽出中 (${i + 1}/${segments.length})`
     );
   }
 

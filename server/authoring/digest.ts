@@ -33,16 +33,22 @@ export function buildSegmentDigest(segment: EvidenceSegment): SegmentDigest {
   const lines: string[] = [
     `### segment_id: ${segment.segment_id}`,
     `time: ${segment.t_start}ms 〜 ${segment.t_end}ms（操作開始 ${segment.transition_start}ms）`,
+    `activity: ${segment.activity ?? "action"}`,
     `変化領域bbox: ${formatBBox(segment.changed_region_bbox)}`,
   ];
 
-  if (segment.coalesced_from > 1 || segment.t_end - segment.transition_start > 3000) {
-    lines.push(`連続変化: タイピング等の連続入力の可能性（変化点${segment.coalesced_from}個）`);
+  if (
+    segment.coalesced_from > 1 ||
+    segment.t_end - segment.transition_start > 3000
+  ) {
+    lines.push(
+      `連続変化: タイピング等の連続入力の可能性（変化点${segment.coalesced_from}個）`
+    );
   }
 
   const focus = truncateList(segment.ocr_focus, MAX_FOCUS_LINES_PER_SEGMENT);
   lines.push(
-    `変化領域周辺のOCR（操作対象ラベルの候補）: ${focus.length > 0 ? focus.join(" | ") : "(なし)"}`,
+    `変化領域周辺のOCR（操作対象ラベルの候補）: ${focus.length > 0 ? focus.join(" | ") : "(なし)"}`
   );
 
   const ocr = truncateList(segment.ocr_lines, MAX_OCR_LINES_PER_SEGMENT);
@@ -70,14 +76,16 @@ export interface AuthoringChunk {
 
 export function chunkSegments(
   artifact: EvidenceArtifact,
-  chunkSize: number = DEFAULT_CHUNK_SIZE,
+  chunkSize: number = DEFAULT_CHUNK_SIZE
 ): AuthoringChunk[] {
   const sorted = [...artifact.segments].sort((a, b) => a.t_start - b.t_start);
   const chunks: AuthoringChunk[] = [];
   const totalChunks = Math.max(1, Math.ceil(sorted.length / chunkSize));
   for (let i = 0; i < totalChunks; i++) {
     chunks.push({
-      digests: sorted.slice(i * chunkSize, (i + 1) * chunkSize).map(buildSegmentDigest),
+      digests: sorted
+        .slice(i * chunkSize, (i + 1) * chunkSize)
+        .map(buildSegmentDigest),
       chunkIndex: i,
       totalChunks,
     });
@@ -92,7 +100,7 @@ export function buildGlobalContext(artifact: EvidenceArtifact): string {
     `動画の長さ: ${durationSec}秒 / 操作セグメント数: ${artifact.segments.length}`,
   ];
   const fullText = artifact.transcript.segments
-    .map((segment) => segment.text)
+    .map(segment => segment.text)
     .join(" ")
     .trim();
   if (fullText.length > 0) {
