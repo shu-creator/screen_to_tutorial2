@@ -22,7 +22,7 @@
   - フォーム入力中心（タイピング合体の検証用）
   - モーダル/ドロップダウン遷移を含むもの（フェード遷移の検証用）
   - 短尺（〜2分）と中尺（〜10分）
-- 置き場所: `eval/dataset/<case-id>/`（`ground_truth.json` + `meta.json` はコミット、動画実体は `.gitignore` 済みの `eval/dataset/<case-id>/video.mp4` に置き、`meta.json` にSHA-256と入手方法を記録する）
+- 置き場所: `eval/dataset/<case-id>/`（`ground_truth.json` + `meta.json` はコミット、動画実体は `.gitignore` にエントリを追加した上で `eval/dataset/<case-id>/video.mp4` に置き、`meta.json` にSHA-256と入手方法を記録する）
 
 ### 2. 正解データスキーマ（`ground_truth.json`）
 ```jsonc
@@ -43,7 +43,7 @@
 
 ### 3. メトリクス実装（`eval/metrics.ts`）
 - **G1 ステップ分割F1**: 生成ステップと正解ステップを区間IoU（閾値0.5）でマッチングし、Precision/Recall/F1を算出
-- **G2 UIラベル正確性**: 生成文（title/operation/instruction）から「」『』等で引用されたUIラベルを抽出し、正解 `ui_labels` ∪ OCR実測テキストに含まれる率
+- **G2 UIラベル正確性**: 生成文（title/operation/instruction）から「」『』等で引用されたUIラベルを抽出し、正解 `ui_labels` ∪ OCR実測テキストに含まれる率。**分母0の規約**: 現行プロンプトは括弧引用を指示していないため、ベースラインでは引用0件のステップが多発しうる。引用0件のステップはG2の分母から除外し、代わりに「引用なしステップ率」を必ず併記する（引用ゼロでG2が見かけ100%になる退化を防ぐ）
 - **G3 非ステップ混入率**: 正解で `non_step: true` の区間にマッチした生成ステップ数 / 生成ステップ総数
 - G4（人手修正コスト）は自動化せず、評価実行時に記録欄を出力するに留める
 

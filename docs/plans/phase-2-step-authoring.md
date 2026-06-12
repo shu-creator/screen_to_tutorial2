@@ -23,6 +23,7 @@
 evidence.json から執筆用の入力を組み立てる:
 - 各セグメント: after画像（必要に応じbefore画像も）のサムネイル、差分bbox、`ocr_focus`、`ocr_lines`（上限行数でトリム）、`transcript_snippet`、`coalesced_from`
 - 全体: 動画の長さ、セグメント数、（あれば）transcript全文の要約用先頭部
+- **フレーム参照マッピング**: 各セグメントの `after_frame.frame_id`（evidence側で必須）から steps.json v2 の `representative_frames`（`frame_id` + `image_url`）を構成する。`persistStepsToDb()` が `frame_id` 欠落で throw する契約（`stepGenerator.ts:196-199` 相当）を維持するため、ここで欠落を検出したら執筆前にエラーにする
 
 **Stage B: 一括執筆（LLM 1〜2回）**
 - 入力: Stage A のダイジェスト全体 + 執筆指示
@@ -33,7 +34,7 @@ evidence.json から執筆用の入力を組み立てる:
 - 出力（json_schema strict）:
   - `overview`: タスク名・前提・完了条件
   - `steps[]`: `source_segment_ids[]`（根拠セグメント、必須）、title / instruction / expected_result / operation / description / narration / cited_ui_labels[] / confidence
-- ナレーションは overview を踏まえた通し文体で生成（「まず」「次に」「最後に」の接続が破綻しない）
+- ナレーションは overview を踏まえた通し文体で生成（「まず」「次に」「最後に」の接続が破綻しない）。チャンク分割時は最初のチャンクで暫定 overview を生成して以降のチャンクに引き継ぎ、最終パスで確定 overview に更新する（ナレーション本文の書き直しはしない）
 
 ### 長尺対応（コンテキスト超過対策）
 
@@ -51,13 +52,17 @@ evidence.json から執筆用の入力を組み立てる:
 
 ```jsonc
 {
-  "version": 2,
+  "version": "2.0",   // 現行の STEPS_ARTIFACT_VERSION = "1.0"（文字列）に合わせ文字列で統一
   "overview": { "task_title": "...", "preconditions": ["..."], "completion_criteria": "..." },
   "steps": [
     {
       // v1から維持: step_id, sort_order, t_start, t_end, title, operation,
       //             description, narration, instruction, expected_result,
-      //             warnings, confidence, representative_frames, changed_region_bbox
+      //             warnings, confidence, representative_frames, changed_region_bbox,
+      //             frame_id, audio_url, audio_key, legacy_step_db_id
+      //   - audio_url/audio_key: 音声生成（videoGenerator の patchStepArtifact）が依存
+      //   - legacy_step_db_id: 編集・再生成・並べ替えルート（routers.ts）のマッチングキー
+      //   いずれも Phase 5 の単一ソース化まで必須で維持する
       "source_segment_ids": ["seg-3", "seg-4"],   // 新規: evidence.json への根拠リンク
       "cited_ui_labels": ["保存"],                  // 新規: 機械照合済みラベル
       "needs_review": false                         // 新規
@@ -66,7 +71,8 @@ evidence.json から執筆用の入力を組み立てる:
 }
 ```
 
-- v1 読み込み時は自動マイグレーション（`source_segment_ids: []`、`needs_review: false` 等のデフォルト埋め）。既存の `loadStepsArtifact` 互換レイヤーに実装
+- v1 読み込み時は自動マイグレーション（`source_segment_ids: []`、`needs_review: false` 等のデフォルト埋め）
+- **マイグレーションの入口を厳格化**: 現行 `loadStepsArtifact` はパース失敗を握りつぶして null を返すため（`stepsArtifact.ts:86-88` 相当）、旧コードがv2を読むと「artifactなし」として静かにDBへフォールバックする。v2実装では「既知バージョンはマイグレーション、未知バージョンは警告ログ+エラー」とし、サイレントなnullフォールバックを禁止する
 - DB `steps` への同期（`persistStepsToDb`）は当面維持（解消は Phase 5）
 
 ### UI変更（最小限）
@@ -77,7 +83,9 @@ evidence.json から執筆用の入力を組み立てる:
 ## タスク分解（PR分割案）
 
 1. **PR-A: 執筆コア** — Stage A/B、チャンク分割、steps.json v2 スキーマ + v1マイグレーション、機械検証、フォールバック。`pnpm eval` でG1/G2/G3をベースライン比較
-2. **PR-B: UI対応** — needs_review バッジ、overview 編集、編集系ルート（edit/delete/reorder/regenerate）の v2 対応
+2. **PR-B: UI対応 + ルート互換** — needs_review バッジ、overview 編集、編集系ルート（edit/delete/reorder/regenerate）の v2 対応。加えて:
+   - **retry ルート**: 現行 `project.retry` はフレームとDB stepsを削除するが steps.json を残置するため、古いartifactが削除済みフレームを参照したまま生成に使われる経路がある。retry時に steps.json / evidence.json を無効化（削除またはバージョンマーク）する処理を追加
+   - **duplicate / retry の互換テスト**: README が実装済みと謳う全プロジェクト操作（複製・再試行含む）が v2 で動作することを回帰テストに含める
 
 ## コスト見積もり
 

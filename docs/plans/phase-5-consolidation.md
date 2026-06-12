@@ -26,12 +26,12 @@
 ### 5.3 旧経路・死にコードの削除
 - `scripts/extract_frames.py` を削除（未参照。`videoProcessor` はffmpeg直接実行）。`requirements.txt` の opencv 依存も、Phase 1 のOCR/抽出実装で使わないなら削除
 - Phase 1 で残したシーン検出フォールバック経路を削除（evidence パイプラインの安定確認後）
+- `slideGenerator.ts` 内の独自 `detectChangedRegion` 実装（Phase 3 で artifact bbox 消費に置換後、`frameAnalysis.ts` 版と重複するため）を削除
 - Phase 3 で退役決定したヒューリスティックの残骸確認
 - 旧 `analyzeFrame()` 単フレーム解析（`regenerateStep` が使う場合は v2 の文脈付き再生成に置き換え）
 
 ### 5.4 ドキュメント整合
-- README の「実装済み機能」リスト中に「CLI」セクションが割り込んでいる崩れ（README.md:282 付近）を修正
-- README のプロジェクト構造・データベーススキーマ・パイプライン説明を刷新後の実態に更新
+- README のプロジェクト構造・データベーススキーマ・パイプライン説明を刷新後の実態に更新（「実装済み機能」リストの崩れは docs 初版コミットで修正済み）
 - `.env.example` を新パラメータ（サンプリングfps、coalescing、ASRリード、クリップ設定等）込みで再整理
 - docs/plans 各ファイルのステータス更新、本ロードマップの完了記録
 
@@ -41,7 +41,7 @@
 - [ ] 500MB級ファイルのアップロード時にプロセスRSSが入力サイズに比例して増えないことを確認（計測値を記録）
 - [ ] `git grep` で旧経路（シーン検出、extract_frames.py、退役ヒューリスティック）への参照がゼロ
 - [ ] README / .env.example / docs が実装と一致（手動チェックリストをPRに添付）
-- [ ] `pnpm check` / `pnpm test` / `pnpm eval` がすべて通り、評価値がPhase 4完了時点から退行していない
+- [ ] `pnpm check` / `pnpm test` / `pnpm eval` がすべて通り、評価値が本フェーズ着手時点のベースラインから退行していない
 
 ## リスク
 
