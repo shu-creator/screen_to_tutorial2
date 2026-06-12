@@ -109,13 +109,17 @@ function extractSteps(artifact: unknown): GeneratedStepLike[] {
 
 /** evidence.json からセグメント境界（ms）を取り出す */
 function extractSegmentBoundaries(evidence: unknown): number[] {
-  const obj = evidence as { segments?: Array<{ t_start?: number; t_end?: number }> };
+  const obj = evidence as {
+    segments?: Array<{ t_start?: number; t_end?: number; transition_start?: number }>;
+  };
   if (!Array.isArray(obj.segments)) {
     throw new Error("evidence.json に segments 配列がありません");
   }
   const boundaries = new Set<number>();
   for (const segment of obj.segments) {
+    // GTの境界は「操作開始時刻」「結果安定時刻」で定義されるため transition_start も含める
     if (typeof segment.t_start === "number") boundaries.add(segment.t_start);
+    if (typeof segment.transition_start === "number") boundaries.add(segment.transition_start);
     if (typeof segment.t_end === "number") boundaries.add(segment.t_end);
   }
   return Array.from(boundaries).sort((a, b) => a - b);

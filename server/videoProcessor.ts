@@ -7,6 +7,8 @@ import * as db from "./db";
 import { nanoid } from "nanoid";
 import { dedupeFramesByDHash, type NormalizedRect } from "./_core/frameAnalysis";
 import { ENV } from "./_core/env";
+import { extractEvidence } from "./evidence/extract";
+import { saveEvidenceArtifact } from "./evidence/artifactStore";
 
 const execFileAsync = promisify(execFile);
 
@@ -389,7 +391,22 @@ export async function processVideo(
     // 進捗: フレーム抽出開始
     await db.updateProjectProgress(projectId, 10, "動画からフレームを抽出しています...");
 
-    // ffmpegでフレームを抽出
+    // Phase 1: 証拠抽出パイプライン（一様サンプリング + 操作セグメンテーション）
+    // 失敗時は従来のシーン検出にフォールバックする（安定確認後に旧経路は削除予定）
+    try {
+      await processWithEvidencePipeline(projectId, videoPath, tempDir);
+      console.log(`[VideoProcessor] Evidence pipeline complete for project ${projectId}`);
+      return;
+    } catch (evidenceError) {
+      const message =
+        evidenceError instanceof Error ? evidenceError.message : String(evidenceError);
+      console.warn(
+        `[VideoProcessor] Evidence pipeline failed, falling back to scene detection: ${message}`,
+      );
+      await db.deleteFramesByProjectId(projectId);
+    }
+
+    // ffmpegでフレームを抽出（旧経路）
     console.log(`[VideoProcessor] Extracting frames with ffmpeg...`);
     const frames = await extractFramesWithFFmpeg(videoPath, tempDir, {
       threshold,
@@ -479,6 +496,83 @@ export async function processVideo(
     // 一時ディレクトリをクリーンアップ（リトライ付き）
     await cleanupTempDir(tempDir, "VideoProcessor");
   }
+}
+
+/**
+ * Phase 1 証拠抽出パイプライン:
+ * 動画 → evidence.json + 代表フレームのストレージ/DB保存
+ *
+ * フレームのDB行は各セグメントの after フレーム（操作結果の安定状態）。
+ * before フレームはストレージにのみ保存し、evidence.json から参照する。
+ */
+async function processWithEvidencePipeline(
+  projectId: number,
+  videoPath: string,
+  tempDir: string,
+): Promise<void> {
+  const framesDir = path.join(tempDir, "evidence_frames");
+
+  const { artifact } = await extractEvidence(videoPath, {
+    framesDir,
+    onProgress: async (ratio, message) => {
+      // 全体進捗の 10%〜60% を証拠抽出に割り当てる
+      await db.updateProjectProgress(projectId, 10 + Math.round(ratio * 50), message);
+    },
+  });
+
+  if (artifact.segments.length === 0) {
+    throw new Error("操作セグメントを検出できませんでした");
+  }
+
+  // フレームをストレージへアップロードし、afterフレームをDBに登録して frame_id を付与
+  await db.updateProjectProgress(projectId, 62, "フレームをアップロードしています...");
+
+  for (let i = 0; i < artifact.segments.length; i++) {
+    const segment = artifact.segments[i];
+
+    const afterBuffer = await fs.readFile(segment.after_frame.image_key);
+    const afterKey = `projects/${projectId}/frames/${nanoid()}.jpg`;
+    const { url: afterUrl } = await storagePut(afterKey, afterBuffer, "image/jpeg");
+
+    const frameId = await db.createFrame({
+      projectId,
+      frameNumber: i,
+      timestamp: segment.after_frame.t,
+      imageUrl: afterUrl,
+      imageKey: afterKey,
+      diffScore: 0,
+      sortOrder: i,
+    });
+
+    segment.after_frame = {
+      ...segment.after_frame,
+      image_key: afterKey,
+      image_url: afterUrl,
+      frame_id: frameId,
+    };
+
+    if (segment.before_frame) {
+      const beforeBuffer = await fs.readFile(segment.before_frame.image_key);
+      const beforeKey = `projects/${projectId}/frames/${nanoid()}_before.jpg`;
+      const { url: beforeUrl } = await storagePut(beforeKey, beforeBuffer, "image/jpeg");
+      segment.before_frame = {
+        ...segment.before_frame,
+        image_key: beforeKey,
+        image_url: beforeUrl,
+        frame_id: null,
+      };
+    }
+
+    const uploadProgress = 62 + Math.floor(((i + 1) / artifact.segments.length) * 8);
+    await db.updateProjectProgress(
+      projectId,
+      uploadProgress,
+      `フレームをアップロード中 (${i + 1}/${artifact.segments.length})`,
+    );
+  }
+
+  await saveEvidenceArtifact(projectId, artifact);
+  await db.updateProjectProgress(projectId, 70, "フレームの処理が完了しました");
 }
 
 /**

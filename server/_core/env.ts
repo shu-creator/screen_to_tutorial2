@@ -6,7 +6,7 @@ type LLMProvider = "openai" | "gemini" | "claude";
 type TTSProvider = "openai" | "gemini";
 type SlidePreset = "default" | "training";
 type ASRProvider = "none" | "openai" | "local_whisper";
-type OCRProvider = "none" | "llm";
+type OCRProvider = "none" | "llm" | "engine";
 
 const DEFAULT_LLM_MODEL: Record<LLMProvider, string> = {
   openai: "gpt-5.2",
@@ -117,7 +117,7 @@ const asrProvider = parseEnumEnv<ASRProvider>(
 );
 const ocrProvider = parseEnumEnv<OCRProvider>(
   "OCR_PROVIDER",
-  ["none", "llm"],
+  ["none", "llm", "engine"],
   "llm"
 );
 const slidePreset = parseEnumEnv<SlidePreset>(
@@ -164,6 +164,14 @@ const frameDedupeHashDistance = parseNumberEnv(
 const pipelineCacheDir = process.env.PIPELINE_CACHE_DIR
   ? path.resolve(process.cwd(), process.env.PIPELINE_CACHE_DIR)
   : path.resolve(process.cwd(), "data", "cache");
+
+// Phase 1: 証拠抽出パラメータ（docs/plans/phase-1-evidence-extraction.md）
+const evidenceSampleFps = parseNumberEnv("EVIDENCE_SAMPLE_FPS", 4, { min: 1, max: 15 });
+const evidenceDiffHigh = parseNumberEnv("EVIDENCE_DIFF_HIGH", 0.0004, { min: 0, max: 1 });
+const evidenceDiffLow = parseNumberEnv("EVIDENCE_DIFF_LOW", 0.00015, { min: 0, max: 1 });
+const evidenceStableFrames = parseNumberEnv("EVIDENCE_STABLE_FRAMES", 2, { min: 1, max: 10 });
+const evidenceCoalesceMaxGapMs = parseNumberEnv("EVIDENCE_COALESCE_MAX_GAP_MS", 1000, { min: 0 });
+const asrLeadMs = parseNumberEnv("ASR_LEAD_MS", 3000, { min: 0 });
 
 function validateEnvOnStartup(): void {
   const isProduction = process.env.NODE_ENV === "production";
@@ -245,6 +253,12 @@ export const ENV = {
   ocrProvider,
   pipelineCacheDir,
   frameDedupeHashDistance,
+  evidenceSampleFps,
+  evidenceDiffHigh,
+  evidenceDiffLow,
+  evidenceStableFrames,
+  evidenceCoalesceMaxGapMs,
+  asrLeadMs,
   slidePreset,
   slideRoiMinAreaRatio,
   slideRoiMaxAreaRatio,
