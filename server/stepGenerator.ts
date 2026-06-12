@@ -24,6 +24,18 @@ import { authorSteps, AUTHORING_PROMPT_VERSION } from "./authoring/author";
 const logger = createLogger("StepGenerator");
 const STEP_PROMPT_VERSION = "steps-grounded-v1";
 
+/**
+ * ステップのクリップ範囲算出に使用するセグメントを選択する。
+ * activity が "action"（undefined は "action" 扱い）のセグメントのみを返す。
+ * action セグメントが1つもない場合は入力をそのまま返す（防御的フォールバック）。
+ */
+export function selectClipSegments(segments: EvidenceSegment[]): EvidenceSegment[] {
+  const actionSegments = segments.filter(
+    (segment) => (segment.activity ?? "action") === "action",
+  );
+  return actionSegments.length > 0 ? actionSegments : segments;
+}
+
 interface StepData {
   title: string;
   operation: string;
@@ -271,7 +283,10 @@ async function generateStepsFromEvidence(
       throw new Error(`ステップの根拠セグメントが解決できません: ${step.title}`);
     }
 
-    const lastSegment = sourceSegments[sourceSegments.length - 1];
+    // クリップ範囲算出には waiting セグメントを除外する
+    const clipSegments = selectClipSegments(sourceSegments);
+
+    const lastSegment = clipSegments[clipSegments.length - 1];
     const frameId = lastSegment.after_frame.frame_id;
     if (!frameId) {
       // evidence契約違反（DBフローでは frame_id 必須）。執筆前に検出する
@@ -280,7 +295,9 @@ async function generateStepsFromEvidence(
       );
     }
 
-    const bbox = sourceSegments.reduce<StepArtifact["changed_region_bbox"]>(
+    const tStart = Math.min(...clipSegments.map((s) => s.t_start));
+
+    const bbox = clipSegments.reduce<StepArtifact["changed_region_bbox"]>(
       (acc, segment) => {
         const rect = segment.changed_region_bbox;
         if (!rect) return acc;
@@ -297,6 +314,7 @@ async function generateStepsFromEvidence(
       null,
     );
 
+    // ocr_text と transcript_snippet は sourceSegments 全体から（cited_ui_labels 検証のため）
     const mergedOcr = Array.from(
       new Set(sourceSegments.flatMap((segment) => segment.ocr_lines)),
     ).slice(0, 40);
@@ -309,9 +327,9 @@ async function generateStepsFromEvidence(
       step_id: `step-${index + 1}`,
       sort_order: index,
       frame_id: frameId,
-      t_start: sourceSegments[0].t_start,
-      t_end: Math.max(lastSegment.t_end, sourceSegments[0].t_start + 1),
-      representative_frames: sourceSegments.map((segment) => ({
+      t_start: tStart,
+      t_end: Math.max(lastSegment.t_end, tStart + 1),
+      representative_frames: clipSegments.map((segment) => ({
         frame_id: segment.after_frame.frame_id ?? undefined,
         frame_number: 0,
         timestamp: segment.after_frame.t,
