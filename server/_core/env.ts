@@ -173,6 +173,11 @@ const evidenceStableFrames = parseNumberEnv("EVIDENCE_STABLE_FRAMES", 2, { min: 
 const evidenceCoalesceMaxGapMs = parseNumberEnv("EVIDENCE_COALESCE_MAX_GAP_MS", 1000, { min: 0 });
 const asrLeadMs = parseNumberEnv("ASR_LEAD_MS", 3000, { min: 0 });
 
+// Phase 4: クリップ動画パラメータ（docs/plans/phase-4-clip-video.md）
+const clipPadBeforeMs = parseNumberEnv("CLIP_PAD_BEFORE_MS", 500, { min: 0 });
+const clipPadAfterMs = parseNumberEnv("CLIP_PAD_AFTER_MS", 800, { min: 0 });
+const clipMaxDurationMs = parseNumberEnv("CLIP_MAX_DURATION_S", 20, { min: 1 }) * 1000;
+
 function validateEnvOnStartup(): void {
   const isProduction = process.env.NODE_ENV === "production";
   const allowUnsafeNoneAuthInProduction =
@@ -259,6 +264,9 @@ export const ENV = {
   evidenceStableFrames,
   evidenceCoalesceMaxGapMs,
   asrLeadMs,
+  clipPadBeforeMs,
+  clipPadAfterMs,
+  clipMaxDurationMs,
   slidePreset,
   slideRoiMinAreaRatio,
   slideRoiMaxAreaRatio,

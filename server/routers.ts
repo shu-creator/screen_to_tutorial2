@@ -571,20 +571,31 @@ export const appRouter = router({
         if (!project) {
           throw new Error("プロジェクトが見つかりません");
         }
-        await generateAudioForProject(input.projectId, input.voice as TTSVoice);
-        return { success: true };
+        const { silentFallbackCount } = await generateAudioForProject(
+          input.projectId,
+          input.voice as TTSVoice,
+        );
+        return { success: true, silentFallbackCount };
       }),
 
     generate: protectedProcedure
-      .input(z.object({ projectId: z.number() }))
+      .input(z.object({
+        projectId: z.number(),
+        audioMode: z.enum(["auto", "tts", "original", "mixed", "silent"]).optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         // セキュリティ: プロジェクトの所有者チェック
         const project = await db.getProjectById(input.projectId, ctx.user.id);
         if (!project) {
           throw new Error("プロジェクトが見つかりません");
         }
-        const videoUrl = await generateVideo(input.projectId);
-        return { success: true, videoUrl };
+        const result = await generateVideo(input.projectId, { audioMode: input.audioMode });
+        return {
+          success: true,
+          videoUrl: result.videoUrl,
+          warnings: result.warnings,
+          stillImageFallbackCount: result.stillImageFallbackCount,
+        };
       }),
   }),
 });

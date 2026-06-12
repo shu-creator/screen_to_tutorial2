@@ -381,6 +381,7 @@ export default function ProjectDetail() {
     message: string;
   } | null>(null);
   const [selectedVoice, setSelectedVoice] = useState<string>("nova");
+  const [audioMode, setAudioMode] = useState<"auto" | "tts" | "original" | "mixed" | "silent">("auto");
   const [slideUrl, setSlideUrl] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [retryParams, setRetryParams] = useState({
@@ -494,10 +495,15 @@ export default function ProjectDetail() {
     try {
       // 1. 音声を生成
       setVideoGenerationProgress({ progress: 10, message: "ナレーション音声を生成中..." });
-      await generateAudioMutation.mutateAsync({
+      const audioResult = await generateAudioMutation.mutateAsync({
         projectId,
         voice: selectedVoice,
       });
+      if (audioResult.silentFallbackCount > 0) {
+        toast.warning(
+          `${audioResult.silentFallbackCount}件のステップでTTSが失敗し無音になっています。TTSのAPIキー設定を確認してください。`,
+        );
+      }
 
       // 音声生成後にステップを再取得（audioUrlを更新するため）
       setVideoGenerationProgress({ progress: 50, message: "音声生成完了。動画を生成中..." });
@@ -506,7 +512,12 @@ export default function ProjectDetail() {
 
       // 2. 動画を生成
       setVideoGenerationProgress({ progress: 60, message: "フレームと音声を結合中..." });
-      const result = await generateVideoMutation.mutateAsync({ projectId });
+      const result = await generateVideoMutation.mutateAsync({ projectId, audioMode });
+      if (result.stillImageFallbackCount > 0) {
+        toast.warning(
+          `${result.stillImageFallbackCount}件のステップはクリップ切り出しに失敗し静止画になっています`,
+        );
+      }
 
       setVideoGenerationProgress({ progress: 90, message: "動画をアップロード中..." });
       setVideoUrl(result.videoUrl);
@@ -1004,6 +1015,25 @@ export default function ProjectDetail() {
                                   {voice.name} - {voice.description}
                                 </option>
                               ))}
+                            </select>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-muted-foreground" htmlFor="audio-mode-select">
+                              音声モード
+                            </label>
+                            <select
+                              id="audio-mode-select"
+                              value={audioMode}
+                              onChange={(e) =>
+                                setAudioMode(e.target.value as typeof audioMode)
+                              }
+                              className="px-3 py-2 border rounded-md bg-background text-sm"
+                            >
+                              <option value="auto">自動（録画に音声があれば元音声、なければTTS）</option>
+                              <option value="tts">TTSナレーション</option>
+                              <option value="original">元録画の音声</option>
+                              <option value="mixed">元音声+TTS（実験的）</option>
+                              <option value="silent">無音</option>
                             </select>
                           </div>
                           <Button onClick={handleGenerateVideo} disabled={isGeneratingVideo}>
