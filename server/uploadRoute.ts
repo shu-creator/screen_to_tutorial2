@@ -4,7 +4,11 @@
  */
 import { Router, Request, Response } from "express";
 import Busboy from "busboy";
-import { storagePut } from "./storage";
+import { createWriteStream } from "fs";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import { storagePutFromFile } from "./storage";
 import * as db from "./db";
 import { createLogger } from "./_core/logger";
 import { validateVideoFile } from "./fileValidator";
@@ -81,14 +85,31 @@ uploadRouter.post("/video", async (req: MaybeAuthenticatedRequest, res: Response
       return;
     }
 
-    // Collect file data with size tracking
-    const chunks: Buffer[] = [];
+    // ディスクへストリーミング書き込み（メモリへの全載せを回避: NFR-5）
+    const tempPath = path.join(
+      os.tmpdir(),
+      `upload_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.tmp`,
+    );
+    const writeStream = createWriteStream(tempPath);
+    // マジックバイト検証用に先頭バイトのみ保持する
+    const HEADER_BYTES = 4096;
+    let headerBuffer = Buffer.alloc(0);
     let totalSize = 0;
     let sizeLimitExceeded = false;
+    let diskError = false;
+
+    // ディスク書き込みエラー（ENOSPC等）でプロセスを落とさない
+    writeStream.on("error", (err: Error) => {
+      diskError = true;
+      logger.error("Temp file write error", { userId: user.id }, err);
+      uploadError = "一時ファイルの書き込みに失敗しました（ディスク容量を確認してください）";
+      file.resume(); // 残りを読み捨てる
+      fs.unlink(tempPath).catch(() => {});
+    });
 
     file.on("data", (chunk: Buffer) => {
-      if (sizeLimitExceeded) {
-        return; // Already exceeded, skip
+      if (sizeLimitExceeded || diskError) {
+        return; // Already exceeded/failed, skip
       }
 
       totalSize += chunk.length;
@@ -99,7 +120,14 @@ uploadRouter.post("/video", async (req: MaybeAuthenticatedRequest, res: Response
         return;
       }
 
-      chunks.push(chunk);
+      if (headerBuffer.length < HEADER_BYTES) {
+        headerBuffer = Buffer.concat([headerBuffer, chunk]).subarray(0, HEADER_BYTES);
+      }
+      // バックプレッシャー: 書き込みバッファが詰まったら受信側を止める（NFR-5）
+      if (!writeStream.write(chunk)) {
+        file.pause();
+        writeStream.once("drain", () => file.resume());
+      }
     });
 
     file.on("limit", () => {
@@ -108,29 +136,36 @@ uploadRouter.post("/video", async (req: MaybeAuthenticatedRequest, res: Response
     });
 
     file.on("end", async () => {
+      await new Promise<void>((resolve) => writeStream.end(resolve));
+
+      if (diskError) {
+        return; // uploadError 設定済み・temp削除済み
+      }
+
       if (sizeLimitExceeded) {
         uploadError = `ファイルサイズが制限（${MAX_FILE_SIZE / 1024 / 1024}MB）を超えています`;
+        await fs.unlink(tempPath).catch(() => {});
         return;
       }
 
-      if (chunks.length === 0) {
+      if (totalSize === 0) {
         uploadError = "空のファイルです";
+        await fs.unlink(tempPath).catch(() => {});
         return;
       }
-
-      const fileBuffer = Buffer.concat(chunks);
 
       // Validate file content (magic bytes)
-      const validation = validateVideoFile(fileBuffer, mimeType);
+      const validation = validateVideoFile(headerBuffer, mimeType);
       if (!validation.valid) {
         uploadError = validation.error || "無効なファイルです";
+        await fs.unlink(tempPath).catch(() => {});
         return;
       }
 
       try {
-        // Upload to storage
+        // Upload to storage（一時ファイルを移動。バッファ経由なし）
         const videoKey = `projects/${user.id}/videos/${Date.now()}_${filename}`;
-        const { url: videoUrl } = await storagePut(videoKey, fileBuffer, mimeType);
+        const { url: videoUrl } = await storagePutFromFile(videoKey, tempPath, mimeType);
 
         // Create project in database
         const projectId = await db.createProject({
@@ -147,12 +182,15 @@ uploadRouter.post("/video", async (req: MaybeAuthenticatedRequest, res: Response
       } catch (error) {
         logger.error("Upload failed", { userId: user.id }, error as Error);
         uploadError = error instanceof Error ? error.message : "アップロードに失敗しました";
+        await fs.unlink(tempPath).catch(() => {});
       }
     });
 
     file.on("error", (err: Error) => {
       logger.error("File stream error", { userId: user.id }, err);
       uploadError = "ファイルの読み込み中にエラーが発生しました";
+      writeStream.destroy();
+      fs.unlink(tempPath).catch(() => {});
     });
   });
 
@@ -201,6 +239,12 @@ uploadRouter.post("/video", async (req: MaybeAuthenticatedRequest, res: Response
     if (!res.headersSent) {
       res.status(500).json({ error: "アップロード処理中にエラーが発生しました" });
     }
+  });
+
+  // クライアント切断時はパース処理を打ち切る（一時ファイルは file ハンドラ側で削除）
+  req.on("aborted", () => {
+    logger.warn("Upload aborted by client", { userId: user?.id });
+    req.unpipe(busboy);
   });
 
   req.pipe(busboy);

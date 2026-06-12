@@ -100,6 +100,7 @@ jspm_packages/
 # Temporary folders
 tmp/
 temp/
+outputs/
 
 # Local storage data
 data/
@@ -108,3 +109,8 @@ data/
 *.db
 *.sqlite
 *.sqlite3
+
+# Evaluation harness (Phase 0)
+# 動画実体はコミットしない（meta.json にSHA-256と再生成コマンドを記録）
+eval/dataset/*/video.mp4
+eval/results/

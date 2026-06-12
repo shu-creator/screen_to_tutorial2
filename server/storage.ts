@@ -78,6 +78,41 @@ export function resolveLocalStoragePathFromUrl(url: string): string {
   return keyToFsPath(key);
 }
 
+/**
+ * ソース（ストレージURL / http(s) URL / ローカルパス）をローカルファイルパスに解決する。
+ * リモートURLの場合のみ一時ファイルへダウンロードし、cleanup で削除する。
+ * ローカルで完結する場合は cleanup は no-op（元ファイルは消さない）。
+ */
+export async function resolveToLocalFile(
+  source: string,
+  tempSuffix = ".bin"
+): Promise<{ path: string; cleanup: () => Promise<void> }> {
+  if (isLocalStorageUrl(source)) {
+    return {
+      path: resolveLocalStoragePathFromUrl(source),
+      cleanup: async () => {},
+    };
+  }
+
+  if (source.startsWith("http://") || source.startsWith("https://")) {
+    const os = await import("os");
+    const buffer = await readBinaryFromSource(source);
+    const tempPath = path.join(
+      os.tmpdir(),
+      `storage_dl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${tempSuffix}`
+    );
+    await fs.writeFile(tempPath, buffer);
+    return {
+      path: tempPath,
+      cleanup: async () => {
+        await fs.unlink(tempPath).catch(() => {});
+      },
+    };
+  }
+
+  return { path: source, cleanup: async () => {} };
+}
+
 export async function readBinaryFromSource(source: string): Promise<Buffer> {
   if (isLocalStorageUrl(source)) {
     return fs.readFile(resolveLocalStoragePathFromUrl(source));
@@ -109,6 +144,27 @@ export async function storagePut(
   const filePath = keyToFsPath(key);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, toBuffer(data));
+  return { key, url: keyToPublicUrl(key) };
+}
+
+/**
+ * ローカルファイルをストレージへ移動して登録する（メモリへの全載せを回避）。
+ * 同一ファイルシステムなら rename、跨る場合は copy+unlink。
+ */
+export async function storagePutFromFile(
+  relKey: string,
+  sourcePath: string,
+  _contentType = "application/octet-stream"
+): Promise<{ key: string; url: string }> {
+  const key = normalizeKey(relKey);
+  const filePath = keyToFsPath(key);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  try {
+    await fs.rename(sourcePath, filePath);
+  } catch {
+    await fs.copyFile(sourcePath, filePath);
+    await fs.unlink(sourcePath).catch(() => {});
+  }
   return { key, url: keyToPublicUrl(key) };
 }
 

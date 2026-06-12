@@ -2,6 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,6 +64,7 @@ function SortableStepCard({
   onRegenerate,
   isRegenerating,
   frame,
+  review,
 }: {
   step: StepData;
   index: number;
@@ -73,6 +75,7 @@ function SortableStepCard({
   onRegenerate: (stepId: number, frameId: number) => void;
   isRegenerating: boolean;
   frame?: FrameData;
+  review?: { needsReview: boolean; warnings: string[]; confidence: number };
 }) {
   const {
     attributes,
@@ -92,21 +95,21 @@ function SortableStepCard({
   return (
     <Card ref={setNodeRef} style={style} className={isDragging ? "shadow-lg" : ""}>
       <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex gap-4 flex-1">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row">
             {/* ドラッグハンドル */}
             <button
               {...attributes}
               {...listeners}
-              className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
+              className="cursor-grab self-start p-1 text-muted-foreground hover:text-foreground active:cursor-grabbing"
               aria-label="ドラッグして並び替え"
             >
               <GripVertical className="h-5 w-5" />
             </button>
-            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary font-bold text-primary-foreground">
               {index + 1}
             </div>
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               {isEditing ? (
                 <div className="space-y-4">
                   <div>
@@ -146,7 +149,22 @@ function SortableStepCard({
                 </div>
               ) : (
                 <>
-                  <CardTitle>{step.title}</CardTitle>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <CardTitle>{step.title}</CardTitle>
+                    {review?.needsReview && (
+                      <Badge
+                        variant="destructive"
+                        title={review.warnings.join(" / ") || "信頼度が低いステップです"}
+                      >
+                        要レビュー
+                      </Badge>
+                    )}
+                  </div>
+                  {review?.needsReview && review.warnings.length > 0 && (
+                    <p className="text-xs text-destructive mt-1">
+                      {review.warnings.join(" / ")}
+                    </p>
+                  )}
                   <CardDescription className="mt-2">
                     <strong>操作:</strong> {step.operation}
                   </CardDescription>
@@ -172,7 +190,7 @@ function SortableStepCard({
           </div>
           {/* フレームプレビュー */}
           {frame && !isEditing && (
-            <div className="flex-shrink-0 w-40 aspect-video bg-muted rounded overflow-hidden">
+            <div className="aspect-video w-full overflow-hidden rounded bg-muted sm:w-40">
               <img
                 src={frame.imageUrl}
                 alt={`ステップ ${index + 1} のフレーム`}
@@ -180,7 +198,7 @@ function SortableStepCard({
               />
             </div>
           )}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2 lg:w-36 lg:flex-col">
             <div className="flex gap-2">
               <Button
                 variant="ghost"
@@ -203,7 +221,7 @@ function SortableStepCard({
                 size="sm"
                 onClick={() => onRegenerate(step.id, step.frameId)}
                 disabled={isRegenerating}
-                className="w-full"
+                className="w-full sm:w-auto lg:w-full"
               >
                 {isRegenerating ? (
                   <>
@@ -239,6 +257,10 @@ export default function ProjectDetail() {
     { projectId },
     { enabled: isValidProjectId }
   );
+  const { data: artifactInfo, refetch: refetchArtifactInfo } = trpc.step.artifactInfo.useQuery(
+    { projectId },
+    { enabled: !isNaN(projectId) }
+  );
   const { data: steps, isLoading: stepsLoading, refetch: refetchSteps } = trpc.step.listByProject.useQuery(
     { projectId },
     { enabled: isValidProjectId }
@@ -273,6 +295,7 @@ export default function ProjectDetail() {
           refetchProject();
           refetchFrames();
           refetchSteps();
+      refetchArtifactInfo();
           return; // ポーリング終了
         }
       } catch (error) {
@@ -337,6 +360,7 @@ export default function ProjectDetail() {
           try {
             await reorderStepsMutation.mutateAsync({ projectId, stepIds });
             refetchSteps();
+      refetchArtifactInfo();
             toast.success("ステップの順序を更新しました");
           } catch (error) {
             toast.error("順序の更新に失敗しました");
@@ -357,6 +381,7 @@ export default function ProjectDetail() {
     message: string;
   } | null>(null);
   const [selectedVoice, setSelectedVoice] = useState<string>("nova");
+  const [audioMode, setAudioMode] = useState<"auto" | "tts" | "original" | "mixed" | "silent">("auto");
   const [slideUrl, setSlideUrl] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [retryParams, setRetryParams] = useState({
@@ -392,10 +417,17 @@ export default function ProjectDetail() {
     try {
       await generateStepsMutation.mutateAsync({ projectId });
       toast.success("ステップの生成を開始しました");
-      
+      setProgressData({
+        progress: 66,
+        message: "ステップ生成を開始しています...",
+      });
+      refetchProject();
+
       // ポーリングで結果を確認
       const pollInterval = setInterval(() => {
         refetchSteps();
+        refetchArtifactInfo();
+        refetchProject();
       }, 3000);
       
       setTimeout(() => {
@@ -412,6 +444,7 @@ export default function ProjectDetail() {
       await updateStepMutation.mutateAsync({ id: stepId, ...data });
       toast.success("ステップを更新しました");
       refetchSteps();
+      refetchArtifactInfo();
       setEditingStepId(null);
     } catch (error) {
       toast.error("ステップの更新に失敗しました");
@@ -425,6 +458,7 @@ export default function ProjectDetail() {
       await deleteStepMutation.mutateAsync({ id: stepId });
       toast.success("ステップを削除しました");
       refetchSteps();
+      refetchArtifactInfo();
     } catch (error) {
       toast.error("ステップの削除に失敗しました");
     }
@@ -436,6 +470,7 @@ export default function ProjectDetail() {
       await regenerateStepMutation.mutateAsync({ stepId, frameId });
       toast.success("ステップをAIで再生成しました");
       refetchSteps();
+      refetchArtifactInfo();
     } catch (error) {
       toast.error("ステップの再生成に失敗しました");
     } finally {
@@ -466,18 +501,29 @@ export default function ProjectDetail() {
     try {
       // 1. 音声を生成
       setVideoGenerationProgress({ progress: 10, message: "ナレーション音声を生成中..." });
-      await generateAudioMutation.mutateAsync({
+      const audioResult = await generateAudioMutation.mutateAsync({
         projectId,
         voice: selectedVoice,
       });
+      if (audioResult.silentFallbackCount > 0) {
+        toast.warning(
+          `${audioResult.silentFallbackCount}件のステップでTTSが失敗し無音になっています。TTSのAPIキー設定を確認してください。`,
+        );
+      }
 
       // 音声生成後にステップを再取得（audioUrlを更新するため）
       setVideoGenerationProgress({ progress: 50, message: "音声生成完了。動画を生成中..." });
       await refetchSteps();
+      refetchArtifactInfo();
 
       // 2. 動画を生成
       setVideoGenerationProgress({ progress: 60, message: "フレームと音声を結合中..." });
-      const result = await generateVideoMutation.mutateAsync({ projectId });
+      const result = await generateVideoMutation.mutateAsync({ projectId, audioMode });
+      if (result.stillImageFallbackCount > 0) {
+        toast.warning(
+          `${result.stillImageFallbackCount}件のステップはクリップ切り出しに失敗し静止画になっています`,
+        );
+      }
 
       setVideoGenerationProgress({ progress: 90, message: "動画をアップロード中..." });
       setVideoUrl(result.videoUrl);
@@ -553,16 +599,16 @@ export default function ProjectDetail() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start gap-4">
             <Link href="/projects">
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-3xl font-bold text-foreground">{project.title}</h1>
+            <div className="min-w-0">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <h1 className="break-all text-2xl font-bold text-foreground sm:text-3xl">{project.title}</h1>
                 {project.status === "processing" && (
                   <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-yellow-100 text-yellow-700">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -585,7 +631,7 @@ export default function ProjectDetail() {
               <p className="text-muted-foreground mt-1">{project.description}</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               onClick={slideUrl ? () => downloadFile(slideUrl, `${project.title}.pptx`) : handleGenerateSlides}
@@ -721,7 +767,7 @@ export default function ProjectDetail() {
 
         {/* Tabs */}
         <Tabs defaultValue="frames" className="w-full">
-          <TabsList>
+          <TabsList className="flex w-full justify-start overflow-x-auto">
             <TabsTrigger value="frames">
               <ImageIcon className="h-4 w-4 mr-2" />
               フレーム ({frames?.length || 0})
@@ -795,6 +841,24 @@ export default function ProjectDetail() {
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
             ) : steps && steps.length > 0 ? (
+              <>
+              {artifactInfo?.overview && (
+                <Card className="border-primary/30">
+                  <CardHeader>
+                    <CardTitle className="text-lg">{artifactInfo.overview.task_title}</CardTitle>
+                    {artifactInfo.overview.preconditions.length > 0 && (
+                      <CardDescription>
+                        前提: {artifactInfo.overview.preconditions.join(" / ")}
+                      </CardDescription>
+                    )}
+                    {artifactInfo.overview.completion_criteria && (
+                      <CardDescription>
+                        完了条件: {artifactInfo.overview.completion_criteria}
+                      </CardDescription>
+                    )}
+                  </CardHeader>
+                </Card>
+              )}
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
@@ -817,11 +881,13 @@ export default function ProjectDetail() {
                         onRegenerate={handleRegenerateStep}
                         isRegenerating={regeneratingStepId === step.id}
                         frame={frames?.find((f) => f.id === step.frameId)}
+                        review={artifactInfo?.reviewByStepId?.[step.id]}
                       />
                     ))}
                   </div>
                 </SortableContext>
               </DndContext>
+              </>
             ) : (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12">
@@ -955,6 +1021,25 @@ export default function ProjectDetail() {
                                   {voice.name} - {voice.description}
                                 </option>
                               ))}
+                            </select>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-muted-foreground" htmlFor="audio-mode-select">
+                              音声モード
+                            </label>
+                            <select
+                              id="audio-mode-select"
+                              value={audioMode}
+                              onChange={(e) =>
+                                setAudioMode(e.target.value as typeof audioMode)
+                              }
+                              className="px-3 py-2 border rounded-md bg-background text-sm"
+                            >
+                              <option value="auto">自動（録画に音声があれば元音声、なければTTS）</option>
+                              <option value="tts">TTSナレーション</option>
+                              <option value="original">元録画の音声</option>
+                              <option value="mixed">元音声+TTS（実験的）</option>
+                              <option value="silent">無音</option>
                             </select>
                           </div>
                           <Button onClick={handleGenerateVideo} disabled={isGeneratingVideo}>

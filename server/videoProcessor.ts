@@ -2,11 +2,13 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import fs from "fs/promises";
-import { readBinaryFromSource, storagePut } from "./storage";
+import { resolveToLocalFile, storagePut } from "./storage";
 import * as db from "./db";
 import { nanoid } from "nanoid";
 import { dedupeFramesByDHash, type NormalizedRect } from "./_core/frameAnalysis";
 import { ENV } from "./_core/env";
+import { extractEvidence } from "./evidence/extract";
+import { invalidateEvidenceArtifact, saveEvidenceArtifact } from "./evidence/artifactStore";
 
 const execFileAsync = promisify(execFile);
 
@@ -371,15 +373,15 @@ export async function processVideo(
   const tempDir = path.join("/tmp", `frames_${projectId}_${Date.now()}`);
   await fs.mkdir(tempDir, { recursive: true });
 
-  // 動画をダウンロード（URLの場合）
-  const videoPath = path.join(tempDir, "video.mp4");
-  console.log(`[VideoProcessor] Downloading video from: ${videoUrl}`);
+  // 動画をローカルパスに解決（ローカルストレージならコピーなし、
+  // リモートURLのみ一時ファイルへダウンロード）
+  console.log(`[VideoProcessor] Resolving video source: ${videoUrl}`);
   console.log(`[VideoProcessor] Using video key: ${videoKey}`);
-  await downloadFile(videoUrl, videoPath, videoKey);
+  const resolvedVideo = await resolveToLocalFile(videoUrl, ".mp4");
+  const videoPath = resolvedVideo.path;
 
-  // ダウンロードしたファイルの検証
   const videoStats = await fs.stat(videoPath);
-  console.log(`[VideoProcessor] Video downloaded to: ${videoPath}, size: ${videoStats.size} bytes`);
+  console.log(`[VideoProcessor] Video resolved to: ${videoPath}, size: ${videoStats.size} bytes`);
 
   if (videoStats.size === 0) {
     throw new Error("ダウンロードした動画ファイルが空です。URLが正しいか確認してください。");
@@ -389,7 +391,26 @@ export async function processVideo(
     // 進捗: フレーム抽出開始
     await db.updateProjectProgress(projectId, 10, "動画からフレームを抽出しています...");
 
-    // ffmpegでフレームを抽出
+    // Phase 1: 証拠抽出パイプライン（一様サンプリング + 操作セグメンテーション）
+    // 失敗時は従来のシーン検出にフォールバックする（安定確認後に旧経路は削除予定）
+    try {
+      await processWithEvidencePipeline(projectId, videoPath, tempDir);
+      console.log(`[VideoProcessor] Evidence pipeline complete for project ${projectId}`);
+      return;
+    } catch (evidenceError) {
+      const message =
+        evidenceError instanceof Error ? evidenceError.message : String(evidenceError);
+      console.warn(
+        `[VideoProcessor] Evidence pipeline failed, falling back to scene detection: ${message}`,
+      );
+      // 部分的に保存されたフレーム行と evidence.json を無効化する
+      // （削除済み frame_id を参照する evidence が後段の執筆に使われる事故を防ぐ）
+      await db.deleteFramesByProjectId(projectId);
+      await invalidateEvidenceArtifact(projectId);
+      await db.updateProjectProgress(projectId, 10, "互換モードで再抽出しています...");
+    }
+
+    // ffmpegでフレームを抽出（旧経路）
     console.log(`[VideoProcessor] Extracting frames with ffmpeg...`);
     const frames = await extractFramesWithFFmpeg(videoPath, tempDir, {
       threshold,
@@ -478,16 +499,84 @@ export async function processVideo(
   } finally {
     // 一時ディレクトリをクリーンアップ（リトライ付き）
     await cleanupTempDir(tempDir, "VideoProcessor");
+    // リモートURL由来の一時動画を削除（ローカルストレージ原本はno-op）
+    await resolvedVideo.cleanup();
   }
 }
 
 /**
- * ローカルファイルをダウンロード（URLまたはローカルパスから）
+ * Phase 1 証拠抽出パイプライン:
+ * 動画 → evidence.json + 代表フレームのストレージ/DB保存
+ *
+ * フレームのDB行は各セグメントの after フレーム（操作結果の安定状態）。
+ * before フレームはストレージにのみ保存し、evidence.json から参照する。
  */
-export async function downloadFile(source: string, destination: string, videoKey?: string): Promise<void> {
-  console.log(`[downloadFile] Source URL: ${source}`);
-  console.log(`[downloadFile] Video key: ${videoKey}`);
+async function processWithEvidencePipeline(
+  projectId: number,
+  videoPath: string,
+  tempDir: string,
+): Promise<void> {
+  const framesDir = path.join(tempDir, "evidence_frames");
 
-  const buffer = await readBinaryFromSource(source);
-  await fs.writeFile(destination, buffer);
+  const { artifact } = await extractEvidence(videoPath, {
+    framesDir,
+    onProgress: async (ratio, message) => {
+      // 全体進捗の 10%〜60% を証拠抽出に割り当てる
+      await db.updateProjectProgress(projectId, 10 + Math.round(ratio * 50), message);
+    },
+  });
+
+  if (artifact.segments.length === 0) {
+    throw new Error("操作セグメントを検出できませんでした");
+  }
+
+  // フレームをストレージへアップロードし、afterフレームをDBに登録して frame_id を付与
+  await db.updateProjectProgress(projectId, 62, "フレームをアップロードしています...");
+
+  for (let i = 0; i < artifact.segments.length; i++) {
+    const segment = artifact.segments[i];
+
+    const afterBuffer = await fs.readFile(segment.after_frame.image_key);
+    const afterKey = `projects/${projectId}/frames/${nanoid()}.jpg`;
+    const { url: afterUrl } = await storagePut(afterKey, afterBuffer, "image/jpeg");
+
+    const frameId = await db.createFrame({
+      projectId,
+      frameNumber: i,
+      timestamp: segment.after_frame.t,
+      imageUrl: afterUrl,
+      imageKey: afterKey,
+      diffScore: 0,
+      sortOrder: i,
+    });
+
+    segment.after_frame = {
+      ...segment.after_frame,
+      image_key: afterKey,
+      image_url: afterUrl,
+      frame_id: frameId,
+    };
+
+    if (segment.before_frame) {
+      const beforeBuffer = await fs.readFile(segment.before_frame.image_key);
+      const beforeKey = `projects/${projectId}/frames/${nanoid()}_before.jpg`;
+      const { url: beforeUrl } = await storagePut(beforeKey, beforeBuffer, "image/jpeg");
+      segment.before_frame = {
+        ...segment.before_frame,
+        image_key: beforeKey,
+        image_url: beforeUrl,
+        frame_id: null,
+      };
+    }
+
+    const uploadProgress = 62 + Math.floor(((i + 1) / artifact.segments.length) * 8);
+    await db.updateProjectProgress(
+      projectId,
+      uploadProgress,
+      `フレームをアップロード中 (${i + 1}/${artifact.segments.length})`,
+    );
+  }
+
+  await saveEvidenceArtifact(projectId, artifact);
+  await db.updateProjectProgress(projectId, 70, "フレームの処理が完了しました");
 }

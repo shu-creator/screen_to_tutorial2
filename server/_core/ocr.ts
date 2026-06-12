@@ -1,9 +1,10 @@
 import { invokeLLM } from "./llm";
 import { ENV } from "./env";
 import { getCachedJson, hashBinary, setCachedJson } from "./pipelineCache";
-import { readBinaryFromSource } from "../storage";
+import { readBinaryFromSource, resolveToLocalFile } from "../storage";
+import { getSharedOcrEngine } from "./ocrEngine";
 
-export type OCRProvider = "none" | "llm";
+export type OCRProvider = "none" | "llm" | "engine";
 
 export interface OcrRegion {
   text: string;
@@ -61,6 +62,82 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/**
+ * OCRの統一エントリポイント。
+ * provider=engine はローカルOCRエンジン（PaddleOCR/Tesseract）を使用し、
+ * エンジンが利用できない環境では自動的にLLM-OCRへフォールバックする。
+ */
+export async function extractFrameOcrUnified(
+  source: string,
+  frameNumber: number,
+  provider: OCRProvider = ENV.ocrProvider,
+): Promise<OcrResult> {
+  if (provider !== "engine") {
+    return extractFrameOcr(source, frameNumber, provider);
+  }
+
+  const engine = getSharedOcrEngine();
+  if (await engine.isAvailable()) {
+    try {
+      return await extractFrameOcrWithEngine(source, frameNumber);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const fallback = await extractFrameOcr(source, frameNumber, "llm");
+      fallback.warnings.push(`engine OCR failed, fell back to llm: ${message.substring(0, 120)}`);
+      return fallback;
+    }
+  }
+
+  const fallback = await extractFrameOcr(source, frameNumber, "llm");
+  fallback.warnings.push("engine OCR unavailable, fell back to llm");
+  return fallback;
+}
+
+async function extractFrameOcrWithEngine(
+  source: string,
+  _frameNumber: number,
+): Promise<OcrResult> {
+  const engine = getSharedOcrEngine();
+  const imageBuffer = await readBinaryFromSource(source);
+  const cacheKey = {
+    provider: "engine",
+    engine: engine.engine ?? "unknown",
+    promptVersion: "ocr-engine-v1",
+    imageHash: hashBinary(imageBuffer),
+  };
+  const cached = await getCachedJson<OcrResult>("ocr", cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const { path: localPath, cleanup } = await resolveToLocalFile(source, ".jpg");
+  try {
+    const lines = await engine.recognize(localPath);
+    const regions: OcrRegion[] = lines.map((line) => ({
+      text: line.text,
+      x: clamp(line.x, 0, 1),
+      y: clamp(line.y, 0, 1),
+      w: clamp(line.w, 0, 1),
+      h: clamp(line.h, 0, 1),
+    }));
+    const meanScore =
+      lines.length > 0
+        ? lines.reduce((sum, line) => sum + line.score, 0) / lines.length
+        : 0;
+    const result: OcrResult = {
+      provider: "engine",
+      lines: lines.map((line) => line.text),
+      regions,
+      warnings: [],
+      confidence: clamp(meanScore, 0, 1),
+    };
+    await setCachedJson("ocr", cacheKey, result);
+    return result;
+  } finally {
+    await cleanup();
+  }
+}
+
 export async function extractFrameOcr(
   imageUrl: string,
   frameNumber: number,
@@ -74,6 +151,9 @@ export async function extractFrameOcr(
       warnings: ["OCR disabled"],
       confidence: 0,
     };
+  }
+  if (provider === "engine") {
+    return extractFrameOcrUnified(imageUrl, frameNumber, provider);
   }
 
   const imageBuffer = await readBinaryFromSource(imageUrl);

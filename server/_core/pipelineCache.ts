@@ -43,6 +43,18 @@ export function hashBinary(data: Buffer): string {
   return crypto.createHash("sha256").update(data).digest("hex");
 }
 
+/** ファイルをメモリへ全載せせずにSHA-256を計算する */
+export async function hashFile(filePath: string): Promise<string> {
+  const { createReadStream } = await import("fs");
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("error", reject);
+  });
+}
+
 export async function ensurePipelineCacheDir(): Promise<void> {
   await fs.mkdir(ENV.pipelineCacheDir, { recursive: true });
 }

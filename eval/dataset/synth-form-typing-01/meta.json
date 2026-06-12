@@ -1,0 +1,12 @@
+{
+  "case_id": "synth-form-typing-01",
+  "description": "1文字ずつのタイピング入力（coalescing検証）",
+  "synthetic": true,
+  "generator": "eval/generate_dataset.py v1.0",
+  "regenerate_command": "python3 eval/generate_dataset.py --case synth-form-typing-01",
+  "video_sha256": "09c703ff438d23b487be5ebf062da929166c2eeb3791114dd8017ad8b11fc02d",
+  "duration_ms": 10400,
+  "fps": 10,
+  "resolution": "1280x720",
+  "has_narration": false
+}

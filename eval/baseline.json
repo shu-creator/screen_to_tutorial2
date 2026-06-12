@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-06-12T10:51:45.962Z",
+  "cases": [
+    "synth-form-typing-01",
+    "synth-login-click-01",
+    "synth-modal-fade-01"
+  ],
+  "results": [
+    {
+      "caseId": "synth-form-typing-01",
+      "notes": [
+        "steps.json なし (eval/results/generated/synth-form-typing-01/steps.json) — G1/G2/G3 スキップ"
+      ],
+      "boundaryRecall": {
+        "recall": 1,
+        "matchedBoundaries": 6,
+        "totalBoundaries": 6
+      }
+    },
+    {
+      "caseId": "synth-login-click-01",
+      "notes": [
+        "steps.json なし (eval/results/generated/synth-login-click-01/steps.json) — G1/G2/G3 スキップ"
+      ],
+      "boundaryRecall": {
+        "recall": 1,
+        "matchedBoundaries": 4,
+        "totalBoundaries": 4
+      }
+    },
+    {
+      "caseId": "synth-modal-fade-01",
+      "notes": [
+        "steps.json なし (eval/results/generated/synth-modal-fade-01/steps.json) — G1/G2/G3 スキップ"
+      ],
+      "boundaryRecall": {
+        "recall": 1,
+        "matchedBoundaries": 4,
+        "totalBoundaries": 4
+      }
+    }
+  ]
+}

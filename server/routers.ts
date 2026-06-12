@@ -11,7 +11,8 @@ import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
 import { getAvailableVoices, type TTSVoice } from "./_core/tts";
 import { storagePut } from "./storage";
-import { patchStepArtifact } from "./stepsArtifact";
+import { invalidateStepsArtifact, loadStepsArtifact, patchStepArtifact } from "./stepsArtifact";
+import { invalidateEvidenceArtifact } from "./evidence/artifactStore";
 
 const logger = createLogger("Router");
 
@@ -148,6 +149,11 @@ export const appRouter = router({
         // 既存のフレームとステップを削除
         await db.deleteFramesByProjectId(projectId);
         await db.deleteStepsByProjectId(projectId);
+
+        // 古いartifactを無効化（削除済みフレームを参照する steps.json /
+        // evidence.json がスライド・動画生成に使われる経路を塞ぐ）
+        await invalidateStepsArtifact(projectId);
+        await invalidateEvidenceArtifact(projectId);
 
         // エラーメッセージをクリア
         await db.clearProjectError(projectId);
@@ -300,6 +306,32 @@ export const appRouter = router({
         return db.getStepsByProjectId(input.projectId, ctx.user.id);
       }),
 
+    // Phase 2: steps.json v2 のメタ情報（overview / 機械検証結果）をUIへ提供
+    artifactInfo: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId, ctx.user.id);
+        if (!project) {
+          throw new Error("プロジェクトが見つかりません");
+        }
+        const empty: Record<number, { needsReview: boolean; warnings: string[]; confidence: number }> = {};
+        const artifact = await loadStepsArtifact(input.projectId).catch(() => null);
+        if (!artifact) {
+          return { overview: null, reviewByStepId: empty };
+        }
+        const reviewByStepId = { ...empty };
+        for (const step of artifact.steps) {
+          if (step.legacy_step_db_id) {
+            reviewByStepId[step.legacy_step_db_id] = {
+              needsReview: step.needs_review,
+              warnings: step.warnings,
+              confidence: step.confidence,
+            };
+          }
+        }
+        return { overview: artifact.overview, reviewByStepId };
+      }),
+
     update: protectedProcedure
       .input(z.object({
         id: z.number(),
@@ -401,11 +433,15 @@ export const appRouter = router({
           throw new Error("プロジェクトが見つかりません");
         }
 
+        await db.updateProjectStatus(input.projectId, "processing");
+        await db.updateProjectProgress(input.projectId, 66, "ステップ生成を開始しています...");
+
         // バックグラウンドでステップ生成を実行
         generateStepsForProject(input.projectId)
           .then(async () => {
             // 進捗を100%に更新
             await db.updateProjectProgress(input.projectId, 100, "ステップ生成が完了しました");
+            await db.updateProjectStatus(input.projectId, "completed");
             logger.info("Steps generated successfully", { projectId: input.projectId });
           })
           .catch(async (error) => {
@@ -539,20 +575,31 @@ export const appRouter = router({
         if (!project) {
           throw new Error("プロジェクトが見つかりません");
         }
-        await generateAudioForProject(input.projectId, input.voice as TTSVoice);
-        return { success: true };
+        const { silentFallbackCount } = await generateAudioForProject(
+          input.projectId,
+          input.voice as TTSVoice,
+        );
+        return { success: true, silentFallbackCount };
       }),
 
     generate: protectedProcedure
-      .input(z.object({ projectId: z.number() }))
+      .input(z.object({
+        projectId: z.number(),
+        audioMode: z.enum(["auto", "tts", "original", "mixed", "silent"]).optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         // セキュリティ: プロジェクトの所有者チェック
         const project = await db.getProjectById(input.projectId, ctx.user.id);
         if (!project) {
           throw new Error("プロジェクトが見つかりません");
         }
-        const videoUrl = await generateVideo(input.projectId);
-        return { success: true, videoUrl };
+        const result = await generateVideo(input.projectId, { audioMode: input.audioMode });
+        return {
+          success: true,
+          videoUrl: result.videoUrl,
+          warnings: result.warnings,
+          stillImageFallbackCount: result.stillImageFallbackCount,
+        };
       }),
   }),
 });
