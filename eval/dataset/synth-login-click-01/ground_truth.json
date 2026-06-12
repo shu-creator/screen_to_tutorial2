@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "case_id": "synth-login-click-01",
+  "steps": [
+    {
+      "t_start": 0,
+      "t_end": 3200,
+      "title": "ログインする",
+      "ui_labels": [
+        "ログイン",
+        "ユーザー名"
+      ]
+    },
+    {
+      "t_start": 4700,
+      "t_end": 6700,
+      "title": "スクロール",
+      "ui_labels": [],
+      "non_step": true
+    },
+    {
+      "t_start": 8200,
+      "t_end": 8900,
+      "title": "設定画面を開く",
+      "ui_labels": [
+        "設定"
+      ]
+    }
+  ]
+}

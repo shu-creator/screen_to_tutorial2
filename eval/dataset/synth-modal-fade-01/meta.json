@@ -1,0 +1,12 @@
+{
+  "case_id": "synth-modal-fade-01",
+  "description": "モーダルのフェードイン/アウト遷移（遷移途中フレームの検証）",
+  "synthetic": true,
+  "generator": "eval/generate_dataset.py v1.0",
+  "regenerate_command": "python3 eval/generate_dataset.py --case synth-modal-fade-01",
+  "video_sha256": "f0f057990c55f22efaf29af851a83e251189edf226c10e4f86e7095d2417c9b2",
+  "duration_ms": 8600,
+  "fps": 10,
+  "resolution": "1280x720",
+  "has_narration": false
+}

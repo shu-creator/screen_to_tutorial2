@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "case_id": "synth-form-typing-01",
+  "steps": [
+    {
+      "t_start": 2000,
+      "t_end": 3600,
+      "title": "氏名を入力する",
+      "ui_labels": [
+        "氏名"
+      ]
+    },
+    {
+      "t_start": 4800,
+      "t_end": 6600,
+      "title": "メールアドレスを入力する",
+      "ui_labels": [
+        "メールアドレス"
+      ]
+    },
+    {
+      "t_start": 7800,
+      "t_end": 8400,
+      "title": "保存する",
+      "ui_labels": [
+        "保存"
+      ]
+    }
+  ]
+}

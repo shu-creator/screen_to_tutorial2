@@ -1,0 +1,6 @@
+{
+  "generated_at": null,
+  "status": "pending-real-measurement",
+  "note": "現行パイプラインの実ベースラインはLLM APIキーが必要なため未測定。キー設定後に `pnpm pipeline:generate` で各ケースの steps.json を生成し、`pnpm eval -- --save-baseline` で確定させること。docs/plans/phase-0-eval-harness.md 参照。",
+  "results": []
+}

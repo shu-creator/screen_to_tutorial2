@@ -1,0 +1,12 @@
+{
+  "case_id": "synth-login-click-01",
+  "description": "クリック2回+スクロール(非ステップ)を含む基本ケース",
+  "synthetic": true,
+  "generator": "eval/generate_dataset.py v1.0",
+  "regenerate_command": "python3 eval/generate_dataset.py --case synth-login-click-01",
+  "video_sha256": "d1a57258dc6c072acc7660902714c57f9315b03ac47031243eb4756f6cda59df",
+  "duration_ms": 11400,
+  "fps": 10,
+  "resolution": "1280x720",
+  "has_narration": false
+}

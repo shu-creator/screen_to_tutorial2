@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "case_id": "synth-modal-fade-01",
+  "steps": [
+    {
+      "t_start": 2200,
+      "t_end": 3400,
+      "title": "削除を実行する",
+      "ui_labels": [
+        "削除"
+      ]
+    },
+    {
+      "t_start": 5200,
+      "t_end": 6400,
+      "title": "削除を確定する",
+      "ui_labels": [
+        "OK"
+      ]
+    }
+  ]
+}
