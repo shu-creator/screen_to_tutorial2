@@ -78,7 +78,20 @@ function ffmpegAvailable(): boolean {
   }
 }
 
+function drawtextAvailable(): boolean {
+  try {
+    const filters = execFileSync("ffmpeg", ["-hide_banner", "-filters"], {
+      stdio: ["ignore", "pipe", "ignore"],
+    }).toString();
+    return /\bdrawtext\b/.test(filters);
+  } catch {
+    return false;
+  }
+}
+
 const canRun = ffmpegAvailable() && fs.existsSync(SYNTH_VIDEO);
+// drawtext は libfreetype 有効ビルドのみ（Homebrew 配布の ffmpeg には含まれない）
+const hasDrawtext = canRun && drawtextAvailable();
 
 function probe(file: string, entries: string, streams?: string): string {
   const args = ["-v", "quiet", "-show_entries", entries, "-of", "csv=p=0", file];
@@ -151,7 +164,7 @@ describe.skipIf(!canRun)("videoClips 統合テスト", () => {
     expect(fs.existsSync(out)).toBe(true);
   });
 
-  it("タイトルカード生成とセグメント連結が動作する", { timeout: 180_000 }, async () => {
+  it.skipIf(!hasDrawtext)("タイトルカード生成とセグメント連結が動作する（要drawtextフィルタ）", { timeout: 180_000 }, async () => {
     const intro = await buildTitleCard({
       title: "顧客登録の手順",
       subtitle: "全3ステップ",
