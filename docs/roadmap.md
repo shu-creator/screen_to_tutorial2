@@ -1,7 +1,25 @@
 # ロードマップ: パイプライン刷新
 
-最終更新: 2026-06-12
+最終更新: 2026-06-20
 前提: [要件定義](./requirements.md) を参照。フェーズ詳細は `docs/plans/` を参照。
+
+## Sprint 0 現状固定（2026-06-20）
+
+- `4b55ae2`（waitingセグメントをステップのクリップ範囲から除外）は、`main` が `origin/main` より1コミット先行している現HEAD。push判断: ローカル検証後にpush候補。ただしCodexからの `git push` は行わず、ユーザー手動push対象とする。
+- `scripts/model-rematch.ts` を再戦用の正式な作業台として採用する。`pipeline:generate` と `pnpm eval` をモデル別・run別に実行し、`eval/results/rematch*/summary.json` / `summary.md` に比較結果を残す。
+- 再戦結果の暫定判断は `gpt-5.4` 維持。`eval/results/rematch/summary.json` 再生成後の有効run平均で `gpt-5.4` は G2引用精度が `95.8%`、`gpt-5.5` は520由来のinvalid runを除いて `78.6%`。再補充後の `eval/results/rematch-retry-5.5b/summary.json` でも `gpt-5.5` は `78.6%`。G2を主品質指標として `gpt-5.4` を既定モデルに据え置く。
+- `gpt-5.5` の520/429やfallback-heavy runは比較不可runとして扱う。runのexit codeだけで成功判定せず、`needs_review` 比率（既定しきい値80%超）、G2引用精度、no-citation率、pipeline/eval logの `LLM invoke failed` / `520` / `429` / `insufficient_quota` を確認する。
+- Sprint 1以降は、単一実録画 `real-app-workflow-01` から5ケース評価へ拡張し、G1/G2/G3に加えてG4（人手修正箇所数）を記録する。
+
+### Sprint 1-5 受け入れ条件
+
+| Sprint | 主目的 | 完了条件 |
+|---|---|---|
+| 1 | 評価セットを完成判定に耐える形へ拡張 | 無音、ナレーション付き、フォーム入力、ロード待ち、モーダル/ドロップダウンを含む実録画5ケースで `pnpm eval` がG1/G2/G3を出す。G4と人手修正箇所数の記録フォーマットを決め、baselineをマシン依存前提で再較正する。 |
+| 2 | 生成品質の最後の詰め | 5ケース平均でG3低位維持、G2退行なし、fallback混入ゼロ。LLM API 520/429や `needs_review` 比率80%超のfallback-heavy runはinvalid扱いにし、retry/timeout/summaryと `needs_review` 理由追跡を堅牢化する。 |
+| 3 | 編集UXを完成 | 生成後に人手で出荷可能状態まで直せる。`needs_review` レビュー導線、`t_start` / `t_end` 編集、ステップ単位の音声モード、タイトル・説明・ナレーション編集とartifact同期を確認する。 |
+| 4 | PPTX/動画の出力QA | 評価ケース2本以上でPPTXと動画を目視QAし、G4を記録する。表紙、完了スライド、スピーカーノート警告、音ズレ、長尺ステップ、無音/元音声/TTS、drawtextなし環境を仕様化する。 |
+| 5 | 負債整理とv1完成 | 新規環境でセットアップから生成まで通る。`steps.json` 単一ソース化の最終判断、旧フォールバック/未使用ヒューリスティック/古いdocs整理、`.env.example`、README、セットアップ手順、最小リリースチェックリストを更新する。 |
 
 ## 全体像
 
