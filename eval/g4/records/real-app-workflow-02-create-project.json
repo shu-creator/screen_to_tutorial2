@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "case_id": "real-app-workflow-02-create-project",
+  "review_type": "ai_estimate",
+  "reviewer": "codex-estimate",
+  "reviewed_at": "2026-06-20",
+  "source_artifact": "eval/results/generated/real-app-workflow-02-create-project/steps.json",
+  "source_artifact_sha256": "b58f608766d7c9d8ff1a25dc6b6dfda92ba1596ada6ca06a88fa01612beaa31c",
+  "exported_artifacts": [],
+  "counts": {
+    "title_edits": 2,
+    "description_edits": 2,
+    "narration_edits": 2,
+    "timing_edits": 4,
+    "citation_edits": 2,
+    "step_structure_edits": 2,
+    "export_artifact_edits": 0,
+    "other_edits": 0
+  },
+  "total_manual_edits": 14,
+  "blocking_issues": [
+    "Generated artifact merges title entry with file selection and omits the upload wait as a non-step interval.",
+    "This is an AI-estimated artifact-only G4 record, not a human_review G4 record.",
+    "PPTX/video export QA was not performed."
+  ],
+  "notes": "Compared generated steps against the create-project subclip ground truth. Main fixes are splitting merged form/file-selection actions, tightening timings, and removing unsupported citations."
+}

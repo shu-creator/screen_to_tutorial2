@@ -1,43 +1,136 @@
 {
-  "generated_at": "2026-06-12T10:51:45.962Z",
+  "generated_at": "2026-06-19T20:32:31.906Z",
   "cases": [
+    "real-app-workflow-01",
+    "real-app-workflow-02-create-project",
+    "real-app-workflow-03-generate-steps",
+    "real-app-workflow-04-export-video",
+    "real-app-workflow-05-narrated-create-project",
     "synth-form-typing-01",
     "synth-login-click-01",
     "synth-modal-fade-01"
   ],
   "results": [
     {
+      "caseId": "real-app-workflow-01",
+      "notes": [],
+      "g1": {
+        "precision": 0.4,
+        "recall": 0.3076923076923077,
+        "f1": 0.34782608695652173
+      },
+      "g2": {
+        "accuracy": 0.7222222222222222,
+        "noCitationRate": 0,
+        "totalLabels": 36
+      },
+      "g3": {
+        "rate": 0.1
+      },
+      "boundaryRecall": {
+        "recall": 0.5909090909090909,
+        "matchedBoundaries": 13,
+        "totalBoundaries": 22
+      }
+    },
+    {
+      "caseId": "real-app-workflow-02-create-project",
+      "notes": [
+        "evidence.json なし (eval/results/generated/real-app-workflow-02-create-project/evidence.json) — 境界Recall スキップ"
+      ],
+      "g1": {
+        "precision": 0.25,
+        "recall": 0.2,
+        "f1": 0.22222222222222224
+      },
+      "g2": {
+        "accuracy": 0.8888888888888888,
+        "noCitationRate": 0,
+        "totalLabels": 18
+      },
+      "g3": {
+        "rate": 0
+      }
+    },
+    {
+      "caseId": "real-app-workflow-03-generate-steps",
+      "notes": [
+        "evidence.json なし (eval/results/generated/real-app-workflow-03-generate-steps/evidence.json) — 境界Recall スキップ"
+      ],
+      "g1": {
+        "precision": 0.5,
+        "recall": 0.5,
+        "f1": 0.5
+      },
+      "g2": {
+        "accuracy": 0.4166666666666667,
+        "noCitationRate": 0,
+        "totalLabels": 12
+      },
+      "g3": {
+        "rate": 0.25
+      }
+    },
+    {
+      "caseId": "real-app-workflow-04-export-video",
+      "notes": [
+        "evidence.json なし (eval/results/generated/real-app-workflow-04-export-video/evidence.json) — 境界Recall スキップ"
+      ],
+      "g1": {
+        "precision": 0.3333333333333333,
+        "recall": 0.25,
+        "f1": 0.28571428571428575
+      },
+      "g2": {
+        "accuracy": 0.5555555555555556,
+        "noCitationRate": 0,
+        "totalLabels": 9
+      },
+      "g3": {
+        "rate": 0
+      }
+    },
+    {
+      "caseId": "real-app-workflow-05-narrated-create-project",
+      "notes": [
+        "has_narration=true だが steps artifact は ASRなし (asr_provider=none)",
+        "synthetic_narration=true: 画面は実録画、音声は合成ナレーション",
+        "evidence.json なし (eval/results/generated/real-app-workflow-05-narrated-create-project/evidence.json) — 境界Recall スキップ"
+      ],
+      "g1": {
+        "precision": 0.25,
+        "recall": 0.2,
+        "f1": 0.22222222222222224
+      },
+      "g2": {
+        "accuracy": 0.8888888888888888,
+        "noCitationRate": 0,
+        "totalLabels": 18
+      },
+      "g3": {
+        "rate": 0
+      }
+    },
+    {
       "caseId": "synth-form-typing-01",
       "notes": [
-        "steps.json なし (eval/results/generated/synth-form-typing-01/steps.json) — G1/G2/G3 スキップ"
-      ],
-      "boundaryRecall": {
-        "recall": 1,
-        "matchedBoundaries": 6,
-        "totalBoundaries": 6
-      }
+        "steps.json なし (eval/results/generated/synth-form-typing-01/steps.json) — G1/G2/G3 スキップ",
+        "evidence.json なし (eval/results/generated/synth-form-typing-01/evidence.json) — 境界Recall スキップ"
+      ]
     },
     {
       "caseId": "synth-login-click-01",
       "notes": [
-        "steps.json なし (eval/results/generated/synth-login-click-01/steps.json) — G1/G2/G3 スキップ"
-      ],
-      "boundaryRecall": {
-        "recall": 1,
-        "matchedBoundaries": 4,
-        "totalBoundaries": 4
-      }
+        "steps.json なし (eval/results/generated/synth-login-click-01/steps.json) — G1/G2/G3 スキップ",
+        "evidence.json なし (eval/results/generated/synth-login-click-01/evidence.json) — 境界Recall スキップ"
+      ]
     },
     {
       "caseId": "synth-modal-fade-01",
       "notes": [
-        "steps.json なし (eval/results/generated/synth-modal-fade-01/steps.json) — G1/G2/G3 スキップ"
-      ],
-      "boundaryRecall": {
-        "recall": 1,
-        "matchedBoundaries": 4,
-        "totalBoundaries": 4
-      }
+        "steps.json なし (eval/results/generated/synth-modal-fade-01/steps.json) — G1/G2/G3 スキップ",
+        "evidence.json なし (eval/results/generated/synth-modal-fade-01/evidence.json) — 境界Recall スキップ"
+      ]
     }
   ]
 }

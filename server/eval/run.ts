@@ -49,6 +49,11 @@ interface GroundTruthFile {
   steps: GroundTruthStep[];
 }
 
+interface CaseMetaFile {
+  has_narration?: boolean;
+  synthetic_narration?: boolean;
+}
+
 function parseArgs(argv: string[]) {
   const args: Record<string, string | boolean> = {};
   for (let i = 0; i < argv.length; i++) {
@@ -103,6 +108,9 @@ function extractSteps(artifact: unknown): GeneratedStepLike[] {
       title: String(step.title ?? ""),
       operation: typeof step.operation === "string" ? step.operation : undefined,
       instruction: typeof step.instruction === "string" ? step.instruction : undefined,
+      cited_ui_labels: Array.isArray(step.cited_ui_labels)
+        ? step.cited_ui_labels.filter((label): label is string => typeof label === "string")
+        : undefined,
     };
   });
 }
@@ -132,6 +140,10 @@ async function evaluateCase(
   const gt = await readJson<GroundTruthFile>(
     path.join(DATASET_DIR, caseId, "ground_truth.json"),
   );
+  const metaPath = path.join(DATASET_DIR, caseId, "meta.json");
+  const meta = await fileExists(metaPath)
+    ? await readJson<CaseMetaFile>(metaPath)
+    : {};
   const metrics: CaseMetrics = { caseId, notes: [] };
 
   const stepsPath =
@@ -140,7 +152,16 @@ async function evaluateCase(
     options.evidencePath ?? path.join(GENERATED_DIR, caseId, "evidence.json");
 
   if (await fileExists(stepsPath)) {
-    const generated = extractSteps(await readJson(stepsPath));
+    const artifact = await readJson<{
+      config?: { asr_provider?: string };
+    }>(stepsPath);
+    if (meta.has_narration && artifact.config?.asr_provider === "none") {
+      metrics.notes.push("has_narration=true だが steps artifact は ASRなし (asr_provider=none)");
+    }
+    if (meta.synthetic_narration) {
+      metrics.notes.push("synthetic_narration=true: 画面は実録画、音声は合成ナレーション");
+    }
+    const generated = extractSteps(artifact);
     const g1 = computeG1(generated, gt.steps);
     metrics.g1 = { precision: g1.precision, recall: g1.recall, f1: g1.f1 };
 

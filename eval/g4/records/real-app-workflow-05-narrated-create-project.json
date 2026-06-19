@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "case_id": "real-app-workflow-05-narrated-create-project",
+  "review_type": "ai_estimate",
+  "reviewer": "codex-estimate",
+  "reviewed_at": "2026-06-20",
+  "source_artifact": "eval/results/generated/real-app-workflow-05-narrated-create-project/steps.json",
+  "source_artifact_sha256": "4ee96a9211506affc2898d2bfce8a0cd887af7bc58385c148e594486d446ab0f",
+  "exported_artifacts": [],
+  "counts": {
+    "title_edits": 2,
+    "description_edits": 2,
+    "narration_edits": 3,
+    "timing_edits": 4,
+    "citation_edits": 2,
+    "step_structure_edits": 2,
+    "export_artifact_edits": 0,
+    "other_edits": 0
+  },
+  "total_manual_edits": 15,
+  "blocking_issues": [
+    "Screen content is a real recording excerpt, but narration is a synthetic macOS say overlay and should not be confused with a human-narrated capture.",
+    "Generated artifact merges title entry with file selection and omits the upload wait as a non-step interval.",
+    "This is an AI-estimated artifact-only G4 record, not a human_review G4 record.",
+    "PPTX/video export QA was not performed."
+  ],
+  "notes": "Compared generated steps against the narrated create-project derivative ground truth. Main fixes match the silent create-project subclip, with additional narration wording work because the clip includes an audio narration track."
+}

@@ -1,6 +1,7 @@
 {
   "version": 1,
   "case_id": "<case-id>",
+  "review_type": "human_review",
   "reviewer": "",
   "reviewed_at": "YYYY-MM-DD",
   "source_artifact": "eval/results/generated/<case-id>/steps.json",

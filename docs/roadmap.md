@@ -25,8 +25,11 @@
 
 - `pnpm eval:audit` を追加し、実録画5本、必須 `scenario_tags`、生成済み `steps.json`、G4記録の有無を機械判定できるようにした。
 - G4の人手修正箇所数フォーマットを `eval/g4/README.md` と `eval/g4/template.json` に固定した。
-- 既存 `meta.json` に `scenario_tags` を追加した。現状の実録画 `real-app-workflow-01` は `silent` / `form_input` / `load_wait` / `modal_or_dropdown` をカバーする。
-- 現在の `pnpm eval:audit -- --allow-incomplete` 結果は未達: 実録画 `1/5`、`narrated` 未カバー、`real-app-workflow-01` の生成済み `steps.json` とG4記録が未作成。Sprint 1完了扱いにはしない。
+- `real-app-workflow-01` から意味単位の実録画サブクリップを切り出し、評価対象を5ケースへ拡張した。`real-app-workflow-05-narrated-create-project` は実画面収録にmacOS `say` の合成ナレーションを重ねた派生ケースであり、人間ナレーション実録画ではない。
+- 5ケース全てで `eval/results/generated/<case-id>/steps.json` と `eval/g4/records/<case-id>.json` を用意し、`pnpm eval` でG1/G2/G3が出ることを確認した。G4記録は `review_type: "ai_estimate"` のartifact-only見積もりであり、人間が実修正した `human_review` 記録ではない。
+- `pnpm eval -- --save-baseline` で、現在のマシン・生成artifact前提の `eval/baseline.json` を再較正した。
+- G2は `title` / `operation` / `instruction` の引用に加え、structured artifact の `cited_ui_labels` も照合するようにした。再較正後の実録画5ケースG2は `72.2%` / `88.9%` / `41.7%` / `55.6%` / `88.9%`。
+- 現在の `pnpm eval:audit` 結果はPASS。Sprint 1の機械監査条件は満たしたが、ナレーションケースは合成音声派生で、現環境ではASR付きpipeline再生成は未実施（`whisper` なし、`OPENAI_API_KEY` 未設定）。G4もAI見積もりであるため、後続QAでは人間ナレーション実録画や人手修正済みG4と混同しない。
 
 ## Sprint 2 進捗（2026-06-20）
 

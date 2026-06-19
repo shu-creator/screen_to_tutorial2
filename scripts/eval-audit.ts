@@ -12,6 +12,7 @@ export type CaseMeta = {
 
 export type G4Record = {
   case_id: string;
+  review_type?: string;
   reviewer?: string;
   reviewed_at?: string;
   source_artifact?: string;
@@ -30,6 +31,7 @@ export type AuditResult = {
   casesMissingGeneratedSteps: string[];
   casesMissingG4: string[];
   invalidG4Records: string[];
+  warnings: string[];
   notes: string[];
 };
 
@@ -124,6 +126,7 @@ export async function auditEvalReadiness(options: {
 
   const casesMissingG4: string[] = [];
   const invalidG4Records: string[] = [];
+  const warnings: string[] = [];
   for (const caseId of Array.from(realCaseIds).sort()) {
     const record = g4ByCaseId.get(caseId);
     if (!record) {
@@ -133,6 +136,11 @@ export async function auditEvalReadiness(options: {
     const invalidReason = validateG4Record(record);
     if (invalidReason) {
       invalidG4Records.push(`${caseId}: ${invalidReason}`);
+    }
+    if (!record.review_type) {
+      warnings.push(`${caseId}: G4 review_type is missing`);
+    } else if (record.review_type === "ai_estimate") {
+      warnings.push(`${caseId}: G4 is ai_estimate, not human_review`);
     }
   }
   const notes: string[] = [];
@@ -162,11 +170,15 @@ export async function auditEvalReadiness(options: {
     casesMissingGeneratedSteps,
     casesMissingG4,
     invalidG4Records,
+    warnings,
     notes,
   };
 }
 
 function validateG4Record(record: G4Record): string | null {
+  if (record.review_type && !["human_review", "ai_estimate"].includes(record.review_type)) {
+    return "review_type must be human_review or ai_estimate";
+  }
   if (!record.reviewer?.trim()) return "reviewer is empty";
   if (!record.reviewed_at || record.reviewed_at === "YYYY-MM-DD") return "reviewed_at is not filled";
   if (!record.source_artifact || record.source_artifact.includes("<case-id>")) return "source_artifact is not filled";
@@ -188,6 +200,10 @@ function printAudit(result: AuditResult): void {
   if (result.notes.length) {
     console.log("Open items:");
     for (const note of result.notes) console.log(`- ${note}`);
+  }
+  if (result.warnings.length) {
+    console.log("Warnings:");
+    for (const warning of result.warnings) console.log(`- ${warning}`);
   }
 }
 

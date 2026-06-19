@@ -1,0 +1,19 @@
+{
+  "case_id": "real-app-workflow-05-narrated-create-project",
+  "description": "実録画派生: 新規プロジェクト作成の画面収録抜粋に、macOS sayで作成したナレーション音声を重ねた評価ケース",
+  "synthetic": false,
+  "source": "real-app-workflow-01 の 00:06-00:51 を切り出し、macOS say の英語ナレーションを重畳。画面内容は実録画、音声は合成ナレーション。",
+  "regenerate_command": "mkdir -p eval/dataset/real-app-workflow-05-narrated-create-project tmp && say -o tmp/real-app-workflow-05-narration.aiff \"Create a new project. Enter the title. Choose the video file. Wait for the upload to complete. Then create the project.\" && ffmpeg -y -ss 6 -t 45 -i eval/dataset/real-app-workflow-01/video.mp4 -i tmp/real-app-workflow-05-narration.aiff -filter_complex \"[1:a]apad=pad_dur=45[a]\" -map 0:v:0 -map \"[a]\" -t 45 -c:v libx264 -preset veryfast -crf 23 -c:a aac eval/dataset/real-app-workflow-05-narrated-create-project/video.mp4",
+  "video_sha256": "7cff5fb85019ca9536806d325b879449f3377ab2a20793e0a19ae382b3ea0dda",
+  "duration_ms": 45000,
+  "fps": 60,
+  "resolution": "2940x1912",
+  "has_narration": true,
+  "synthetic_narration": true,
+  "scenario_tags": [
+    "narrated",
+    "form_input",
+    "load_wait",
+    "modal_or_dropdown"
+  ]
+}

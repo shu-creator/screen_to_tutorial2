@@ -19,6 +19,7 @@ export interface GeneratedStepLike {
   title: string;
   operation?: string;
   instruction?: string;
+  cited_ui_labels?: string[];
 }
 
 export interface G1Result {
@@ -135,7 +136,8 @@ export function normalizeLabel(label: string): string {
  * G2: UIラベル正確性
  *
  * 各生成ステップの title / operation / instruction から「」『』引用ラベルを抽出し、
- * 許容集合（正解 ui_labels ∪ OCR実測行）に正規化一致で含まれる率を計算する。
+ * structured artifact の cited_ui_labels も含めて、許容集合（正解 ui_labels ∪ OCR実測行）に
+ * 正規化一致で含まれる率を計算する。
  *
  * 分母0の規約: 引用が0件のステップは分母から除外し、noCitationRate を必ず併記する
  * （引用ゼロで見かけ100%になる退化の検知用）。
@@ -152,7 +154,10 @@ export function computeG2(
 
   for (const step of generated) {
     const texts = [step.title, step.operation ?? "", step.instruction ?? ""];
-    const labels = texts.flatMap((text) => extractQuotedLabels(text));
+    const labels = [
+      ...texts.flatMap((text) => extractQuotedLabels(text)),
+      ...(step.cited_ui_labels ?? []),
+    ];
     if (labels.length === 0) continue;
     citedStepCount += 1;
     for (const label of labels) {

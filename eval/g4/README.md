@@ -2,6 +2,8 @@
 
 G4 は自動計測しない。評価ケースごとに、生成後に出荷可能状態へ直すための人手修正箇所数を `eval/g4/records/<case-id>.json` に記録する。
 
+`review_type` が `human_review` の記録だけを、出荷判定用の人手修正コストとして扱う。Codexなどによるartifact-only見積もりは `review_type: "ai_estimate"` と明記し、評価セット整備や傾向把握には使えるが、人間が実際に修正して出荷可能状態を確認したG4記録の代替にはしない。
+
 ## 記録タイミング
 
 1. `pnpm pipeline:generate` で対象ケースの `steps.json` と成果物を生成する

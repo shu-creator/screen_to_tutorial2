@@ -1,0 +1,16 @@
+{
+  "case_id": "real-app-workflow-04-export-video",
+  "description": "実録画抜粋: 生成済みステップ確認、プレビュー切替、動画生成待ち、生成動画確認",
+  "synthetic": false,
+  "source": "real-app-workflow-01 の 02:06-末尾を ffmpeg で切り出し",
+  "regenerate_command": "mkdir -p eval/dataset/real-app-workflow-04-export-video && ffmpeg -y -ss 126 -t 176.418 -i eval/dataset/real-app-workflow-01/video.mp4 -c copy eval/dataset/real-app-workflow-04-export-video/video.mp4",
+  "video_sha256": "6add7d959f4c460dd92b7ba25f7e2a1d3fe72fc574fdd0867ab2948023b7b410",
+  "duration_ms": 176631,
+  "fps": 60,
+  "resolution": "2940x1912",
+  "has_narration": false,
+  "scenario_tags": [
+    "silent",
+    "load_wait"
+  ]
+}

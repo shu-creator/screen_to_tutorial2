@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "case_id": "real-app-workflow-03-generate-steps",
+  "steps": [
+    {
+      "t_start": 0,
+      "t_end": 4500,
+      "title": "作成したプロジェクトを開く",
+      "ui_labels": ["Gemini"]
+    },
+    {
+      "t_start": 4500,
+      "t_end": 55000,
+      "title": "動画処理の完了を待つ",
+      "ui_labels": [],
+      "non_step": true
+    },
+    {
+      "t_start": 55000,
+      "t_end": 61000,
+      "title": "抽出されたフレーム一覧を確認する",
+      "ui_labels": ["フレーム"]
+    },
+    {
+      "t_start": 61000,
+      "t_end": 63000,
+      "title": "ステップタブに切り替える",
+      "ui_labels": ["ステップ"]
+    },
+    {
+      "t_start": 65000,
+      "t_end": 68500,
+      "title": "AIでステップを生成する",
+      "ui_labels": ["AIでステップを生成"]
+    },
+    {
+      "t_start": 68500,
+      "t_end": 72000,
+      "title": "ステップ生成の完了を待つ",
+      "ui_labels": [],
+      "non_step": true
+    }
+  ]
+}

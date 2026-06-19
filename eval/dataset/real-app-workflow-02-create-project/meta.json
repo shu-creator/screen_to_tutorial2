@@ -1,0 +1,18 @@
+{
+  "case_id": "real-app-workflow-02-create-project",
+  "description": "実録画抜粋: 新規プロジェクト作成、タイトル入力、動画選択、アップロード待ち、作成",
+  "synthetic": false,
+  "source": "real-app-workflow-01 の 00:06-00:51 を ffmpeg で切り出し",
+  "regenerate_command": "mkdir -p eval/dataset/real-app-workflow-02-create-project && ffmpeg -y -ss 6 -t 45 -i eval/dataset/real-app-workflow-01/video.mp4 -c copy eval/dataset/real-app-workflow-02-create-project/video.mp4",
+  "video_sha256": "d223ad5ae2627c9f090a48ec4a4ef9c02e9ca75258c10f9b699af8d4f9009ee8",
+  "duration_ms": 45516,
+  "fps": 60,
+  "resolution": "2940x1912",
+  "has_narration": false,
+  "scenario_tags": [
+    "silent",
+    "form_input",
+    "load_wait",
+    "modal_or_dropdown"
+  ]
+}

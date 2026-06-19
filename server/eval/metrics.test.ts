@@ -153,6 +153,21 @@ describe("computeG2", () => {
     expect(result.accuracy).toBe(1);
     expect(result.totalLabels).toBe(2);
   });
+
+  it("structured cited_ui_labels の幻覚も不一致として数える", () => {
+    const generated = [
+      {
+        t_start: 0,
+        t_end: 1,
+        title: "「保存」を押す",
+        cited_ui_labels: ["存在しないボタン"],
+      },
+    ];
+    const result = computeG2(generated, ["保存"]);
+    expect(result.accuracy).toBe(0.5);
+    expect(result.totalLabels).toBe(2);
+    expect(result.matchedLabels).toBe(1);
+  });
 });
 
 describe("computeG3", () => {

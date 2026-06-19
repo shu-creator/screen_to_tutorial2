@@ -1,0 +1,16 @@
+{
+  "case_id": "real-app-workflow-03-generate-steps",
+  "description": "実録画抜粋: 作成済みプロジェクトを開き、処理完了を待ってAIステップ生成を開始する",
+  "synthetic": false,
+  "source": "real-app-workflow-01 の 00:54-02:06 を ffmpeg で切り出し",
+  "regenerate_command": "mkdir -p eval/dataset/real-app-workflow-03-generate-steps && ffmpeg -y -ss 54 -t 72 -i eval/dataset/real-app-workflow-01/video.mp4 -c copy eval/dataset/real-app-workflow-03-generate-steps/video.mp4",
+  "video_sha256": "10ba7f6a2d268ad13e73d44546b49dff4f31fe62272c0badb71294193dc5f27a",
+  "duration_ms": 72798,
+  "fps": 60,
+  "resolution": "2940x1912",
+  "has_narration": false,
+  "scenario_tags": [
+    "silent",
+    "load_wait"
+  ]
+}

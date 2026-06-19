@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "case_id": "real-app-workflow-04-export-video",
+  "steps": [
+    {
+      "t_start": 0,
+      "t_end": 14500,
+      "title": "生成されたステップ一覧を確認する",
+      "ui_labels": ["ステップ"]
+    },
+    {
+      "t_start": 14500,
+      "t_end": 16000,
+      "title": "プレビュータブに切り替える",
+      "ui_labels": ["プレビュー"]
+    },
+    {
+      "t_start": 16000,
+      "t_end": 18000,
+      "title": "チュートリアル動画を生成する",
+      "ui_labels": ["動画を生成", "チュートリアル動画"]
+    },
+    {
+      "t_start": 18000,
+      "t_end": 166000,
+      "title": "動画生成の完了を待つ",
+      "ui_labels": [],
+      "non_step": true
+    },
+    {
+      "t_start": 166000,
+      "t_end": 176418,
+      "title": "生成された動画を確認する",
+      "ui_labels": ["チュートリアル動画", "動画をダウンロード"]
+    }
+  ]
+}

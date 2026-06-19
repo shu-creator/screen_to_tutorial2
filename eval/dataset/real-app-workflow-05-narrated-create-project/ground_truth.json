@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "case_id": "real-app-workflow-05-narrated-create-project",
+  "steps": [
+    {
+      "t_start": 0,
+      "t_end": 2500,
+      "title": "新規プロジェクト作成を開く",
+      "ui_labels": ["新規プロジェクト", "新規プロジェクト作成"]
+    },
+    {
+      "t_start": 7000,
+      "t_end": 12000,
+      "title": "プロジェクトのタイトルを入力する",
+      "ui_labels": ["タイトル", "Gemini"]
+    },
+    {
+      "t_start": 14000,
+      "t_end": 17500,
+      "title": "動画ファイルの選択ダイアログを開く",
+      "ui_labels": ["ファイルを選択", "動画ファイル"]
+    },
+    {
+      "t_start": 17500,
+      "t_end": 26000,
+      "title": "アップロードする動画を選択する",
+      "ui_labels": ["アップロード", "写真"]
+    },
+    {
+      "t_start": 26000,
+      "t_end": 41000,
+      "title": "動画ファイルのアップロード完了を待つ",
+      "ui_labels": [],
+      "non_step": true
+    },
+    {
+      "t_start": 41500,
+      "t_end": 45000,
+      "title": "プロジェクトを作成する",
+      "ui_labels": ["アップロード", "作成"]
+    }
+  ]
+}

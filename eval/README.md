@@ -62,12 +62,14 @@ Sprint 1 では実録画5本以上を要求する。`scenario_tags` は以下を
 
 `pnpm eval:audit` は、実録画5本、上記タグ、`eval/results/generated/<case-id>/steps.json`、`eval/g4/records/<case-id>.json` を確認する。現状確認だけで非ゼロ終了を避けたい場合は `pnpm eval:audit -- --allow-incomplete` を使う。
 
+Sprint 1の5ケースは、`real-app-workflow-01` の自作画面収録から意味単位のサブクリップを切り出した派生ケースを含む。`real-app-workflow-05-narrated-create-project` は画面内容は実録画だが、音声はmacOS `say` で作成した合成ナレーションを重ねている。人間が話しながら収録した素材ではないため、ナレーション品質を判断するときはこの制約を明示する。現時点の生成artifactはASRなしで作成されているため、ASR経路の品質確認には `ASR_PROVIDER=openai` または `local_whisper` での再生成が別途必要。
+
 ## メトリクス
 
 実装: [server/eval/metrics.ts](../server/eval/metrics.ts)（単体テスト付き）
 
 - **G1**: ステップ分割F1（区間IoU≥0.5の貪欲1対1マッチング）
-- **G2**: UIラベル正確性（「」『』引用の照合。引用0件ステップは分母除外、無引用率を併記）
+- **G2**: UIラベル正確性（「」『』引用と `cited_ui_labels` の照合。引用0件ステップは分母除外、無引用率を併記）
 - **G3**: 非ステップ混入率
 - **境界Recall**: evidence.json のセグメント境界に対する正解境界の一致率（Phase 1 用）
 - **G4**: 人手修正コスト（自動化対象外。出荷判断時に記録）
