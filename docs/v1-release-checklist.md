@@ -18,6 +18,7 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - [ ] `pnpm eval:quality-gate` が通る
 - [ ] `pnpm pipeline:generate --video <sample.mp4> --outdir ./outputs --use-audio false --asr-provider none --ocr-provider llm` で `project_<id>_steps.json` が生成される
 - [ ] `pnpm project:export -- --project-id <id> --audio-mode silent --outdir ./outputs/project-export` でPPTX/動画のsummaryが生成される
+- [ ] `slide.content_check.status` が `pass` で、PPTX内のstep画像数とmedia画像数が期待step数を満たし、placeholder文字列が検出されない
 - [ ] PPTXを開き、各ステップ画像がプレースホルダーではなく実画面になっていることを目視確認する
 - [ ] 生成結果がfallback-heavyではないことを確認する
 - [ ] UIでタイトル、説明、ナレーション、`t_start` / `t_end`、ステップ音声モード、レビュー済み状態を編集し、artifact同期を確認する
@@ -46,9 +47,9 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - Result: `version=2.0`, configured `LLM_MODEL=gpt-5.4`, `steps=3`, `needs_review=3`
 - Export command: `pnpm project:export -- --project-id 28 --audio-mode silent --outdir outputs/project-export`
 - Export summary: `outputs/project-export/project_28_export_summary.json`
-- Export result: PPTX 154503 bytes, MP4 72262 bytes, `still_image_fallback_count=0`
+- Export result: PPTX 154503 bytes, MP4 72262 bytes, `slide.content_check.status=pass`, `total_slide_count=6`, `slides_with_images=3`, `media_image_count=3`, `expected_step_image_count_source=steps_artifact`, `placeholder_text_hits=[]`, `still_image_fallback_count=0`
 
-これは生成経路のスモークであり、v1出荷品質の証明ではない。OCRなしで実行したため全stepが `needs_review` になっており、PPTXのステップ画像プレースホルダー有無の目視確認も未記録である。最終v1判定には実録画/人間レビューG4/品質gate/PPTX目視確認が別途必要。
+これは生成経路のスモークであり、v1出荷品質の証明ではない。OCRなしで実行したため全stepが `needs_review` になっており、PPTXの機械的な画像/placeholder検査はpassしたが、実画面として妥当かの目視確認は未記録である。最終v1判定には実録画/人間レビューG4/品質gate/PPTX目視確認が別途必要。
 
 ## Known Non-Release-Blocking Caveats
 

@@ -86,7 +86,8 @@ pnpm project:export -- --project-id <id> --audio-mode silent --outdir ./outputs/
 
 - `outputs/project-export/project_<id>_export_summary.json` が生成される
 - ローカルストレージではsummary内の `slide.bytes` と `video.bytes` が `null` でなく0より大きい。リモートストレージURLの場合は `bytes` が `null` になるため、URL先のファイルサイズをストレージ側で確認する
-- PPTXを開き、各ステップ画像がプレースホルダーではなく実画面になっていることを目視確認する
+- `slide.content_check.status` が `pass` で、`slides_with_images` と `media_image_count` が `expected_step_image_count` 以上、`placeholder_text_hits` が空である。`total_slide_count` は表紙、目次、ステップ、完了スライドを含む総数である
+- 最終出荷前はPPTXを開き、各ステップ画像がプレースホルダーではなく実画面になっていることを目視確認する
 - `video.still_image_fallback_count` と `video.warnings` を確認し、出荷判定時はG4に反映する
 
 ASRとTTSも含めて確認する場合:

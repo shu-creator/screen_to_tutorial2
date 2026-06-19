@@ -325,7 +325,7 @@ pnpm eval:export-case -- --case real-app-workflow-04-export-video
 ```
 
 - `pipeline:generate` の出力: `./outputs/project_<id>_steps.json`（`--dry-run` でプロジェクト作成のみ）
-- `project:export` の出力: `./outputs/project-export/project_<id>_export_summary.json`（PPTX/MP4のstorage URL、ローカルpath、bytes、`content_check`、`requested_audio_mode`、warnings、`still_image_fallback_count`）
+- `project:export` の出力: `./outputs/project-export/project_<id>_export_summary.json`（PPTX/MP4のstorage URL、ローカルpath、bytes、PPTX内画像/placeholderの `content_check`、`requested_audio_mode`、warnings、`still_image_fallback_count`）
 - 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`
 - `eval:export-case` の出力: `eval/results/export-qa/<case-id>/`（PPTX、MP4、`qa-summary.json`。`eval/results/` はgitignore対象）
 - 新規環境の詳細手順: [docs/setup-local.md](./docs/setup-local.md)
