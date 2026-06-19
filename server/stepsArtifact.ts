@@ -23,6 +23,9 @@ export type ReviewReasonCode =
   | "verification:unverified_ui_label"
   | "verification:low_confidence";
 
+export const StepAudioModeSchema = z.enum(["auto", "tts", "original", "mixed", "silent"]);
+export type StepAudioMode = z.infer<typeof StepAudioModeSchema>;
+
 const NormalizedBBoxSchema = z.object({
   x: z.number().min(0).max(1),
   y: z.number().min(0).max(1),
@@ -56,6 +59,7 @@ export const StepArtifactSchema = z.object({
   operation: z.string().min(1),
   description: z.string().min(1),
   narration: z.string().optional().default(""),
+  audio_mode: StepAudioModeSchema.optional().default("auto"),
   audio_url: z.string().optional(),
   audio_key: z.string().optional(),
   // v2: evidence.json への根拠リンクと機械検証結果
@@ -122,6 +126,7 @@ function migrateV1ToV2(raw: Record<string, unknown>): unknown {
       cited_ui_labels: [],
       needs_review: false,
       review_reasons: [],
+      audio_mode: "auto",
       ...(step as Record<string, unknown>),
     })),
   };
@@ -281,6 +286,7 @@ export function buildStepsArtifactFromDb(
       operation: step.operation,
       description: step.description,
       narration: step.narration ?? "",
+      audio_mode: "auto",
       audio_url: step.audioUrl ?? undefined,
       audio_key: step.audioKey ?? undefined,
       source_segment_ids: [],
@@ -309,11 +315,12 @@ export function buildStepsArtifactFromDb(
 export async function patchStepArtifact(
   projectId: number,
   patcher: (artifact: StepsArtifact) => StepsArtifact,
-): Promise<void> {
+): Promise<boolean> {
   const artifact = await loadStepsArtifact(projectId);
   if (!artifact) {
-    return;
+    return false;
   }
   const patched = patcher(artifact);
   await saveStepsArtifact(projectId, patched);
+  return true;
 }

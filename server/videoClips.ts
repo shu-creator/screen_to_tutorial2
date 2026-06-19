@@ -92,6 +92,10 @@ export function resolveAudioMode(
   return "silent";
 }
 
+export function resolveRequestedAudioMode(globalMode: AudioMode, stepMode: AudioMode | null | undefined): AudioMode {
+  return stepMode && stepMode !== "auto" ? stepMode : globalMode;
+}
+
 async function getMediaDurationSec(mediaPath: string): Promise<number> {
   const { stdout } = await execFileAsync(
     "ffprobe",

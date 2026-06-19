@@ -9,6 +9,7 @@ import {
   concatSegments,
   planClip,
   resolveAudioMode,
+  resolveRequestedAudioMode,
 } from "./videoClips";
 
 describe("planClip", () => {
@@ -61,6 +62,18 @@ describe("resolveAudioMode", () => {
   it("明示指定はそのまま", () => {
     expect(resolveAudioMode("tts", true, true)).toBe("tts");
     expect(resolveAudioMode("silent", true, true)).toBe("silent");
+  });
+});
+
+describe("resolveRequestedAudioMode", () => {
+  it("ステップ単位の明示指定が全体指定より優先される", () => {
+    expect(resolveRequestedAudioMode("tts", "original")).toBe("original");
+    expect(resolveRequestedAudioMode("silent", "mixed")).toBe("mixed");
+  });
+
+  it("ステップ単位がautoまたは未指定なら全体指定を使う", () => {
+    expect(resolveRequestedAudioMode("tts", "auto")).toBe("tts");
+    expect(resolveRequestedAudioMode("original", undefined)).toBe("original");
   });
 });
 

@@ -11,7 +11,7 @@ import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
 import { getAvailableVoices, type TTSVoice } from "./_core/tts";
 import { storagePut } from "./storage";
-import { invalidateStepsArtifact, loadStepsArtifact, patchStepArtifact } from "./stepsArtifact";
+import { StepAudioModeSchema, invalidateStepsArtifact, loadStepsArtifact, patchStepArtifact } from "./stepsArtifact";
 import { invalidateEvidenceArtifact } from "./evidence/artifactStore";
 
 const logger = createLogger("Router");
@@ -314,7 +314,15 @@ export const appRouter = router({
         if (!project) {
           throw new Error("プロジェクトが見つかりません");
         }
-        const empty: Record<number, { needsReview: boolean; reviewReasons: string[]; warnings: string[]; confidence: number }> = {};
+        const empty: Record<number, {
+          needsReview: boolean;
+          reviewReasons: string[];
+          warnings: string[];
+          confidence: number;
+          tStart: number;
+          tEnd: number;
+          audioMode: string;
+        }> = {};
         const artifact = await loadStepsArtifact(input.projectId).catch(() => null);
         if (!artifact) {
           return { overview: null, reviewByStepId: empty };
@@ -327,6 +335,9 @@ export const appRouter = router({
               reviewReasons: step.review_reasons,
               warnings: step.warnings,
               confidence: step.confidence,
+              tStart: step.t_start,
+              tEnd: step.t_end,
+              audioMode: step.audio_mode,
             };
           }
         }
@@ -340,6 +351,9 @@ export const appRouter = router({
         operation: z.string().optional(),
         description: z.string().optional(),
         narration: z.string().optional(),
+        tStart: z.number().int().nonnegative().optional(),
+        tEnd: z.number().int().nonnegative().optional(),
+        audioMode: StepAudioModeSchema.optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
@@ -348,29 +362,61 @@ export const appRouter = router({
           throw new Error("ステップが見つかりません");
         }
         // セキュリティ: ユーザーIDによる所有者チェック
-        await db.updateStep(id, data, ctx.user.id);
-        await patchStepArtifact(existingStep.projectId, (artifact) => ({
-          ...artifact,
-          steps: artifact.steps.map((step) => {
-            if (
-              step.legacy_step_db_id !== id &&
-              step.sort_order !== existingStep.sortOrder
-            ) {
-              return step;
+        const dbData = {
+          ...(data.title !== undefined ? { title: data.title } : {}),
+          ...(data.operation !== undefined ? { operation: data.operation } : {}),
+          ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(data.narration !== undefined ? { narration: data.narration } : {}),
+        };
+        const hasArtifactOnlyFields =
+          data.tStart !== undefined || data.tEnd !== undefined || data.audioMode !== undefined;
+        const hasArtifactSyncFields = Object.keys(dbData).length > 0 || hasArtifactOnlyFields;
+        let artifactPatched = false;
+        if (hasArtifactSyncFields) {
+          artifactPatched = await patchStepArtifact(existingStep.projectId, (artifact) => {
+            let matched = false;
+            const steps = artifact.steps.map((step) => {
+              const matchesLegacyId = step.legacy_step_db_id === id;
+              const matchesSortOrder = step.legacy_step_db_id === undefined && step.sort_order === existingStep.sortOrder;
+              if (!matchesLegacyId && !matchesSortOrder) {
+                return step;
+              }
+              matched = true;
+              const nextTStart = data.tStart ?? step.t_start;
+              const nextTEnd = data.tEnd ?? step.t_end;
+              if ((data.tStart !== undefined || data.tEnd !== undefined) && nextTEnd <= nextTStart) {
+                throw new Error("t_end は t_start より後にしてください");
+              }
+              return {
+                ...step,
+                ...(data.title !== undefined ? { title: data.title } : {}),
+                ...(data.operation !== undefined
+                  ? { operation: data.operation, instruction: data.operation }
+                  : {}),
+                ...(data.description !== undefined
+                  ? { description: data.description, expected_result: data.description }
+                  : {}),
+                ...(data.narration !== undefined ? { narration: data.narration } : {}),
+                t_start: nextTStart,
+                t_end: nextTEnd,
+                ...(data.audioMode !== undefined ? { audio_mode: data.audioMode } : {}),
+              };
+            });
+            if (!matched && hasArtifactOnlyFields) {
+              throw new Error("artifactに対象ステップが見つかりませんでした");
             }
-            return {
-              ...step,
-              ...(data.title !== undefined ? { title: data.title } : {}),
-              ...(data.operation !== undefined
-                ? { operation: data.operation, instruction: data.operation }
-                : {}),
-              ...(data.description !== undefined
-                ? { description: data.description, expected_result: data.description }
-                : {}),
-              ...(data.narration !== undefined ? { narration: data.narration } : {}),
-            };
-          }),
-        }));
+            if (!matched) {
+              return artifact;
+            }
+            return { ...artifact, steps };
+          });
+        }
+        if (hasArtifactOnlyFields && !artifactPatched) {
+          throw new Error("steps artifactが存在しないため、時刻/音声モードを保存できません");
+        }
+        if (Object.keys(dbData).length > 0) {
+          await db.updateStep(id, dbData, ctx.user.id);
+        }
         return { success: true };
       }),
 

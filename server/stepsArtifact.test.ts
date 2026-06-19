@@ -17,6 +17,7 @@ import {
   buildStepsArtifactFromDb,
   invalidateStepsArtifact,
   loadStepsArtifact,
+  patchStepArtifact,
   StepsArtifactSchema,
   STEPS_ARTIFACT_VERSION,
 } from "./stepsArtifact";
@@ -78,6 +79,7 @@ describe("steps artifact v1 -> v2 migration", () => {
     expect(loaded?.steps[0].cited_ui_labels).toEqual([]);
     expect(loaded?.steps[0].needs_review).toBe(false);
     expect(loaded?.steps[0].review_reasons).toEqual([]);
+    expect(loaded?.steps[0].audio_mode).toBe("auto");
     // 運用必須フィールドが維持される（audio / legacy id / frame_id）
     expect(loaded?.steps[0].audio_url).toBe("/api/storage/p/a.mp3");
     expect(loaded?.steps[0].legacy_step_db_id).toBe(200);
@@ -89,7 +91,7 @@ describe("steps artifact v1 -> v2 migration", () => {
     await expect(loadStepsArtifact(78)).rejects.toThrow("未対応");
   });
 
-  it("既存v2 artifactに review_reasons が無くても空配列で読める", async () => {
+  it("既存v2 artifactに review_reasons/audio_mode が無くてもデフォルトで読める", async () => {
     await writeArtifactFile(80, {
       ...v1Artifact,
       version: STEPS_ARTIFACT_VERSION,
@@ -106,6 +108,7 @@ describe("steps artifact v1 -> v2 migration", () => {
     const loaded = await loadStepsArtifact(80);
 
     expect(loaded?.steps[0].review_reasons).toEqual([]);
+    expect(loaded?.steps[0].audio_mode).toBe("auto");
   });
 
   it("invalidate されたartifactは null（artifactなし扱い）", async () => {
@@ -116,6 +119,23 @@ describe("steps artifact v1 -> v2 migration", () => {
 
   it("ファイルが無ければ null（正常系）", async () => {
     expect(await loadStepsArtifact(99999)).toBeNull();
+  });
+
+  it("patchStepArtifact はファイルが無ければ false を返す", async () => {
+    await expect(patchStepArtifact(99998, (artifact) => artifact)).resolves.toBe(false);
+  });
+
+  it("patchStepArtifact はファイルがあれば保存して true を返す", async () => {
+    await writeArtifactFile(81, { ...v1Artifact, project_id: 81 });
+
+    const patched = await patchStepArtifact(81, (artifact) => ({
+      ...artifact,
+      steps: artifact.steps.map((step) => ({ ...step, title: "patched" })),
+    }));
+    const loaded = await loadStepsArtifact(81);
+
+    expect(patched).toBe(true);
+    expect(loaded?.steps[0].title).toBe("patched");
   });
 });
 

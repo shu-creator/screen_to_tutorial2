@@ -26,6 +26,7 @@ import {
   getVideoResolution,
   planClip,
   resolveAudioMode,
+  resolveRequestedAudioMode,
   type AudioMode,
 } from "./videoClips";
 
@@ -408,7 +409,8 @@ export async function generateVideo(
               maxDurationMs: ENV.clipMaxDurationMs,
             },
           );
-          const mode = resolveAudioMode(requestedMode, transcriptPresent, audioPath !== null);
+          const stepRequestedMode = resolveRequestedAudioMode(requestedMode, artifactStep.audio_mode);
+          const mode = resolveAudioMode(stepRequestedMode, transcriptPresent, audioPath !== null);
           const result = await buildClipSegment({
             videoPath: sourceVideo.path,
             plan,

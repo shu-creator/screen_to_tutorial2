@@ -54,6 +54,13 @@ type FrameData = {
   timestamp: number;
 };
 
+type StepAudioMode = "auto" | "tts" | "original" | "mixed" | "silent";
+type StepUpdateData = Partial<StepData> & {
+  tStart?: number;
+  tEnd?: number;
+  audioMode?: StepAudioMode;
+};
+
 function SortableStepCard({
   step,
   index,
@@ -70,12 +77,20 @@ function SortableStepCard({
   index: number;
   isEditing: boolean;
   onToggleEdit: () => void;
-  onUpdate: (id: number, data: Partial<StepData>) => void;
+  onUpdate: (id: number, data: StepUpdateData) => void;
   onDelete: (id: number) => void;
   onRegenerate: (stepId: number, frameId: number) => void;
   isRegenerating: boolean;
   frame?: FrameData;
-  review?: { needsReview: boolean; reviewReasons: string[]; warnings: string[]; confidence: number };
+  review?: {
+    needsReview: boolean;
+    reviewReasons: string[];
+    warnings: string[];
+    confidence: number;
+    tStart: number;
+    tEnd: number;
+    audioMode: string;
+  };
 }) {
   const {
     attributes,
@@ -146,6 +161,55 @@ function SortableStepCard({
                       onBlur={(e) => onUpdate(step.id, { narration: e.target.value })}
                     />
                   </div>
+                  {review && (
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <Label htmlFor={`t-start-${step.id}`}>開始(ms)</Label>
+                          <Input
+                            id={`t-start-${step.id}`}
+                            type="number"
+                            min={0}
+                            defaultValue={review.tStart}
+                            onBlur={(e) => {
+                              if (e.target.value.trim() === "") return;
+                              const value = Number(e.target.value);
+                              if (Number.isFinite(value)) onUpdate(step.id, { tStart: Math.round(value) });
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor={`t-end-${step.id}`}>終了(ms)</Label>
+                          <Input
+                            id={`t-end-${step.id}`}
+                            type="number"
+                            min={0}
+                            defaultValue={review.tEnd}
+                            onBlur={(e) => {
+                              if (e.target.value.trim() === "") return;
+                              const value = Number(e.target.value);
+                              if (Number.isFinite(value)) onUpdate(step.id, { tEnd: Math.round(value) });
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label htmlFor={`audio-mode-${step.id}`}>音声モード</Label>
+                        <select
+                          id={`audio-mode-${step.id}`}
+                          defaultValue={review.audioMode}
+                          onChange={(e) => onUpdate(step.id, { audioMode: e.target.value as StepAudioMode })}
+                          className="w-full px-3 py-2 border rounded-md bg-background text-sm"
+                        >
+                          <option value="auto">自動</option>
+                          <option value="tts">TTSナレーション</option>
+                          <option value="original">元録画の音声</option>
+                          <option value="mixed">元音声+TTS</option>
+                          <option value="silent">無音</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <>
@@ -360,7 +424,7 @@ export default function ProjectDetail() {
           try {
             await reorderStepsMutation.mutateAsync({ projectId, stepIds });
             refetchSteps();
-      refetchArtifactInfo();
+            refetchArtifactInfo();
             toast.success("ステップの順序を更新しました");
           } catch (error) {
             toast.error("順序の更新に失敗しました");
@@ -368,7 +432,7 @@ export default function ProjectDetail() {
         }
       }
     },
-    [steps, projectId, reorderStepsMutation, refetchSteps]
+    [steps, projectId, reorderStepsMutation, refetchSteps, refetchArtifactInfo]
   );
 
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
@@ -447,7 +511,8 @@ export default function ProjectDetail() {
       refetchArtifactInfo();
       setEditingStepId(null);
     } catch (error) {
-      toast.error("ステップの更新に失敗しました");
+      const message = error instanceof Error ? error.message : "ステップの更新に失敗しました";
+      toast.error(message);
     }
   };
 
