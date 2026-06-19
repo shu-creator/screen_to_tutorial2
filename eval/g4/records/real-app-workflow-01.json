@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "case_id": "real-app-workflow-01",
+  "reviewer": "Codex artifact review",
+  "reviewed_at": "2026-06-20",
+  "source_artifact": "eval/results/generated/real-app-workflow-01/steps.json",
+  "source_artifact_sha256": "b05b0bbd737f8d9109c95deb765f84ee64e6e9a0d37ea8c4f6d57c5e16f895d7",
+  "exported_artifacts": [],
+  "counts": {
+    "title_edits": 5,
+    "description_edits": 5,
+    "narration_edits": 5,
+    "timing_edits": 5,
+    "citation_edits": 3,
+    "step_structure_edits": 4,
+    "export_artifact_edits": 0,
+    "other_edits": 0
+  },
+  "total_manual_edits": 27,
+  "blocking_issues": [
+    "Generated artifact has 10 steps for a 17-interval ground truth and merges several user actions.",
+    "This is an artifact-only G4 review; PPTX/video export QA was not performed."
+  ],
+  "notes": "Compared the generated steps artifact against eval/dataset/real-app-workflow-01/ground_truth.json. Main fixes are splitting merged title/file-select actions, restoring omitted preview/video-generation actions, tightening timing, and removing unsupported UI label citations."
+}
