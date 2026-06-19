@@ -45,7 +45,8 @@
 - ステップ編集UIから `t_start` / `t_end`（ms）を編集できるようにし、`steps.json` artifactへ同期するようにした。DBには該当列がないため、タイミングはartifactを単一の編集先とする。
 - ステップ単位の `audio_mode`（`auto` / `tts` / `original` / `mixed` / `silent`）を `steps.json` に保存し、動画生成時はステップ指定が全体音声モードより優先されるようにした。
 - 既存artifactとの後方互換のため、`audio_mode` 欠落時は `auto` を補完する。
-- これは編集UXの一部実装であり、Sprint 3完了条件（生成後、人手で出荷可能状態まで直せる）は未達。
+- 要レビュー件数、次の要レビューを編集する導線、ステップ単位のレビュー済み操作を追加した。レビュー済みにするとartifactの `needs_review` / `review_reasons` / `warnings` をクリアする。
+- これは編集UXの主要操作を揃えた状態だが、生成後に実際に人手で出荷可能状態まで直す通しQAは未実施。
 
 ## 全体像
 

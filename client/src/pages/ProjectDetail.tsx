@@ -59,7 +59,23 @@ type StepUpdateData = Partial<StepData> & {
   tStart?: number;
   tEnd?: number;
   audioMode?: StepAudioMode;
+  markReviewed?: true;
 };
+
+function formatReviewReason(reason: string): string {
+  const labels: Record<string, string> = {
+    "fallback:chunk_authoring_failed": "執筆fallback",
+    "fallback:unassigned_segment": "未割当セグメント",
+    "fallback:legacy_step_analysis_failed": "旧解析fallback",
+    "verification:unverified_ui_label": "UIラベル未確認",
+    "verification:low_confidence": "低信頼度",
+  };
+  return labels[reason] ?? reason;
+}
+
+function formatReviewDetails(review: { warnings: string[]; reviewReasons: string[] }): string {
+  return [...review.warnings, ...review.reviewReasons.map(formatReviewReason)].filter(Boolean).join(" / ");
+}
 
 function SortableStepCard({
   step,
@@ -108,7 +124,7 @@ function SortableStepCard({
   };
 
   return (
-    <Card ref={setNodeRef} style={style} className={isDragging ? "shadow-lg" : ""}>
+    <Card id={`step-${step.id}`} ref={setNodeRef} style={style} className={isDragging ? "shadow-lg" : ""}>
       <CardHeader>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row">
@@ -163,6 +179,14 @@ function SortableStepCard({
                   </div>
                   {review && (
                     <>
+                      {review.needsReview && (
+                        <Alert className="border-destructive/40">
+                          <AlertTitle>要レビュー</AlertTitle>
+                          <AlertDescription>
+                            {formatReviewDetails(review) || "信頼度が低いステップです"}
+                          </AlertDescription>
+                        </Alert>
+                      )}
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div>
                           <Label htmlFor={`t-start-${step.id}`}>開始(ms)</Label>
@@ -208,6 +232,17 @@ function SortableStepCard({
                           <option value="silent">無音</option>
                         </select>
                       </div>
+                      {review.needsReview && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onUpdate(step.id, { markReviewed: true })}
+                        >
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          レビュー済みにする
+                        </Button>
+                      )}
                     </>
                   )}
                 </div>
@@ -218,7 +253,7 @@ function SortableStepCard({
                     {review?.needsReview && (
                       <Badge
                         variant="destructive"
-                        title={review.warnings.join(" / ") || "信頼度が低いステップです"}
+                        title={formatReviewDetails(review) || "信頼度が低いステップです"}
                       >
                         要レビュー
                       </Badge>
@@ -226,7 +261,7 @@ function SortableStepCard({
                   </div>
                   {review?.needsReview && (
                     <p className="text-xs text-destructive mt-1">
-                      {review.warnings.join(" / ") || "信頼度が低いステップです"}
+                      {formatReviewDetails(review) || "信頼度が低いステップです"}
                     </p>
                   )}
                   <CardDescription className="mt-2">
@@ -279,6 +314,17 @@ function SortableStepCard({
                 削除
               </Button>
             </div>
+            {review?.needsReview && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onUpdate(step.id, { markReviewed: true })}
+                className="w-full sm:w-auto lg:w-full"
+              >
+                <CheckCircle className="h-3 w-3 mr-1" />
+                レビュー済み
+              </Button>
+            )}
             {frame && (
               <Button
                 variant="outline"
@@ -453,6 +499,19 @@ export default function ProjectDetail() {
     minInterval: 30,
     maxFrames: 100,
   });
+  const reviewSteps = (steps ?? []).filter((step) => artifactInfo?.reviewByStepId?.[step.id]?.needsReview);
+  const reviewStepCount = reviewSteps.length;
+  const focusNextReviewStep = () => {
+    const nextStep = reviewSteps[0];
+    if (!nextStep) return;
+    setEditingStepId(nextStep.id);
+    window.setTimeout(() => {
+      document.getElementById(`step-${nextStep.id}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 0);
+  };
 
   useEffect(() => {
     if (!availableVoices || availableVoices.length === 0) return;
@@ -509,7 +568,7 @@ export default function ProjectDetail() {
       toast.success("ステップを更新しました");
       refetchSteps();
       refetchArtifactInfo();
-      setEditingStepId(null);
+      setEditingStepId((current) => (current === stepId ? null : current));
     } catch (error) {
       const message = error instanceof Error ? error.message : "ステップの更新に失敗しました";
       toast.error(message);
@@ -923,6 +982,23 @@ export default function ProjectDetail() {
                     )}
                   </CardHeader>
                 </Card>
+              )}
+              {reviewStepCount > 0 && (
+                <Alert className="border-destructive/40">
+                  <AlertTitle>要レビュー {reviewStepCount} 件</AlertTitle>
+                  <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <span>機械検証で確認が必要なステップがあります。</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={focusNextReviewStep}
+                      className="w-full sm:w-auto"
+                    >
+                      次の要レビューを編集
+                    </Button>
+                  </AlertDescription>
+                </Alert>
               )}
               <DndContext
                 sensors={sensors}

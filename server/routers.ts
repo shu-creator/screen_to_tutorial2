@@ -354,6 +354,7 @@ export const appRouter = router({
         tStart: z.number().int().nonnegative().optional(),
         tEnd: z.number().int().nonnegative().optional(),
         audioMode: StepAudioModeSchema.optional(),
+        markReviewed: z.literal(true).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
@@ -369,7 +370,10 @@ export const appRouter = router({
           ...(data.narration !== undefined ? { narration: data.narration } : {}),
         };
         const hasArtifactOnlyFields =
-          data.tStart !== undefined || data.tEnd !== undefined || data.audioMode !== undefined;
+          data.tStart !== undefined ||
+          data.tEnd !== undefined ||
+          data.audioMode !== undefined ||
+          data.markReviewed !== undefined;
         const hasArtifactSyncFields = Object.keys(dbData).length > 0 || hasArtifactOnlyFields;
         let artifactPatched = false;
         if (hasArtifactSyncFields) {
@@ -400,6 +404,9 @@ export const appRouter = router({
                 t_start: nextTStart,
                 t_end: nextTEnd,
                 ...(data.audioMode !== undefined ? { audio_mode: data.audioMode } : {}),
+                ...(data.markReviewed
+                  ? { needs_review: false, review_reasons: [], warnings: [] }
+                  : {}),
               };
             });
             if (!matched && hasArtifactOnlyFields) {
@@ -412,7 +419,7 @@ export const appRouter = router({
           });
         }
         if (hasArtifactOnlyFields && !artifactPatched) {
-          throw new Error("steps artifactが存在しないため、時刻/音声モードを保存できません");
+          throw new Error("steps artifactが存在しないため、時刻/音声モード/レビュー状態を保存できません");
         }
         if (Object.keys(dbData).length > 0) {
           await db.updateStep(id, dbData, ctx.user.id);
