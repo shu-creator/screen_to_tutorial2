@@ -16,6 +16,7 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - [ ] `pnpm test` が通る
 - [ ] `pnpm eval:audit` が通る
 - [ ] `pnpm eval:quality-gate` が通る
+- [ ] `pnpm v1:smoke -- --video <sample.mp4> --outdir ./outputs/v1-smoke --use-audio false --asr-provider none --ocr-provider none` が `pass=true` で完了する
 - [ ] `pnpm pipeline:generate --video <sample.mp4> --outdir ./outputs --use-audio false --asr-provider none --ocr-provider llm` で `project_<id>_steps.json` が生成される
 - [ ] `pnpm project:export -- --project-id <id> --audio-mode silent --outdir ./outputs/project-export` でPPTX/動画のsummaryが生成される
 - [ ] `slide.content_check.status` が `pass` で、PPTX内のstep画像数とmedia画像数が期待step数を満たし、placeholder文字列が検出されない
@@ -32,6 +33,7 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - `git rev-parse HEAD`
 - `pnpm setup:check` 出力
 - `pnpm check` / `pnpm test` / `pnpm eval:audit` / `pnpm eval:quality-gate` 出力
+- `outputs/<chosen-v1-smoke-outdir>/v1_smoke_summary.json` のパスと、その時点のSHA-256
 - `outputs/project_<id>_steps.json` のパスとSHA-256
 - `outputs/project-export/project_<id>_export_summary.json` のパスと、その時点のSHA-256
 - `outputs/edit-smoke/project_<id>_edit_smoke_summary.json` のパスと、その時点のSHA-256
@@ -53,6 +55,9 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - Edit smoke command: `pnpm edit:smoke -- --project-id 28 --outdir outputs/edit-smoke`
 - Edit smoke summary: `outputs/edit-smoke/project_28_edit_smoke_summary.json`
 - Edit smoke result: `pass=true`, `restored_after_check=true`, `restore_error=null`
+- V1 smoke command: `pnpm v1:smoke -- --video eval/dataset/synth-login-click-01/video.mp4 --outdir outputs/v1-smoke-suite --use-audio false --asr-provider none --ocr-provider none --audio-mode silent --max-frames 12`
+- V1 smoke summary: `outputs/v1-smoke-suite/v1_smoke_summary.json`
+- V1 smoke result: `pass=true`, project 31, steps SHA-256 `e68f08df86f6d7747251e5ad4f84f619f83514da15a6dfd450109822704d9d58`, `step_count=3`, `needs_review_count=3`, `fallback_reason_count=0`
 
 これは生成経路のスモークであり、v1出荷品質の証明ではない。OCRなしで実行したため全stepが `needs_review` になっており、PPTXの機械的な画像/placeholder検査はpassしたが、実画面として妥当かの目視確認は未記録である。最終v1判定には実録画/人間レビューG4/品質gate/PPTX目視確認が別途必要。
 

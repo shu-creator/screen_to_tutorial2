@@ -307,6 +307,9 @@ SLIDE_SPOTLIGHT_OPACITY=0.35
 # セットアップ前提のプリフライト
 pnpm setup:check
 
+# v1通しスモーク（setup check → 生成 → PPTX/動画export → 編集同期）
+pnpm v1:smoke -- --video ./sample.mp4 --outdir ./outputs/v1-smoke --use-audio false --asr-provider none --ocr-provider none
+
 # フルパイプライン（DB + LLM APIキーが必要）
 pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true --asr-provider openai --ocr-provider engine
 
@@ -328,6 +331,7 @@ pnpm eval:export-case -- --case real-app-workflow-04-export-video
 ```
 
 - `pipeline:generate` の出力: `./outputs/project_<id>_steps.json`（`--dry-run` でプロジェクト作成のみ）
+- `v1:smoke` の出力: `./outputs/v1-smoke/v1_smoke_summary.json`（setup check、生成、export、編集同期の通しsummary）
 - `project:export` の出力: `./outputs/project-export/project_<id>_export_summary.json`（PPTX/MP4のstorage URL、ローカルpath、bytes、PPTX内画像/placeholderの `content_check`、`requested_audio_mode`、warnings、`still_image_fallback_count`）
 - `edit:smoke` の出力: `./outputs/edit-smoke/project_<id>_edit_smoke_summary.json`（DB stepのタイトル/説明/ナレーションと、`steps.json` のタイトル/説明/ナレーション/`t_start`/`t_end`/音声モード/レビュー済み状態の同期確認。実行後に元データへ復元）
 - 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`

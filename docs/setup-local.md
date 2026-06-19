@@ -64,7 +64,20 @@ pnpm db:push
 
 ## 4. 生成スモーク
 
-任意の画面録画 `sample.mp4` を用意して実行する:
+任意の画面録画 `sample.mp4` を用意し、v1の機械スモークを実行する:
+
+```bash
+pnpm v1:smoke -- --video ./sample.mp4 --outdir ./outputs/v1-smoke --use-audio false --asr-provider none --ocr-provider none
+```
+
+完了条件:
+
+- `outputs/v1-smoke/v1_smoke_summary.json` が生成される
+- `pass` が `true`
+- `checks` の `setup.check`、`pipeline.generate`、`steps.version`、`steps.count`、`steps.fallback_reasons`、`project.export`、`export.slide.bytes`、`export.slide.content_check`、`export.video.bytes`、`export.video.still_image_fallback_count`、`edit.smoke`、`edit.summary` がすべてpass
+- `artifacts.steps`、`artifacts.export_summary`、`artifacts.edit_smoke_summary` が存在する
+
+個別に生成だけを確認する場合:
 
 ```bash
 pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio false --asr-provider none --ocr-provider llm

@@ -16,6 +16,7 @@
     "pipeline:generate": "tsx server/cli/generatePipeline.ts",
     "project:export": "tsx scripts/export-project.ts",
     "edit:smoke": "tsx scripts/edit-artifact-smoke.ts",
+    "v1:smoke": "tsx scripts/v1-smoke.ts",
     "evidence:extract": "tsx server/cli/extractEvidence.ts",
     "eval": "tsx server/eval/run.ts",
     "eval:audit": "tsx scripts/eval-audit.ts",

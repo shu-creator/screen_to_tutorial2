@@ -54,6 +54,7 @@ async function checkPackageScripts(): Promise<Check> {
     "pipeline:generate",
     "project:export",
     "edit:smoke",
+    "v1:smoke",
     "evidence:extract",
     "eval",
     "eval:audit",
