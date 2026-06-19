@@ -27,7 +27,8 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - [ ] `pnpm edit:smoke -- --project-id <id> --outdir ./outputs/edit-smoke` が `pass=true` / `restored_after_check=true` で完了する
 - [ ] UIでタイトル、説明、ナレーション、`t_start` / `t_end`、ステップ音声モード、レビュー済み状態を編集し、artifact同期を確認する
 - [ ] 評価ケース2本以上でPPTXと動画を生成し、表紙、完了スライド、スピーカーノート警告、無音/元音声、長尺クリップ、drawtext skip時の挙動を確認する
-- [ ] G4 `human_review` を少なくとも出荷判定対象ケースに記録する
+- [ ] G4 `human_review` を評価ケース2本以上の出荷判定対象ケースに記録する
+- [ ] G4記録は `pnpm g4:record -- --case <case-id> --reviewer <name> --reviewed-at YYYY-MM-DD --confirm-human-review --dry-run` で内容確認してから書き込む
 - [ ] README、`.env.example`、`docs/setup-local.md`、このチェックリストが実装と一致している
 
 ## Evidence To Attach

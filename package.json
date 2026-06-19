@@ -24,6 +24,7 @@
     "eval:audit": "tsx scripts/eval-audit.ts",
     "eval:quality-gate": "tsx scripts/eval-quality-gate.ts",
     "eval:export-case": "tsx scripts/export-eval-case.ts",
+    "g4:record": "tsx scripts/g4-record.ts",
     "eval:dataset": "python3 eval/generate_dataset.py",
     "setup:check": "tsx scripts/setup-check.ts"
   },

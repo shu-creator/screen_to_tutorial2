@@ -2,7 +2,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { pathToFileURL } from "url";
-import { auditEvalReadiness, type G4Record } from "./eval-audit";
+import { auditEvalReadiness, readCaseMetas, validateG4Record, type G4Record } from "./eval-audit";
 
 type AuditOptions = {
   json: boolean;
@@ -68,6 +68,7 @@ type ExportQaSummary = {
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const requiredExportQaCases = 2;
+const requiredHumanG4RealCases = 2;
 
 function parseArgs(argv: string[]): AuditOptions {
   const options: AuditOptions = {
@@ -250,6 +251,16 @@ async function checkEvalReadiness(): Promise<ReleaseCheck> {
 async function checkHumanG4(): Promise<ReleaseCheck> {
   const recordsDir = path.join(repoRoot, "eval", "g4", "records");
   const entries = await fs.readdir(recordsDir, { withFileTypes: true }).catch(() => []);
+  let caseMetas: Awaited<ReturnType<typeof readCaseMetas>>;
+  try {
+    caseMetas = await readCaseMetas();
+  } catch (error) {
+    return fail("g4.human_review", `readCaseMetas threw: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const requiredRealCaseIds = caseMetas
+    .filter((meta) => meta.synthetic === false)
+    .map((meta) => meta.case_id)
+    .sort();
   const records: G4Record[] = [];
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
@@ -260,11 +271,19 @@ async function checkHumanG4(): Promise<ReleaseCheck> {
     }
     records.push(parsed.value);
   }
-  const humanRecords = records.filter((record) => record.review_type === "human_review");
-  if (humanRecords.length === 0) {
-    return incomplete("g4.human_review", "no human_review G4 records found; current records are not release G4 evidence");
+  const humanCaseIds = new Set<string>();
+  for (const record of records) {
+    if (record.review_type !== "human_review" || !requiredRealCaseIds.includes(record.case_id)) continue;
+    const invalidReason = await validateG4Record(record);
+    if (!invalidReason) humanCaseIds.add(record.case_id);
   }
-  return pass("g4.human_review", `human_review records: ${humanRecords.map((record) => record.case_id).sort().join(", ")}`);
+  if (humanCaseIds.size < requiredHumanG4RealCases) {
+    return incomplete(
+      "g4.human_review",
+      `required real-case human_review G4 records ${humanCaseIds.size}/${requiredHumanG4RealCases}; current records are not release G4 evidence`,
+    );
+  }
+  return pass("g4.human_review", `required real-case human_review records: ${Array.from(humanCaseIds).sort().join(", ")}`);
 }
 
 async function checkExportQa(): Promise<ReleaseCheck> {

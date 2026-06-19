@@ -334,6 +334,9 @@ pnpm eval
 
 # 評価ケースからPPTX/動画QA用の成果物を生成
 pnpm eval:export-case -- --case real-app-workflow-04-export-video
+
+# 人間レビュー後のG4修正コスト記録（dry-runで確認してから書き込み）
+pnpm g4:record -- --case <case-id> --reviewer <name> --reviewed-at YYYY-MM-DD --confirm-human-review --dry-run
 ```
 
 - `pipeline:generate` の出力: `./outputs/project_<id>_steps.json`（`--dry-run` でプロジェクト作成のみ）
@@ -344,6 +347,7 @@ pnpm eval:export-case -- --case real-app-workflow-04-export-video
 - `edit:smoke` の出力: `./outputs/edit-smoke/project_<id>_edit_smoke_summary.json`（DB stepのタイトル/説明/ナレーションと、`steps.json` のタイトル/説明/ナレーション/`t_start`/`t_end`/音声モード/レビュー済み状態の同期確認。実行後に元データへ復元）
 - 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`
 - `eval:export-case` の出力: `eval/results/export-qa/<case-id>/`（PPTX、MP4、`qa-summary.json`。`eval/results/` はgitignore対象）
+- `g4:record` の出力: `eval/g4/records/<case-id>.json`（`human_review` G4記録。書き込みには `--confirm-human-review`、既存record置換には `--overwrite` が必要）
 - 新規環境の詳細手順: [docs/setup-local.md](./docs/setup-local.md)
 - v1最小リリースチェック: [docs/v1-release-checklist.md](./docs/v1-release-checklist.md)
 

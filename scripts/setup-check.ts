@@ -62,6 +62,7 @@ async function checkPackageScripts(): Promise<Check> {
     "eval:audit",
     "eval:quality-gate",
     "eval:export-case",
+    "g4:record",
     "setup:check",
   ];
   const missing = requiredScripts.filter((script) => !packageJson.scripts?.[script]);

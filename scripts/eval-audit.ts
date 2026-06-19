@@ -183,7 +183,7 @@ export async function auditEvalReadiness(options: {
   };
 }
 
-async function validateG4Record(record: G4Record): Promise<string | null> {
+export async function validateG4Record(record: G4Record): Promise<string | null> {
   if (record.review_type && !["human_review", "ai_estimate"].includes(record.review_type)) {
     return "review_type must be human_review or ai_estimate";
   }
