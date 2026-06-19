@@ -134,6 +134,8 @@ describe("authorSteps", () => {
 
     const result = await authorSteps(evidence);
     expect(result.steps[0].needs_review).toBe(true);
+    expect(result.steps[0].review_reasons).toContain("verification:unverified_ui_label");
+    expect(result.steps[0].review_reasons).toContain("verification:low_confidence");
     expect(result.steps[0].warnings.join()).toContain("架空のボタン");
     expect(result.steps[0].confidence).toBeLessThan(0.5);
   });
@@ -157,6 +159,7 @@ describe("authorSteps", () => {
     const fallback = result.steps.find(step => step.fallback);
     expect(fallback?.source_segment_ids).toEqual(["seg-2"]);
     expect(fallback?.needs_review).toBe(true);
+    expect(fallback?.review_reasons).toEqual(["fallback:unassigned_segment"]);
   });
 
   it("セグメントの整合違反（重複参照・未知ID・順序逆転）のステップは不採用→フォールバック", async () => {
@@ -196,6 +199,7 @@ describe("authorSteps", () => {
     const result = await authorSteps(evidence);
     expect(result.steps).toHaveLength(2);
     expect(result.steps.every(step => step.fallback)).toBe(true);
+    expect(result.steps.every(step => step.review_reasons.includes("fallback:chunk_authoring_failed"))).toBe(true);
   });
 
   it("チャンク分割時は暫定overviewを引き継ぎ、チャンク数分のLLM呼び出しになる", async () => {

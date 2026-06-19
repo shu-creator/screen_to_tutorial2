@@ -13,7 +13,7 @@ import { invokeLLM } from "../_core/llm";
 import { createLogger } from "../_core/logger";
 import { getCachedJson, setCachedJson } from "../_core/pipelineCache";
 import type { EvidenceArtifact, EvidenceSegment } from "../evidence/types";
-import type { Overview } from "../stepsArtifact";
+import type { Overview, ReviewReasonCode } from "../stepsArtifact";
 import {
   buildGlobalContext,
   chunkSegments,
@@ -54,6 +54,7 @@ interface RawAuthoringResponse {
 export interface AuthoredStep extends RawAuthoredStep {
   confidence: number;
   needs_review: boolean;
+  review_reasons: string[];
   warnings: string[];
   /** フォールバック由来かどうか（ログ用） */
   fallback: boolean;
@@ -65,6 +66,8 @@ export interface AuthoringResult {
   discarded: Array<{ segment_id: string; reason: string }>;
   warnings: string[];
 }
+
+type FallbackReasonCode = "chunk_authoring_failed" | "unassigned_segment";
 
 const AUTHORING_SCHEMA = {
   name: "tutorial_authoring",
@@ -226,7 +229,8 @@ async function invokeAuthoringLLM(
 export function buildFallbackStep(
   segment: EvidenceSegment,
   index: number,
-  reason: string
+  reasonCode: FallbackReasonCode,
+  reasonText: string
 ): AuthoredStep {
   return {
     source_segment_ids: [segment.segment_id],
@@ -239,7 +243,8 @@ export function buildFallbackStep(
     cited_ui_labels: [],
     confidence: 0.2,
     needs_review: true,
-    warnings: [`authoring fallback: ${reason.substring(0, 120)}`],
+    review_reasons: [`fallback:${reasonCode}` satisfies ReviewReasonCode],
+    warnings: [`authoring fallback: ${reasonText.substring(0, 120)}`],
     fallback: true,
   };
 }
@@ -385,10 +390,16 @@ export async function authorSteps(
         });
 
         const stepWarnings: string[] = [];
+        const reviewReasons: string[] = [];
         if (labelCheck.unverified.length > 0) {
           stepWarnings.push(
             `OCRで確認できないUIラベル引用: ${labelCheck.unverified.join(", ")}`
           );
+          reviewReasons.push("verification:unverified_ui_label" satisfies ReviewReasonCode);
+        }
+        const stepNeedsReview = needsReview(confidence, labelCheck.unverified.length);
+        if (stepNeedsReview && confidence < 0.5) {
+          reviewReasons.push("verification:low_confidence" satisfies ReviewReasonCode);
         }
 
         allSteps.push({
@@ -412,7 +423,8 @@ export async function authorSteps(
             .map(label => label.trim())
             .filter(Boolean),
           confidence,
-          needs_review: needsReview(confidence, labelCheck.unverified.length),
+          needs_review: stepNeedsReview,
+          review_reasons: Array.from(new Set(reviewReasons)),
           warnings: stepWarnings,
           fallback: false,
         });
@@ -437,9 +449,8 @@ export async function authorSteps(
             buildFallbackStep(
               digest.segment,
               allSteps.length,
-              response
-                ? "LLMがセグメントを割り当てませんでした"
-                : "チャンク執筆失敗"
+              response ? "unassigned_segment" : "chunk_authoring_failed",
+              response ? "LLMがセグメントを割り当てませんでした" : "チャンク執筆失敗"
             )
           );
         }

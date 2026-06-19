@@ -77,6 +77,7 @@ describe("steps artifact v1 -> v2 migration", () => {
     expect(loaded?.steps[0].source_segment_ids).toEqual([]);
     expect(loaded?.steps[0].cited_ui_labels).toEqual([]);
     expect(loaded?.steps[0].needs_review).toBe(false);
+    expect(loaded?.steps[0].review_reasons).toEqual([]);
     // 運用必須フィールドが維持される（audio / legacy id / frame_id）
     expect(loaded?.steps[0].audio_url).toBe("/api/storage/p/a.mp3");
     expect(loaded?.steps[0].legacy_step_db_id).toBe(200);
@@ -86,6 +87,25 @@ describe("steps artifact v1 -> v2 migration", () => {
   it("未知バージョンはサイレントにnullへフォールバックせずエラーになる", async () => {
     await writeArtifactFile(78, { ...v1Artifact, project_id: 78, version: "9.9" });
     await expect(loadStepsArtifact(78)).rejects.toThrow("未対応");
+  });
+
+  it("既存v2 artifactに review_reasons が無くても空配列で読める", async () => {
+    await writeArtifactFile(80, {
+      ...v1Artifact,
+      version: STEPS_ARTIFACT_VERSION,
+      project_id: 80,
+      overview: null,
+      steps: [{
+        ...v1Step,
+        source_segment_ids: ["seg-1"],
+        cited_ui_labels: ["保存"],
+        needs_review: true,
+      }],
+    });
+
+    const loaded = await loadStepsArtifact(80);
+
+    expect(loaded?.steps[0].review_reasons).toEqual([]);
   });
 
   it("invalidate されたartifactは null（artifactなし扱い）", async () => {

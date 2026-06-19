@@ -28,6 +28,13 @@
 - 既存 `meta.json` に `scenario_tags` を追加した。現状の実録画 `real-app-workflow-01` は `silent` / `form_input` / `load_wait` / `modal_or_dropdown` をカバーする。
 - 現在の `pnpm eval:audit -- --allow-incomplete` 結果は未達: 実録画 `1/5`、`narrated` 未カバー、`real-app-workflow-01` の生成済み `steps.json` とG4記録が未作成。Sprint 1完了扱いにはしない。
 
+## Sprint 2 進捗（2026-06-20）
+
+- `needs_review` の理由を `review_reasons` として `steps.json` に保存するようにした。`warnings` は人間向け文面として維持し、`review_reasons` は `fallback:chunk_authoring_failed` / `fallback:unassigned_segment` / `fallback:legacy_step_analysis_failed` / `verification:unverified_ui_label` / `verification:low_confidence` などの理由コードとして扱う。
+- APIと `scripts/model-rematch.ts` のsummaryで `review_reasons` を追えるようにした。UIの要レビューバッジとPPTXスピーカーノートは、配布・レビュー時に読めるよう人間向け `warnings` の表示を維持する。
+- 既存artifactとの後方互換のため、v1/v2読み込み時に `review_reasons: []` を補完する。
+- これは理由追跡の足場であり、Sprint 2完了条件（5ケース平均でG3低位維持、G2退行なし、fallback混入ゼロ）は未達。
+
 ## 全体像
 
 ```

@@ -21,6 +21,28 @@ describe("model-rematch invalid-run detection", () => {
       stepCount: 10,
       needsReviewCount: 9,
       fallbackSuspected: true,
+      reviewReasonCounts: {},
+    });
+  });
+
+  it("counts structured review reasons from steps", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "model-rematch-"));
+    const stepsPath = path.join(dir, "steps.json");
+    await fs.writeFile(
+      stepsPath,
+      JSON.stringify({
+        steps: [
+          { needs_review: true, review_reasons: ["fallback:chunk_authoring_failed"] },
+          { needs_review: true, review_reasons: ["fallback:chunk_authoring_failed", "verification:low_confidence"] },
+        ],
+      }),
+    );
+
+    const stats = await readStepStats(stepsPath, 0.8);
+
+    expect(stats.reviewReasonCounts).toEqual({
+      "fallback:chunk_authoring_failed": 2,
+      "verification:low_confidence": 1,
     });
   });
 

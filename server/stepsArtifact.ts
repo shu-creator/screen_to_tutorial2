@@ -6,7 +6,7 @@ import type { Frame, Project, Step } from "../drizzle/schema";
 const logger = createLogger("StepsArtifact");
 
 /**
- * v2（Phase 2）: overview / source_segment_ids / cited_ui_labels / needs_review を追加。
+ * v2（Phase 2）: overview / source_segment_ids / cited_ui_labels / needs_review / review_reasons を追加。
  * v1 は読み込み時に自動マイグレーションされる。
  * 未知バージョンはエラー（サイレントにnullへフォールバックしない。
  * docs/plans/phase-2-step-authoring.md 参照）。
@@ -15,6 +15,13 @@ export const STEPS_ARTIFACT_VERSION = "2.0";
 const STEPS_ARTIFACT_VERSION_V1 = "1.0";
 /** retry等で明示的に無効化されたartifactのバージョンマーカー */
 const INVALIDATED_VERSION = "invalidated";
+
+export type ReviewReasonCode =
+  | "fallback:chunk_authoring_failed"
+  | "fallback:unassigned_segment"
+  | "fallback:legacy_step_analysis_failed"
+  | "verification:unverified_ui_label"
+  | "verification:low_confidence";
 
 const NormalizedBBoxSchema = z.object({
   x: z.number().min(0).max(1),
@@ -55,6 +62,7 @@ export const StepArtifactSchema = z.object({
   source_segment_ids: z.array(z.string()).optional().default([]),
   cited_ui_labels: z.array(z.string()).optional().default([]),
   needs_review: z.boolean().optional().default(false),
+  review_reasons: z.array(z.string()).optional().default([]),
 });
 
 export type StepArtifact = z.infer<typeof StepArtifactSchema>;
@@ -113,6 +121,7 @@ function migrateV1ToV2(raw: Record<string, unknown>): unknown {
       source_segment_ids: [],
       cited_ui_labels: [],
       needs_review: false,
+      review_reasons: [],
       ...(step as Record<string, unknown>),
     })),
   };
@@ -277,6 +286,7 @@ export function buildStepsArtifactFromDb(
       source_segment_ids: [],
       cited_ui_labels: [],
       needs_review: false,
+      review_reasons: [],
     };
   });
 

@@ -314,7 +314,7 @@ export const appRouter = router({
         if (!project) {
           throw new Error("プロジェクトが見つかりません");
         }
-        const empty: Record<number, { needsReview: boolean; warnings: string[]; confidence: number }> = {};
+        const empty: Record<number, { needsReview: boolean; reviewReasons: string[]; warnings: string[]; confidence: number }> = {};
         const artifact = await loadStepsArtifact(input.projectId).catch(() => null);
         if (!artifact) {
           return { overview: null, reviewByStepId: empty };
@@ -324,6 +324,7 @@ export const appRouter = router({
           if (step.legacy_step_db_id) {
             reviewByStepId[step.legacy_step_db_id] = {
               needsReview: step.needs_review,
+              reviewReasons: step.review_reasons,
               warnings: step.warnings,
               confidence: step.confidence,
             };

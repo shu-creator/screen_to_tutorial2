@@ -1381,11 +1381,11 @@ export async function generateSlides(projectId: number): Promise<string> {
       });
       const artifactStep = artifactStepByDbId.get(step.id);
       if (artifactStep?.needs_review) {
-        const reviewReasons =
+        const reviewText =
           artifactStep.warnings.length > 0
             ? artifactStep.warnings.join(" / ")
             : "信頼度が低い生成結果です";
-        notesText = `【要レビュー】${reviewReasons}\n配布前にこのステップを確認してください。\n\n${notesText}`;
+        notesText = `【要レビュー】${reviewText}\n配布前にこのステップを確認してください。\n\n${notesText}`;
       }
       slide.addNotes(notesText);
     }

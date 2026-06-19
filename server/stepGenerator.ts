@@ -13,6 +13,7 @@ import * as db from "./db";
 import type { Frame } from "../drizzle/schema";
 import {
   STEPS_ARTIFACT_VERSION,
+  type ReviewReasonCode,
   type StepArtifact,
   type StepsArtifact,
   saveStepsArtifact,
@@ -349,6 +350,7 @@ async function generateStepsFromEvidence(
       source_segment_ids: step.source_segment_ids,
       cited_ui_labels: step.cited_ui_labels,
       needs_review: step.needs_review,
+      review_reasons: step.review_reasons,
     };
   });
 
@@ -503,6 +505,7 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
           source_segment_ids: [],
           cited_ui_labels: [],
           needs_review: false,
+          review_reasons: [],
         });
         addRunLog("step.generated", {
           index,
@@ -545,6 +548,7 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
           source_segment_ids: [],
           cited_ui_labels: [],
           needs_review: true,
+          review_reasons: ["fallback:legacy_step_analysis_failed" satisfies ReviewReasonCode],
         });
         addRunLog("step.failed", {
           index,

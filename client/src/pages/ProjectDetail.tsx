@@ -75,7 +75,7 @@ function SortableStepCard({
   onRegenerate: (stepId: number, frameId: number) => void;
   isRegenerating: boolean;
   frame?: FrameData;
-  review?: { needsReview: boolean; warnings: string[]; confidence: number };
+  review?: { needsReview: boolean; reviewReasons: string[]; warnings: string[]; confidence: number };
 }) {
   const {
     attributes,
@@ -160,9 +160,9 @@ function SortableStepCard({
                       </Badge>
                     )}
                   </div>
-                  {review?.needsReview && review.warnings.length > 0 && (
+                  {review?.needsReview && (
                     <p className="text-xs text-destructive mt-1">
-                      {review.warnings.join(" / ")}
+                      {review.warnings.join(" / ") || "信頼度が低いステップです"}
                     </p>
                   )}
                   <CardDescription className="mt-2">

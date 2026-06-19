@@ -17,6 +17,7 @@ type RunRecord = {
   stepCount?: number;
   needsReviewCount?: number;
   fallbackSuspected?: boolean;
+  reviewReasonCounts?: Record<string, number>;
   invalidReasons?: string[];
   metrics?: {
     g1F1?: number;
@@ -253,16 +254,24 @@ export async function readStepStats(stepsPath: string, fallbackThreshold: number
   stepCount: number;
   needsReviewCount: number;
   fallbackSuspected: boolean;
+  reviewReasonCounts: Record<string, number>;
 }> {
   const raw = JSON.parse(await fs.readFile(stepsPath, "utf8")) as {
-    steps?: Array<{ needs_review?: boolean }>;
+    steps?: Array<{ needs_review?: boolean; review_reasons?: string[] }>;
   };
   const steps = Array.isArray(raw.steps) ? raw.steps : [];
   const needsReviewCount = steps.filter((step) => step.needs_review).length;
+  const reviewReasonCounts: Record<string, number> = {};
+  for (const step of steps) {
+    for (const reason of step.review_reasons ?? []) {
+      reviewReasonCounts[reason] = (reviewReasonCounts[reason] ?? 0) + 1;
+    }
+  }
   return {
     stepCount: steps.length,
     needsReviewCount,
     fallbackSuspected: steps.length > 0 && needsReviewCount / steps.length > fallbackThreshold,
+    reviewReasonCounts,
   };
 }
 
@@ -402,6 +411,12 @@ async function writeSummary(root: string, records: RunRecord[]): Promise<void> {
       .filter((record) => record.invalidReasons?.length)
       .map((record) => `- ${record.runId}: ${record.invalidReasons?.join(", ")}`),
     "",
+    "## Review Reasons",
+    "",
+    ...records
+      .filter((record) => record.reviewReasonCounts && Object.keys(record.reviewReasonCounts).length > 0)
+      .map((record) => `- ${record.runId}: ${Object.entries(record.reviewReasonCounts ?? {}).map(([reason, count]) => `${reason}=${count}`).join(", ")}`),
+    "",
   ].join("\n");
 
   const jsonRecords = records.map((record) => ({
@@ -434,6 +449,7 @@ async function completeRecordFromExistingArtifacts(options: CliOptions, record: 
   record.stepCount = stepStats.stepCount;
   record.needsReviewCount = stepStats.needsReviewCount;
   record.fallbackSuspected = stepStats.fallbackSuspected;
+  record.reviewReasonCounts = stepStats.reviewReasonCounts;
 
   record.evalResultPath = path.join(runDir, "eval-result.json");
   await fs.access(record.evalResultPath);
@@ -540,6 +556,7 @@ async function main(): Promise<void> {
         record.stepCount = stepStats.stepCount;
         record.needsReviewCount = stepStats.needsReviewCount;
         record.fallbackSuspected = stepStats.fallbackSuspected;
+        record.reviewReasonCounts = stepStats.reviewReasonCounts;
 
         const beforeEval = await latestJsonFile(path.join(repoRoot, "eval", "results"));
         console.log(`\n=== ${runId}: eval ===`);
