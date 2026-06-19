@@ -17,6 +17,7 @@
     "evidence:extract": "tsx server/cli/extractEvidence.ts",
     "eval": "tsx server/eval/run.ts",
     "eval:audit": "tsx scripts/eval-audit.ts",
+    "eval:quality-gate": "tsx scripts/eval-quality-gate.ts",
     "eval:dataset": "python3 eval/generate_dataset.py"
   },
   "dependencies": {

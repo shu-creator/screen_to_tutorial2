@@ -96,6 +96,7 @@ describe("model-rematch invalid-run detection", () => {
       [
         "LLM invoke failed: 520 api.openai.com",
         'HTTP 429 {"code":"insufficient_quota"}',
+        "# command_timeout=30s",
         "step 520 processed without an HTTP error",
       ].join("\n"),
     );
@@ -105,6 +106,7 @@ describe("model-rematch invalid-run detection", () => {
       "openai_520",
       "openai_429",
       "insufficient_quota",
+      "command_timeout",
     ]);
   });
 });

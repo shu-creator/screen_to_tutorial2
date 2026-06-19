@@ -22,6 +22,9 @@ pnpm eval -- --save-baseline
 # 5. Sprint 1の実録画/G4 readinessを監査
 pnpm eval:audit
 pnpm eval:audit -- --allow-incomplete
+
+# 6. Sprint 2の品質gateを確認
+pnpm eval:quality-gate
 ```
 
 ## データセット構成
@@ -75,3 +78,15 @@ Sprint 1の5ケースは、`real-app-workflow-01` の自作画面収録から意
 - **G4**: 人手修正コスト（自動化対象外。出荷判断時に記録）
 
 G4の記録フォーマットは [eval/g4/README.md](./g4/README.md) と [eval/g4/template.json](./g4/template.json) を参照。
+
+## Sprint 2 Quality Gate
+
+`pnpm eval:quality-gate` は実録画ケースだけを対象に、現在の `eval/results/generated/<case-id>/steps.json` と `eval/baseline.json` を比較する。以下を満たす場合にPASSする:
+
+> **前提**: `eval/results/generated/<case-id>/steps.json` が存在する必要がある。`eval/results/` はgitignore対象なので、新しい環境では先にpipeline runまたは既存artifactの復元で生成物を用意する。
+
+- G2がbaselineから退行していない
+- 5ケース平均G3が `10%` 以下で、baselineから退行していない
+- `review_reasons` に `fallback:*` が混入していない
+
+このgateは品質回帰とfallback混入の検出用であり、`ai_estimate` のG4や合成ナレーション派生ケースの制約を解消するものではない。

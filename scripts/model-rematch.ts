@@ -40,6 +40,7 @@ type CliOptions = {
   minInterval?: string;
   maxFrames?: string;
   fallbackThreshold: number;
+  timeoutSeconds: number;
   continueOnFailure: boolean;
   dryRun: boolean;
   regenerateSummary: boolean;
@@ -57,6 +58,7 @@ function parseArgs(argv: string[]): CliOptions {
     useAudio: "false",
     asrProvider: "none",
     fallbackThreshold: 0.8,
+    timeoutSeconds: 1800,
     continueOnFailure: true,
     dryRun: false,
     regenerateSummary: false,
@@ -110,6 +112,10 @@ function parseArgs(argv: string[]): CliOptions {
         options.fallbackThreshold = Number(requireNext(arg, next));
         i++;
         break;
+      case "--timeout-seconds":
+        options.timeoutSeconds = Number(requireNext(arg, next));
+        i++;
+        break;
       case "--fail-fast":
         options.continueOnFailure = false;
         break;
@@ -136,6 +142,9 @@ function parseArgs(argv: string[]): CliOptions {
   if (!Number.isFinite(options.fallbackThreshold) || options.fallbackThreshold < 0 || options.fallbackThreshold > 1) {
     throw new Error("--fallback-threshold must be a number from 0 to 1");
   }
+  if (!Number.isFinite(options.timeoutSeconds) || options.timeoutSeconds < 1) {
+    throw new Error("--timeout-seconds must be a positive number");
+  }
   return options;
 }
 
@@ -160,6 +169,7 @@ Options:
   --min-interval <value>  Optional min interval
   --max-frames <value>    Optional max frames
   --fallback-threshold <n> Mark runs invalid when needs_review ratio is above n. Default: 0.8
+  --timeout-seconds <n>   Per command timeout for pipeline/eval. Default: 1800
   --fail-fast             Stop on the first failed run
   --dry-run               Print the run plan without calling the pipeline or API
   --regenerate-summary    Rebuild summary from existing run artifacts without calling the pipeline or API`);
@@ -168,7 +178,7 @@ Options:
 async function runCommand(
   command: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; logPath: string },
+  options: { cwd: string; env: NodeJS.ProcessEnv; logPath: string; timeoutSeconds: number },
 ): Promise<{ stdout: string; stderr: string }> {
   await fs.mkdir(path.dirname(options.logPath), { recursive: true });
   const log = await fs.open(options.logPath, "a");
@@ -183,6 +193,13 @@ async function runCommand(
     });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      void log.write(`# command_timeout=${options.timeoutSeconds}s\n`).finally(() => {
+        child.kill("SIGTERM");
+      });
+    }, options.timeoutSeconds * 1000);
 
     child.stdout.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
@@ -197,14 +214,18 @@ async function runCommand(
       void log.write(text);
     });
     child.on("error", async (error) => {
+      clearTimeout(timeout);
       await log.write(`# spawn_error=${error.message}\n`);
       await log.close();
       reject(error);
     });
     child.on("close", async (code) => {
+      clearTimeout(timeout);
       await log.write(`# finished_at=${new Date().toISOString()} exit_code=${code}\n`);
       await log.close();
-      if (code === 0) {
+      if (timedOut) {
+        reject(new Error(`${command} timed out after ${options.timeoutSeconds}s`));
+      } else if (code === 0) {
         resolve({ stdout, stderr });
       } else {
         reject(new Error(`${command} exited with ${code}`));
@@ -303,6 +324,7 @@ export async function readLogSignals(logPath: string): Promise<string[]> {
   if (/(?:LLM invoke failed|HTTP|status|error|code)[^\n]{0,120}\b520\b/i.test(text)) signals.push("openai_520");
   if (/(?:LLM invoke failed|HTTP|status|error|code)[^\n]{0,120}\b429\b/i.test(text)) signals.push("openai_429");
   if (/insufficient_quota/i.test(text)) signals.push("insufficient_quota");
+  if (/command_timeout/i.test(text)) signals.push("command_timeout");
   return signals;
 }
 
@@ -444,6 +466,9 @@ function buildRunRecord(options: CliOptions, model: string, runIndex: number): R
 
 async function completeRecordFromExistingArtifacts(options: CliOptions, record: RunRecord): Promise<void> {
   const runDir = path.join(options.root, record.runId);
+  const pipelineSignals = await readLogSignals(path.join(runDir, "logs", "pipeline.log"));
+  const evalSignals = await readLogSignals(path.join(runDir, "logs", "eval.log"));
+  record.invalidReasons = detectInvalidReasons(record, [...pipelineSignals, ...evalSignals]);
   record.stepsPath = await findStepsFile(record.outDir, false);
   const stepStats = await readStepStats(record.stepsPath, options.fallbackThreshold);
   record.stepCount = stepStats.stepCount;
@@ -452,11 +477,13 @@ async function completeRecordFromExistingArtifacts(options: CliOptions, record: 
   record.reviewReasonCounts = stepStats.reviewReasonCounts;
 
   record.evalResultPath = path.join(runDir, "eval-result.json");
-  await fs.access(record.evalResultPath);
+  const evalResultExists = await fs.access(record.evalResultPath).then(() => true, () => false);
+  if (!evalResultExists) {
+    record.invalidReasons = detectInvalidReasons(record, [...pipelineSignals, ...evalSignals]);
+    throw new Error(`eval-result.json not found for ${record.runId}`);
+  }
   record.metrics = await readMetrics(record.evalResultPath, options.caseId);
 
-  const pipelineSignals = await readLogSignals(path.join(runDir, "logs", "pipeline.log"));
-  const evalSignals = await readLogSignals(path.join(runDir, "logs", "eval.log"));
   record.invalidReasons = detectInvalidReasons(record, [...pipelineSignals, ...evalSignals]);
   record.status = record.invalidReasons.length > 0 ? "invalid" : "passed";
 }
@@ -549,6 +576,7 @@ async function main(): Promise<void> {
           cwd: repoRoot,
           env,
           logPath: pipelineLogPath,
+          timeoutSeconds: options.timeoutSeconds,
         });
 
         record.stepsPath = await findStepsFile(outDir);
@@ -565,6 +593,7 @@ async function main(): Promise<void> {
           cwd: repoRoot,
           env,
           logPath: evalLogPath,
+          timeoutSeconds: options.timeoutSeconds,
         });
         const afterEval = await latestJsonFile(path.join(repoRoot, "eval", "results"));
         if (!afterEval || afterEval === beforeEval) {
@@ -580,6 +609,9 @@ async function main(): Promise<void> {
         record.status = record.invalidReasons.length > 0 ? "invalid" : "passed";
       } catch (error) {
         record.error = error instanceof Error ? error.message : String(error);
+        const pipelineSignals = await readLogSignals(path.join(logDir, "pipeline.log"));
+        const evalSignals = await readLogSignals(path.join(logDir, "eval.log"));
+        record.invalidReasons = detectInvalidReasons(record, [...pipelineSignals, ...evalSignals]);
         console.error(`\n${runId} failed: ${record.error}`);
         if (!options.continueOnFailure) {
           await writeSummary(options.root, records);
