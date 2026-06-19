@@ -36,7 +36,7 @@ function parseArgs(argv: string[]): Options {
     outdir: path.join(repoRoot, "outputs", "v1-smoke"),
     useAudio: false,
     asrProvider: "none",
-    ocrProvider: "llm",
+    ocrProvider: "none",
     audioMode: "silent",
   };
 
@@ -93,7 +93,7 @@ function parseArgs(argv: string[]): Options {
 function printHelp(): void {
   console.log(`Usage:
   pnpm v1:smoke -- --video ./sample.mp4 [--outdir ./outputs/v1-smoke] \\
-    [--use-audio false] [--asr-provider none] [--ocr-provider llm] \\
+    [--use-audio false] [--asr-provider none] [--ocr-provider none] \\
     [--audio-mode silent] [--max-frames 12]
 
 Runs setup:check, pipeline:generate, project:export, and edit:smoke, then writes one summary JSON.

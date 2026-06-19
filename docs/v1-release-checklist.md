@@ -55,9 +55,9 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - Edit smoke command: `pnpm edit:smoke -- --project-id 28 --outdir outputs/edit-smoke`
 - Edit smoke summary: `outputs/edit-smoke/project_28_edit_smoke_summary.json`
 - Edit smoke result: `pass=true`, `restored_after_check=true`, `restore_error=null`
-- V1 smoke command: `pnpm v1:smoke -- --video eval/dataset/synth-login-click-01/video.mp4 --outdir outputs/v1-smoke-suite --use-audio false --asr-provider none --ocr-provider none --audio-mode silent --max-frames 12`
-- V1 smoke summary: `outputs/v1-smoke-suite/v1_smoke_summary.json`
-- V1 smoke result: `pass=true`, project 31, steps SHA-256 `e68f08df86f6d7747251e5ad4f84f619f83514da15a6dfd450109822704d9d58`, `step_count=3`, `needs_review_count=3`, `fallback_reason_count=0`
+- V1 smoke command: `pnpm v1:smoke -- --video eval/dataset/synth-login-click-01/video.mp4 --outdir outputs/v1-smoke-default-check --use-audio false --asr-provider none --audio-mode silent --max-frames 12`
+- V1 smoke summary: `outputs/v1-smoke-default-check/v1_smoke_summary.json`
+- V1 smoke result: `pass=true`, project 32, default `ocr_provider=none`, steps SHA-256 `ffd61bc1e3fff231f764d26a6d59d86cb137c7b5120cea10fc88e5c744c6a945`, `step_count=3`, `needs_review_count=3`, `fallback_reason_count=0`
 
 これは生成経路のスモークであり、v1出荷品質の証明ではない。OCRなしで実行したため全stepが `needs_review` になっており、PPTXの機械的な画像/placeholder検査はpassしたが、実画面として妥当かの目視確認は未記録である。最終v1判定には実録画/人間レビューG4/品質gate/PPTX目視確認が別途必要。
 
