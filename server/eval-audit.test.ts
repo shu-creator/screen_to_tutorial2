@@ -1,5 +1,19 @@
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
 import { describe, expect, it } from "vitest";
 import { auditEvalReadiness, type CaseMeta } from "../scripts/eval-audit";
+
+const zeroCounts = {
+  title_edits: 0,
+  description_edits: 0,
+  narration_edits: 0,
+  timing_edits: 0,
+  citation_edits: 0,
+  step_structure_edits: 0,
+  export_artifact_edits: 0,
+  other_edits: 0,
+};
 
 describe("eval-audit", () => {
   it("reports Sprint 1 gaps when real cases, tags, generated steps, or G4 records are missing", async () => {
@@ -45,16 +59,7 @@ describe("eval-audit", () => {
         reviewer: "reviewer",
         reviewed_at: "2026-06-20",
         source_artifact: `eval/results/generated/${meta.case_id}/steps.json`,
-        counts: {
-          title_edits: 0,
-          description_edits: 0,
-          narration_edits: 0,
-          timing_edits: 0,
-          citation_edits: 0,
-          step_structure_edits: 0,
-          export_artifact_edits: 0,
-          other_edits: 0,
-        },
+        counts: zeroCounts,
         total_manual_edits: 0,
       })),
       generatedCaseIds: caseMetas.map((meta) => meta.case_id),
@@ -101,5 +106,73 @@ describe("eval-audit", () => {
 
     expect(result.pass).toBe(false);
     expect(result.invalidG4Records[0]).toContain("counts missing required keys");
+  });
+
+  it("rejects a G4 source_artifact_sha256 mismatch when the source artifact exists", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "eval-audit-sha-"));
+    const sourcePath = path.join(tempDir, "steps.json");
+    try {
+      await fs.writeFile(sourcePath, "{\"steps\":[]}\n");
+
+      const result = await auditEvalReadiness({
+        caseMetas: [{
+          case_id: "real-01",
+          synthetic: false,
+          scenario_tags: ["silent", "narrated", "form_input", "load_wait", "modal_or_dropdown"],
+        }],
+        g4Records: [{
+          case_id: "real-01",
+          reviewer: "reviewer",
+          reviewed_at: "2026-06-20",
+          source_artifact: sourcePath,
+          source_artifact_sha256: "0".repeat(64),
+          counts: zeroCounts,
+          total_manual_edits: 0,
+        }],
+        generatedCaseIds: ["real-01"],
+        requiredRealCaseCount: 1,
+      });
+
+      expect(result.pass).toBe(false);
+      expect(result.invalidG4Records[0]).toContain("source_artifact_sha256 mismatch");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts a matching G4 source_artifact_sha256 when the source artifact exists", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "eval-audit-sha-"));
+    const sourcePath = path.join(tempDir, "steps.json");
+    try {
+      await fs.writeFile(sourcePath, "{\"steps\":[]}\n");
+      const { createHash } = await import("crypto");
+      const actualSha256 = createHash("sha256")
+        .update(await fs.readFile(sourcePath))
+        .digest("hex");
+
+      const result = await auditEvalReadiness({
+        caseMetas: [{
+          case_id: "real-01",
+          synthetic: false,
+          scenario_tags: ["silent", "narrated", "form_input", "load_wait", "modal_or_dropdown"],
+        }],
+        g4Records: [{
+          case_id: "real-01",
+          reviewer: "reviewer",
+          reviewed_at: "2026-06-20",
+          source_artifact: sourcePath,
+          source_artifact_sha256: actualSha256,
+          counts: zeroCounts,
+          total_manual_edits: 0,
+        }],
+        generatedCaseIds: ["real-01"],
+        requiredRealCaseCount: 1,
+      });
+
+      expect(result.pass).toBe(true);
+      expect(result.invalidG4Records).toEqual([]);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

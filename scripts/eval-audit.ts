@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import { pathToFileURL } from "url";
@@ -16,6 +17,7 @@ export type G4Record = {
   reviewer?: string;
   reviewed_at?: string;
   source_artifact?: string;
+  source_artifact_sha256?: string;
   exported_artifacts?: string[];
   counts?: Record<string, number>;
   total_manual_edits?: number;
@@ -69,6 +71,12 @@ async function readJson<T>(filePath: string): Promise<T> {
 
 async function fileExists(filePath: string): Promise<boolean> {
   return fs.access(filePath).then(() => true, () => false);
+}
+
+async function sha256File(filePath: string): Promise<string> {
+  const hash = crypto.createHash("sha256");
+  hash.update(await fs.readFile(filePath));
+  return hash.digest("hex");
 }
 
 export async function readCaseMetas(root = datasetDir): Promise<CaseMeta[]> {
@@ -133,7 +141,7 @@ export async function auditEvalReadiness(options: {
       casesMissingG4.push(caseId);
       continue;
     }
-    const invalidReason = validateG4Record(record);
+    const invalidReason = await validateG4Record(record);
     if (invalidReason) {
       invalidG4Records.push(`${caseId}: ${invalidReason}`);
     }
@@ -175,7 +183,7 @@ export async function auditEvalReadiness(options: {
   };
 }
 
-function validateG4Record(record: G4Record): string | null {
+async function validateG4Record(record: G4Record): Promise<string | null> {
   if (record.review_type && !["human_review", "ai_estimate"].includes(record.review_type)) {
     return "review_type must be human_review or ai_estimate";
   }
@@ -189,6 +197,15 @@ function validateG4Record(record: G4Record): string | null {
   if (countValues.some((value) => !Number.isInteger(value) || value < 0)) return "counts must be non-negative integers";
   const sum = countValues.reduce((total, value) => total + value, 0);
   if (record.total_manual_edits !== sum) return "total_manual_edits does not match counts sum";
+  if (record.source_artifact_sha256 && record.source_artifact) {
+    const sourcePath = path.resolve(repoRoot, record.source_artifact);
+    if (await fileExists(sourcePath)) {
+      const actualSha256 = await sha256File(sourcePath);
+      if (actualSha256 !== record.source_artifact_sha256) {
+        return `source_artifact_sha256 mismatch: expected ${record.source_artifact_sha256}, actual ${actualSha256}`;
+      }
+    }
+  }
   return null;
 }
 

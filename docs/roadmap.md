@@ -48,6 +48,14 @@
 - 要レビュー件数、次の要レビューを編集する導線、ステップ単位のレビュー済み操作を追加した。レビュー済みにするとartifactの `needs_review` / `review_reasons` / `warnings` をクリアする。
 - これは編集UXの主要操作を揃えた状態だが、生成後に実際に人手で出荷可能状態まで直す通しQAは未実施。
 
+## Sprint 4 進捗（2026-06-20）
+
+- `pnpm eval:export-case` を追加し、ローカルに存在する評価ケースの `video.mp4` と `eval/results/generated/<case-id>/steps.json` からPPTX、MP4、`qa-summary.json` を `eval/results/export-qa/<case-id>/` に生成できるようにした。DB状態に依存せず、Sprint 4の出力QAを再実行できる作業台とする。ただし動画と `eval/results/` はgitignore対象なので、新規環境では `meta.json` の `regenerate_command` や `pnpm pipeline:generate` による入力復元が先に必要。
+- `real-app-workflow-04-export-video` と `real-app-workflow-05-narrated-create-project` の2ケースでPPTX/動画を生成した。`qa-summary.json` では入力steps/videoのSHA-256一致、PPTX表紙、完了スライド、スライド数、スピーカーノート警告数、動画長、音声ストリーム有無、音声内容を記録する。
+- 代表確認: 2ケースのMP4から5秒時点のフレームを抽出して非空の元録画クリップを確認。`real-app-workflow-05-narrated-create-project` はPPTXをsofficeでPDF化し、表紙/ステップ/完了スライドを画像化して読み取り可能なことを確認した。
+- `drawtext` なし、またはフォント指定が通らない環境では、動画intro/outro title cardをスキップしてwarningに残し、ステップクリップ本体は生成継続する仕様とした。現環境ではtitle card 2件がskipされ、両ケースともstep clipsは生成された。
+- G4記録の `exported_artifacts` とnotesを2ケース分更新した。ただし `review_type` は `ai_estimate` のままであり、人間が出荷可能状態まで直した `human_review` ではない。
+
 ## 全体像
 
 ```

@@ -6,7 +6,11 @@
   "reviewed_at": "2026-06-20",
   "source_artifact": "eval/results/generated/real-app-workflow-05-narrated-create-project/steps.json",
   "source_artifact_sha256": "4ee96a9211506affc2898d2bfce8a0cd887af7bc58385c148e594486d446ab0f",
-  "exported_artifacts": [],
+  "exported_artifacts": [
+    "eval/results/export-qa/real-app-workflow-05-narrated-create-project/real-app-workflow-05-narrated-create-project.pptx",
+    "eval/results/export-qa/real-app-workflow-05-narrated-create-project/real-app-workflow-05-narrated-create-project.mp4",
+    "eval/results/export-qa/real-app-workflow-05-narrated-create-project/qa-summary.json"
+  ],
   "counts": {
     "title_edits": 2,
     "description_edits": 2,
@@ -21,8 +25,7 @@
   "blocking_issues": [
     "Screen content is a real recording excerpt, but narration is a synthetic macOS say overlay and should not be confused with a human-narrated capture.",
     "Generated artifact merges title entry with file selection and omits the upload wait as a non-step interval.",
-    "This is an AI-estimated artifact-only G4 record, not a human_review G4 record.",
-    "PPTX/video export QA was not performed."
+    "This is an AI-estimated Codex QA record, not a human_review G4 record."
   ],
-  "notes": "Compared generated steps against the narrated create-project derivative ground truth. Main fixes match the silent create-project subclip, with additional narration wording work because the clip includes an audio narration track."
+  "notes": "Compared generated steps against the narrated create-project derivative ground truth. Export QA generated PPTX/video via pnpm eval:export-case. qa-summary reports matching steps/video sha256, PPTX cover/completion slides, 6/6 expected slides, 2 speaker-note review warnings, MP4 duration 34.23s, source_audio mode, and drawtext title cards skipped with warnings while step clips rendered. Spot-checked video and PPTX-rendered cover/step/completion pages; they were nonblank and readable."
 }

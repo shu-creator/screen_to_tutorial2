@@ -25,6 +25,9 @@ pnpm eval:audit -- --allow-incomplete
 
 # 6. Sprint 2の品質gateを確認
 pnpm eval:quality-gate
+
+# 7. Sprint 4のPPTX/動画QA用に評価ケースから成果物を生成
+pnpm eval:export-case -- --case real-app-workflow-04-export-video --case real-app-workflow-05-narrated-create-project
 ```
 
 ## データセット構成
@@ -78,6 +81,12 @@ Sprint 1の5ケースは、`real-app-workflow-01` の自作画面収録から意
 - **G4**: 人手修正コスト（自動化対象外。出荷判断時に記録）
 
 G4の記録フォーマットは [eval/g4/README.md](./g4/README.md) と [eval/g4/template.json](./g4/template.json) を参照。
+
+## Sprint 4 Export QA
+
+`pnpm eval:export-case -- --case <case-id>` は、ローカルに存在する `eval/dataset/<case-id>/video.mp4` と `eval/results/generated/<case-id>/steps.json` からPPTX、MP4、`qa-summary.json` を `eval/results/export-qa/<case-id>/` に生成する。動画と `eval/results/` はgitignore対象なので、新規環境では `meta.json` の `regenerate_command` や `pnpm pipeline:generate` で入力を先に復元する。恒久記録は `eval/g4/records/<case-id>.json` と `docs/roadmap.md` に残す。
+
+`qa-summary.json` は入力steps/videoのSHA-256一致、PPTXの表紙/完了スライド/スピーカーノート警告数、MP4の長さ/音声ストリーム有無/音声内容/title card生成状況を記録する。ffmpegに `drawtext` がない、またはフォント指定が通らない環境では、動画のintro/outro title cardをスキップしてwarningに残し、ステップクリップ本体は生成を継続する仕様とする。
 
 ## Sprint 2 Quality Gate
 

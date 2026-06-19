@@ -313,10 +313,14 @@ pnpm evidence:extract -- --video ./sample.mp4 --outdir ./outputs/evidence
 # 評価（合成データセット生成 → 測定）
 pnpm eval:dataset
 pnpm eval
+
+# 評価ケースからPPTX/動画QA用の成果物を生成
+pnpm eval:export-case -- --case real-app-workflow-04-export-video
 ```
 
 - `pipeline:generate` の出力: `./outputs/project_<id>_steps.json`（`--dry-run` でプロジェクト作成のみ）
 - 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`
+- `eval:export-case` の出力: `eval/results/export-qa/<case-id>/`（PPTX、MP4、`qa-summary.json`。`eval/results/` はgitignore対象）
 
 ## 今後の計画
 

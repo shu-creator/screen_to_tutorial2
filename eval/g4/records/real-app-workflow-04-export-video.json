@@ -6,7 +6,11 @@
   "reviewed_at": "2026-06-20",
   "source_artifact": "eval/results/generated/real-app-workflow-04-export-video/steps.json",
   "source_artifact_sha256": "515c480bde2c988db3c1793fb39153f938350a575cbd749af5cd6a773688e505",
-  "exported_artifacts": [],
+  "exported_artifacts": [
+    "eval/results/export-qa/real-app-workflow-04-export-video/real-app-workflow-04-export-video.pptx",
+    "eval/results/export-qa/real-app-workflow-04-export-video/real-app-workflow-04-export-video.mp4",
+    "eval/results/export-qa/real-app-workflow-04-export-video/qa-summary.json"
+  ],
   "counts": {
     "title_edits": 2,
     "description_edits": 2,
@@ -20,8 +24,7 @@
   "total_manual_edits": 12,
   "blocking_issues": [
     "Generated artifact misses the explicit tutorial-video generation action and the long video-generation wait interval.",
-    "This is an AI-estimated artifact-only G4 record, not a human_review G4 record.",
-    "PPTX/video export QA was not performed."
+    "This is an AI-estimated Codex QA record, not a human_review G4 record."
   ],
-  "notes": "Compared generated steps against the export-video subclip ground truth. Main fixes are adding the video-generation action and long wait interval, then aligning the final download confirmation timing."
+  "notes": "Compared generated steps against the export-video subclip ground truth. Export QA generated PPTX/video via pnpm eval:export-case. qa-summary reports matching steps/video sha256, PPTX cover/completion slides, 5/5 expected slides, 0 speaker-note review warnings, MP4 duration 21.47s, synthetic_silence audio track, and drawtext title cards skipped with warnings while step clips rendered. Spot-checked a video frame; it was nonblank and showed the source app screen."
 }
