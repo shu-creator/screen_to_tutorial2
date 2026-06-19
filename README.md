@@ -225,7 +225,7 @@ DEV_USER_NAME=Local Dev User
 ```env
 # LLM: openai | gemini | claude
 LLM_PROVIDER=openai
-LLM_MODEL=gpt-5.2
+LLM_MODEL=gpt-5.4
 LLM_API_KEY=
 OPENAI_API_KEY=
 GEMINI_API_KEY=
@@ -304,6 +304,9 @@ SLIDE_SPOTLIGHT_OPACITY=0.35
 ## CLI（最小動作確認）
 
 ```bash
+# セットアップ前提のプリフライト
+pnpm setup:check
+
 # フルパイプライン（DB + LLM APIキーが必要）
 pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true --asr-provider openai --ocr-provider engine
 
@@ -321,6 +324,8 @@ pnpm eval:export-case -- --case real-app-workflow-04-export-video
 - `pipeline:generate` の出力: `./outputs/project_<id>_steps.json`（`--dry-run` でプロジェクト作成のみ）
 - 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`
 - `eval:export-case` の出力: `eval/results/export-qa/<case-id>/`（PPTX、MP4、`qa-summary.json`。`eval/results/` はgitignore対象）
+- 新規環境の詳細手順: [docs/setup-local.md](./docs/setup-local.md)
+- v1最小リリースチェック: [docs/v1-release-checklist.md](./docs/v1-release-checklist.md)
 
 ## 今後の計画
 

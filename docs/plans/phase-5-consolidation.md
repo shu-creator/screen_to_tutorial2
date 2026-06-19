@@ -7,9 +7,10 @@
 - 5.3 完了: `scripts/extract_frames.py` 削除、requirements.txt刷新（opencv/numpy不要に）、
   孤児化した `downloadFile` 削除。シーン検出フォールバックは計画どおり1リリース維持
 - 5.4 完了: README全面更新（パイプライン説明・構造・CLI・env）
-- **5.1（steps.json単一ソース化）は保留**: 計画どおり「Phase 3/4完了後のクライアント実装を見て
-  決定」とした結果、実データでのv2運用実績がない段階でDB縮退を行うリスクが利益を上回ると判断。
-  二重管理は編集ルートの同期+retry無効化（Phase 2）で当面の整合は担保されている
+- **5.1（steps.json単一ソース化）はv1では全面移行しない**: Phase 3/4の編集・出力QA導線を確認した結果、
+  v1はartifact-firstで読み書きしつつ既存DB `steps` テーブルとの同期互換を維持する方針に固定。
+  DB縮退、安定 `step_id` 基準の音声紐付け全面移行、旧単フレーム再生成の完全退役はpost-v1に回す。
+  二重管理は編集ルートの同期+retry無効化（Phase 2）で当面の整合を担保する
 規模: M
 依存: Phase 2 以降いつでも着手可。ただし 5.1 は Phase 3/4 のファイル改修と衝突しやすいため実施タイミングを調整する
 
@@ -20,11 +21,12 @@
 ## スコープ
 
 ### 5.1 steps.json 単一ソース化
-- 現状: DB `steps` テーブルと steps.json の二重管理。編集・削除・並べ替え・再生成のたびに両方を同期（`stepsArtifact.ts` / `routers.ts`）。`persistStepsToDb()` はdelete&insertでstep IDが変わり、`audioUrl` 等の紐付けが切れる経路がある
-- 変更:
-  - steps.json v2 を唯一の真実とし、編集系ルートは artifact のみを更新
-  - DB `steps` は読み取り表示用のミラーに縮退（artifact更新時に再構築）するか、クライアントが artifact を直接読む形に変更してテーブル自体を非推奨化。**どちらにするかはPhase 3/4完了後のクライアント実装を見て決定**（tRPCの既存クエリ互換を優先）
-  - 音声ファイル（audioUrl/audioKey）の紐付けは `step_id`（artifact側の安定ID）基準に統一し、再生成時に音声が失われない/孤児にならないようにする
+- 現状: DB `steps` テーブルと steps.json の二重管理。編集・削除・並べ替え・再生成のたびに両方を同期（`stepsArtifact.ts` / `routers.ts`）。`persistStepsToDb()` はdelete&insertでstep IDが変わり、`audioUrl` 等の紐付けが切れる経路がある。
+- v1判断:
+  - steps.json v2を出力・編集・PPTX/動画生成の優先ソースにする
+  - DB `steps` は既存UI/tRPC互換のため維持する
+  - artifact編集とDB同期の既存安全策（artifact update、retry時無効化、v1/v2 migration）をv1の整合境界とする
+  - 音声ファイル（audioUrl/audioKey）の安定 `step_id` 基準への全面移行はpost-v1で実施する
 
 ### 5.2 アップロードのディスクストリーミング
 - 現状: `uploadRoute.ts` は「streaming to avoid memory issues」とコメントしつつ chunks 配列に最大500MBをメモリバッファ。`videoProcessor` / `asr` も動画全体を Buffer で読む（NFR-5違反）

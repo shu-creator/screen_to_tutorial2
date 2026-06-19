@@ -19,7 +19,8 @@
     "eval:audit": "tsx scripts/eval-audit.ts",
     "eval:quality-gate": "tsx scripts/eval-quality-gate.ts",
     "eval:export-case": "tsx scripts/export-eval-case.ts",
-    "eval:dataset": "python3 eval/generate_dataset.py"
+    "eval:dataset": "python3 eval/generate_dataset.py",
+    "setup:check": "tsx scripts/setup-check.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

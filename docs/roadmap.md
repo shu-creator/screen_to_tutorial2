@@ -56,6 +56,15 @@
 - `drawtext` なし、またはフォント指定が通らない環境では、動画intro/outro title cardをスキップしてwarningに残し、ステップクリップ本体は生成継続する仕様とした。現環境ではtitle card 2件がskipされ、両ケースともstep clipsは生成された。
 - G4記録の `exported_artifacts` とnotesを2ケース分更新した。ただし `review_type` は `ai_estimate` のままであり、人間が出荷可能状態まで直した `human_review` ではない。
 
+## Sprint 5 進捗（2026-06-20）
+
+- `.env.example` とREADMEの既定 `LLM_MODEL` を `gpt-5.4` に揃えた。
+- `pnpm setup:check` を追加し、新規環境のプリフライトとして Node.js / pnpm / ffmpeg / ffprobe / 主要npm scripts / `.env.example` / セットアップdocsの存在を確認できるようにした。
+- `docs/setup-local.md` を追加し、依存関係、`.env`、DB初期化、`pipeline:generate` による生成スモーク、評価/出力QA、開発サーバー起動までの手順を固定した。
+- `docs/v1-release-checklist.md` を追加し、v1 tag前に必要な検証、添付証跡、既知の非blocking caveatを整理した。
+- `steps.json` 単一ソース化の最終判断: v1では全面移行しない。artifact-firstで読み書きしつつ既存DB `steps` テーブル同期互換を維持し、DB縮退・安定 `step_id` 基準の音声紐付け全面移行・旧単フレーム再生成退役はpost-v1に回す。
+- Sprint 5完了条件のうち、文書・プリフライト・判断固定は進んだ。ただし実際の新規環境でDB/APIキーを設定して `pipeline:generate` からPPTX/動画出力まで通す検証は未実施。
+
 ## 全体像
 
 ```
