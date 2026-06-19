@@ -2,8 +2,33 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "vitest";
+import type { CaseMeta, G4Record } from "../scripts/eval-audit";
 import { assertSafeOutdir, buildChildEnv } from "../scripts/v1-fresh-env-smoke";
-import { checkV1Smoke, shouldExitWithFailure, topLevelStatus } from "../scripts/v1-release-audit";
+import { assessHumanG4, checkV1Smoke, shouldExitWithFailure, topLevelStatus } from "../scripts/v1-release-audit";
+
+const validCounts = {
+  title_edits: 0,
+  description_edits: 0,
+  narration_edits: 0,
+  timing_edits: 0,
+  citation_edits: 0,
+  step_structure_edits: 0,
+  export_artifact_edits: 0,
+  other_edits: 0,
+};
+
+function humanG4(caseId: string, overrides: Partial<G4Record> = {}): G4Record {
+  return {
+    case_id: caseId,
+    review_type: "human_review",
+    reviewer: "human-reviewer",
+    reviewed_at: "2026-06-20",
+    source_artifact: `eval/results/generated/${caseId}/steps.json`,
+    counts: validCounts,
+    total_manual_edits: 0,
+    ...overrides,
+  };
+}
 
 describe("v1 release audit", () => {
   it("--allow-incomplete does not suppress fail checks", () => {
@@ -117,6 +142,76 @@ describe("v1 release audit", () => {
     const result = await checkV1Smoke(summaryPath, "smoke.fresh", true);
 
     expect(result.status).toBe("pass");
+  });
+
+  it("rejects non-human, synthetic, and unrelated G4 records as release evidence", async () => {
+    const caseMetas: CaseMeta[] = [
+      { case_id: "real-01", synthetic: false },
+      { case_id: "real-02", synthetic: false },
+      { case_id: "real-03" },
+      { case_id: "synthetic-01", synthetic: true },
+    ];
+
+    const incomplete = await assessHumanG4(caseMetas, [
+      humanG4("real-01", { review_type: "ai_estimate" }),
+      humanG4("synthetic-01"),
+      humanG4("real-03"),
+      humanG4("unrelated-real-case"),
+    ]);
+    expect(incomplete.status).toBe("incomplete");
+    expect(incomplete.detail).toContain("0/2");
+  });
+
+  it("excludes invalid human_review G4 records from the release count", async () => {
+    const caseMetas: CaseMeta[] = [
+      { case_id: "real-01", synthetic: false },
+      { case_id: "real-02", synthetic: false },
+    ];
+
+    const invalidRecord = await assessHumanG4(caseMetas, [
+      humanG4("real-01"),
+      humanG4("real-02", { total_manual_edits: 1 }),
+    ]);
+    expect(invalidRecord.status).toBe("incomplete");
+    expect(invalidRecord.detail).toContain("1/2");
+  });
+
+  it("deduplicates human_review G4 records by case id", async () => {
+    const caseMetas: CaseMeta[] = [
+      { case_id: "real-01", synthetic: false },
+      { case_id: "real-02", synthetic: false },
+    ];
+
+    const duplicateOnly = await assessHumanG4(caseMetas, [
+      humanG4("real-01"),
+      humanG4("real-01"),
+    ]);
+    expect(duplicateOnly.status).toBe("incomplete");
+    expect(duplicateOnly.detail).toContain("1/2");
+  });
+
+  it("passes with two valid human_review records for required real cases", async () => {
+    const caseMetas: CaseMeta[] = [
+      { case_id: "real-01", synthetic: false },
+      { case_id: "real-02", synthetic: false },
+    ];
+
+    const passed = await assessHumanG4(caseMetas, [
+      humanG4("real-02"),
+      humanG4("real-01"),
+    ]);
+    expect(passed.status).toBe("pass");
+    expect(passed.detail).toContain("real-01, real-02");
+  });
+
+  it("keeps empty case metadata incomplete instead of passing on unrelated records", async () => {
+    const result = await assessHumanG4([], [
+      humanG4("unrelated-real-case"),
+      humanG4("another-unrelated-real-case"),
+    ]);
+
+    expect(result.status).toBe("incomplete");
+    expect(result.detail).toContain("0/2");
   });
 
   it("rejects the outputs root as a fresh-env smoke outdir", () => {

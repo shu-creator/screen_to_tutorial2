@@ -2,7 +2,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { pathToFileURL } from "url";
-import { auditEvalReadiness, readCaseMetas, validateG4Record, type G4Record } from "./eval-audit";
+import { auditEvalReadiness, readCaseMetas, validateG4Record, type CaseMeta, type G4Record } from "./eval-audit";
 
 type AuditOptions = {
   json: boolean;
@@ -11,9 +11,9 @@ type AuditOptions = {
   freshEnvSummary: string;
 };
 
-type CheckStatus = "pass" | "fail" | "incomplete";
+export type CheckStatus = "pass" | "fail" | "incomplete";
 
-type ReleaseCheck = {
+export type ReleaseCheck = {
   name: string;
   status: CheckStatus;
   detail: string;
@@ -257,10 +257,6 @@ async function checkHumanG4(): Promise<ReleaseCheck> {
   } catch (error) {
     return fail("g4.human_review", `readCaseMetas threw: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const requiredRealCaseIds = caseMetas
-    .filter((meta) => meta.synthetic === false)
-    .map((meta) => meta.case_id)
-    .sort();
   const records: G4Record[] = [];
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
@@ -271,6 +267,17 @@ async function checkHumanG4(): Promise<ReleaseCheck> {
     }
     records.push(parsed.value);
   }
+  return assessHumanG4(caseMetas, records);
+}
+
+export async function assessHumanG4(
+  caseMetas: CaseMeta[],
+  records: G4Record[],
+): Promise<ReleaseCheck> {
+  const requiredRealCaseIds = caseMetas
+    .filter((meta) => meta.synthetic === false)
+    .map((meta) => meta.case_id)
+    .sort();
   const humanCaseIds = new Set<string>();
   for (const record of records) {
     if (record.review_type !== "human_review" || !requiredRealCaseIds.includes(record.case_id)) continue;
