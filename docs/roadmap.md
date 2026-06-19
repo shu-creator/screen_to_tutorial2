@@ -21,6 +21,13 @@
 | 4 | PPTX/動画の出力QA | 評価ケース2本以上でPPTXと動画を目視QAし、G4を記録する。表紙、完了スライド、スピーカーノート警告、音ズレ、長尺ステップ、無音/元音声/TTS、drawtextなし環境を仕様化する。 |
 | 5 | 負債整理とv1完成 | 新規環境でセットアップから生成まで通る。`steps.json` 単一ソース化の最終判断、旧フォールバック/未使用ヒューリスティック/古いdocs整理、`.env.example`、README、セットアップ手順、最小リリースチェックリストを更新する。 |
 
+## Sprint 1 進捗（2026-06-20）
+
+- `pnpm eval:audit` を追加し、実録画5本、必須 `scenario_tags`、生成済み `steps.json`、G4記録の有無を機械判定できるようにした。
+- G4の人手修正箇所数フォーマットを `eval/g4/README.md` と `eval/g4/template.json` に固定した。
+- 既存 `meta.json` に `scenario_tags` を追加した。現状の実録画 `real-app-workflow-01` は `silent` / `form_input` / `load_wait` / `modal_or_dropdown` をカバーする。
+- 現在の `pnpm eval:audit -- --allow-incomplete` 結果は未達: 実録画 `1/5`、`narrated` 未カバー、`real-app-workflow-01` の生成済み `steps.json` とG4記録が未作成。Sprint 1完了扱いにはしない。
+
 ## 全体像
 
 ```

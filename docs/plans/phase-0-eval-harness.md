@@ -3,7 +3,12 @@
 ステータス: 実装済み（2026-06-12）。ただし以下は**実データ待ち**:
 - 現行パイプラインの実ベースライン測定（LLM APIキー未設定のため。`eval/baseline.json` は pending マーカー）
 - 早期実験（bbox+前フレーム注入の効果測定）— 同上
-- 実録画ケースの追加（合成3ケースで開始。追加手順は `eval/README.md`）
+- 実録画ケースの追加（合成3ケース+実録画1ケースで開始。Sprint 1 readiness は `pnpm eval:audit` で監査）
+
+Sprint 1補足（2026-06-20）:
+- `eval/dataset/*/meta.json` に `scenario_tags` を追加し、実録画5本が `silent` / `narrated` / `form_input` / `load_wait` / `modal_or_dropdown` をカバーするか監査できるようにした。
+- G4記録フォーマットを `eval/g4/README.md` と `eval/g4/template.json` に固定した。
+- 現状は実録画が `real-app-workflow-01` の1本のみで、`narrated` タグ、実録画5本、実録画の生成済み `steps.json`、G4記録が未達。完了扱いにしない。
 
 規模: M
 依存: なし
@@ -26,7 +31,8 @@
   - フォーム入力中心（タイピング合体の検証用）
   - モーダル/ドロップダウン遷移を含むもの（フェード遷移の検証用）
   - 短尺（〜2分）と中尺（〜10分）
-- 置き場所: `eval/dataset/<case-id>/`（`ground_truth.json` + `meta.json` はコミット、動画実体は `.gitignore` にエントリを追加した上で `eval/dataset/<case-id>/video.mp4` に置き、`meta.json` にSHA-256と入手方法を記録する）
+- 置き場所: `eval/dataset/<case-id>/`（`ground_truth.json` + `meta.json` はコミット、動画実体は `.gitignore` にエントリを追加した上で `eval/dataset/<case-id>/video.mp4` に置き、`meta.json` に `synthetic: false`、SHA-256、入手方法を記録する）
+- `meta.json` には `scenario_tags` を入れる。Sprint 1の必須タグは `silent` / `narrated` / `form_input` / `load_wait` / `modal_or_dropdown`。
 
 ### 2. 正解データスキーマ（`ground_truth.json`）
 ```jsonc
@@ -50,6 +56,7 @@
 - **G2 UIラベル正確性**: 生成文（title/operation/instruction）から「」『』等で引用されたUIラベルを抽出し、正解 `ui_labels` ∪ OCR実測テキストに含まれる率。**分母0の規約**: 現行プロンプトは括弧引用を指示していないため、ベースラインでは引用0件のステップが多発しうる。引用0件のステップはG2の分母から除外し、代わりに「引用なしステップ率」を必ず併記する（引用ゼロでG2が見かけ100%になる退化を防ぐ）
 - **G3 非ステップ混入率**: 正解で `non_step: true` の区間にマッチした生成ステップ数 / 生成ステップ総数
 - G4（人手修正コスト）は自動化せず、評価実行時に記録欄を出力するに留める
+- G4（人手修正コスト）は `eval/g4/records/<case-id>.json` に記録する。カテゴリとカウント規則は `eval/g4/README.md` を参照。
 
 ### 4. 評価ランナー（`pnpm eval`）
 - 入力: 評価セットのケースID（省略時は全件）

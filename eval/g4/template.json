@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "case_id": "<case-id>",
+  "reviewer": "",
+  "reviewed_at": "YYYY-MM-DD",
+  "source_artifact": "eval/results/generated/<case-id>/steps.json",
+  "exported_artifacts": [],
+  "counts": {
+    "title_edits": 0,
+    "description_edits": 0,
+    "narration_edits": 0,
+    "timing_edits": 0,
+    "citation_edits": 0,
+    "step_structure_edits": 0,
+    "export_artifact_edits": 0,
+    "other_edits": 0
+  },
+  "total_manual_edits": 0,
+  "blocking_issues": [],
+  "notes": ""
+}

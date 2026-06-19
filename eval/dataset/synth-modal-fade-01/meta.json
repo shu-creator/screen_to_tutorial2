@@ -8,5 +8,9 @@
   "duration_ms": 8600,
   "fps": 10,
   "resolution": "1280x720",
-  "has_narration": false
+  "has_narration": false,
+  "scenario_tags": [
+    "silent",
+    "modal_or_dropdown"
+  ]
 }

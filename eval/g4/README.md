@@ -1,0 +1,23 @@
+# G4 人手修正コスト記録
+
+G4 は自動計測しない。評価ケースごとに、生成後に出荷可能状態へ直すための人手修正箇所数を `eval/g4/records/<case-id>.json` に記録する。
+
+## 記録タイミング
+
+1. `pnpm pipeline:generate` で対象ケースの `steps.json` と成果物を生成する
+2. UIまたはartifactを人手でレビューし、出荷可能状態まで修正する
+3. 修正内容をカテゴリ別に数えて、`template.json` を複製して記録する
+4. `pnpm eval:audit` で実録画ケース、生成済みsteps、G4記録の有無を確認する
+
+`template.json` の `<case-id>`、`reviewer`、`reviewed_at`、`source_artifact` は必ず実値に置き換える。`pnpm eval:audit` は空テンプレートのままのG4記録を未達扱いにする。
+
+## カウント規則
+
+- 1つのステップでタイトルと説明を直した場合は `title_edits=1`、`description_edits=1`
+- `t_start` と `t_end` を同じステップで直した場合は `timing_edits=1`
+- ナレーション文の修正は `narration_edits`
+- 引用UIラベルの追加・削除・置換は `citation_edits`
+- 不要ステップの削除、ステップ分割、ステップ統合は `step_structure_edits`
+- PPTX/動画の出力後にだけ見つかった修正は `export_artifact_edits`
+
+`total_manual_edits` は上記カテゴリの合計。カテゴリ外の修正を数えた場合は `other_edits` に入れ、`notes` に理由を書く。
