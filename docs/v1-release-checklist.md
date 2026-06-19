@@ -17,6 +17,8 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - [ ] `pnpm eval:audit` が通る
 - [ ] `pnpm eval:quality-gate` が通る
 - [ ] `pnpm pipeline:generate --video <sample.mp4> --outdir ./outputs --use-audio false --asr-provider none --ocr-provider llm` で `project_<id>_steps.json` が生成される
+- [ ] `pnpm project:export -- --project-id <id> --audio-mode silent --outdir ./outputs/project-export` でPPTX/動画のsummaryが生成される
+- [ ] PPTXを開き、各ステップ画像がプレースホルダーではなく実画面になっていることを目視確認する
 - [ ] 生成結果がfallback-heavyではないことを確認する
 - [ ] UIでタイトル、説明、ナレーション、`t_start` / `t_end`、ステップ音声モード、レビュー済み状態を編集し、artifact同期を確認する
 - [ ] 評価ケース2本以上でPPTXと動画を生成し、表紙、完了スライド、スピーカーノート警告、無音/元音声、長尺クリップ、drawtext skip時の挙動を確認する
@@ -29,8 +31,24 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - `pnpm setup:check` 出力
 - `pnpm check` / `pnpm test` / `pnpm eval:audit` / `pnpm eval:quality-gate` 出力
 - `outputs/project_<id>_steps.json` のパスとSHA-256
+- `outputs/project-export/project_<id>_export_summary.json` のパスと、その時点のSHA-256
 - 出力QAの `eval/results/export-qa/<case-id>/qa-summary.json`
 - G4記録の対象ケース、review_type、総修正件数
+
+## Latest Local Smoke Evidence
+
+2026-06-20時点の既存ローカル環境では、合成評価動画で生成経路のスモークを通した。
+
+- Input: `eval/dataset/synth-login-click-01/video.mp4`
+- Command: `pnpm pipeline:generate --video eval/dataset/synth-login-click-01/video.mp4 --outdir outputs/v1-smoke --use-audio false --asr-provider none --ocr-provider none --max-frames 12`
+- Output: `outputs/v1-smoke/project_28_steps.json`
+- SHA-256: `2e752ae86dd7e89b55c06425de73a3a0b96bf292cff1910209a08053689969c9`
+- Result: `version=2.0`, configured `LLM_MODEL=gpt-5.4`, `steps=3`, `needs_review=3`
+- Export command: `pnpm project:export -- --project-id 28 --audio-mode silent --outdir outputs/project-export`
+- Export summary: `outputs/project-export/project_28_export_summary.json`
+- Export result: PPTX 154503 bytes, MP4 72262 bytes, `still_image_fallback_count=0`
+
+これは生成経路のスモークであり、v1出荷品質の証明ではない。OCRなしで実行したため全stepが `needs_review` になっており、PPTXのステップ画像プレースホルダー有無の目視確認も未記録である。最終v1判定には実録画/人間レビューG4/品質gate/PPTX目視確認が別途必要。
 
 ## Known Non-Release-Blocking Caveats
 

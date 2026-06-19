@@ -14,6 +14,7 @@
     "test:coverage": "vitest run --coverage",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
     "pipeline:generate": "tsx server/cli/generatePipeline.ts",
+    "project:export": "tsx scripts/export-project.ts",
     "evidence:extract": "tsx server/cli/extractEvidence.ts",
     "eval": "tsx server/eval/run.ts",
     "eval:audit": "tsx scripts/eval-audit.ts",

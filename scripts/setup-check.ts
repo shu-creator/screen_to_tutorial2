@@ -52,6 +52,7 @@ async function checkPackageScripts(): Promise<Check> {
     "build",
     "db:push",
     "pipeline:generate",
+    "project:export",
     "evidence:extract",
     "eval",
     "eval:audit",

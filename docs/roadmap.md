@@ -63,7 +63,9 @@
 - `docs/setup-local.md` を追加し、依存関係、`.env`、DB初期化、`pipeline:generate` による生成スモーク、評価/出力QA、開発サーバー起動までの手順を固定した。
 - `docs/v1-release-checklist.md` を追加し、v1 tag前に必要な検証、添付証跡、既知の非blocking caveatを整理した。
 - `steps.json` 単一ソース化の最終判断: v1では全面移行しない。artifact-firstで読み書きしつつ既存DB `steps` テーブル同期互換を維持し、DB縮退・安定 `step_id` 基準の音声紐付け全面移行・旧単フレーム再生成退役はpost-v1に回す。
-- Sprint 5完了条件のうち、文書・プリフライト・判断固定は進んだ。ただし実際の新規環境でDB/APIキーを設定して `pipeline:generate` からPPTX/動画出力まで通す検証は未実施。
+- ローカル既存環境で `eval/dataset/synth-login-click-01/video.mp4` を使った生成スモークを実施した。`pnpm pipeline:generate --video eval/dataset/synth-login-click-01/video.mp4 --outdir outputs/v1-smoke --use-audio false --asr-provider none --ocr-provider none --max-frames 12` で `outputs/v1-smoke/project_28_steps.json` を生成し、`pnpm project:export -- --project-id 28 --audio-mode silent --outdir outputs/project-export` でPPTX/動画summaryを生成した。
+- スモーク証跡: `project_28_steps.json` SHA-256 `2e752ae86dd7e89b55c06425de73a3a0b96bf292cff1910209a08053689969c9`。`project_28_export_summary.json` は再実行ごとにtimestampと出力URLが変わるため固定SHAは記録しない。直近runではPPTX 154503 bytes、MP4 72262 bytes、動画 `still_image_fallback_count=0`。
+- このスモークは生成経路の確認であり、出荷品質の確認ではない。設定値は `LLM_MODEL=gpt-5.4`。OCRなしで実行したため `needs_review=3/3`、review reasonsは `verification:unverified_ui_label` / `verification:low_confidence`。PPTXのステップ画像プレースホルダー有無の目視確認は未記録。Sprint 5完了条件の「新規環境でセットアップから生成まで通る」はまだ未検証。
 
 ## 全体像
 

@@ -310,6 +310,9 @@ pnpm setup:check
 # フルパイプライン（DB + LLM APIキーが必要）
 pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true --asr-provider openai --ocr-provider engine
 
+# 生成済みprojectからPPTX/動画を出力
+pnpm project:export -- --project-id <id> --audio-mode silent --outdir ./outputs/project-export
+
 # 証拠抽出のみ（DB・LLM不要）
 pnpm evidence:extract -- --video ./sample.mp4 --outdir ./outputs/evidence
 
@@ -322,6 +325,7 @@ pnpm eval:export-case -- --case real-app-workflow-04-export-video
 ```
 
 - `pipeline:generate` の出力: `./outputs/project_<id>_steps.json`（`--dry-run` でプロジェクト作成のみ）
+- `project:export` の出力: `./outputs/project-export/project_<id>_export_summary.json`（PPTX/MP4のstorage URL、ローカルpath、bytes、`content_check`、`requested_audio_mode`、warnings、`still_image_fallback_count`）
 - 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`
 - `eval:export-case` の出力: `eval/results/export-qa/<case-id>/`（PPTX、MP4、`qa-summary.json`。`eval/results/` はgitignore対象）
 - 新規環境の詳細手順: [docs/setup-local.md](./docs/setup-local.md)

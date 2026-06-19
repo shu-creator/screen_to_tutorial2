@@ -76,6 +76,19 @@ pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio false
 - 生成されたJSONに `version: "2.0"` と `steps` 配列がある
 - 実行中にLLM API 429/520やfallback-heavy runが出た場合は成功扱いにしない
 
+生成されたproject idからPPTX/動画出力も確認する:
+
+```bash
+pnpm project:export -- --project-id <id> --audio-mode silent --outdir ./outputs/project-export
+```
+
+完了条件:
+
+- `outputs/project-export/project_<id>_export_summary.json` が生成される
+- ローカルストレージではsummary内の `slide.bytes` と `video.bytes` が `null` でなく0より大きい。リモートストレージURLの場合は `bytes` が `null` になるため、URL先のファイルサイズをストレージ側で確認する
+- PPTXを開き、各ステップ画像がプレースホルダーではなく実画面になっていることを目視確認する
+- `video.still_image_fallback_count` と `video.warnings` を確認し、出荷判定時はG4に反映する
+
 ASRとTTSも含めて確認する場合:
 
 ```bash
