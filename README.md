@@ -313,6 +313,9 @@ pnpm v1:smoke -- --video ./sample.mp4 --outdir ./outputs/v1-smoke --use-audio fa
 # v1リリース監査（未達条件を含めて確認）
 pnpm v1:release-audit -- --allow-incomplete
 
+# 一時チェックアウトでv1通しスモークを実行（依存インストールを伴う）
+pnpm v1:fresh-env-smoke -- --video ./sample.mp4 --allow-install --install-mode offline
+
 # フルパイプライン（DB + LLM APIキーが必要）
 pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true --asr-provider openai --ocr-provider engine
 
@@ -336,6 +339,7 @@ pnpm eval:export-case -- --case real-app-workflow-04-export-video
 - `pipeline:generate` の出力: `./outputs/project_<id>_steps.json`（`--dry-run` でプロジェクト作成のみ）
 - `v1:smoke` の出力: `./outputs/v1-smoke/v1_smoke_summary.json`（setup check、生成、export、編集同期の通しsummary）
 - `v1:release-audit` の出力: v1リリース条件のPASS/INCOMPLETE一覧。`human_review` G4と新規環境スモーク証跡が無い場合は未達として扱う。
+- `v1:fresh-env-smoke` の出力: `./outputs/v1-fresh-env-smoke/v1_smoke_summary.json`（HEADから作った一時チェックアウト、依存インストール、v1通しスモークの証跡）
 - `project:export` の出力: `./outputs/project-export/project_<id>_export_summary.json`（PPTX/MP4のstorage URL、ローカルpath、bytes、PPTX内画像/placeholderの `content_check`、`requested_audio_mode`、warnings、`still_image_fallback_count`）
 - `edit:smoke` の出力: `./outputs/edit-smoke/project_<id>_edit_smoke_summary.json`（DB stepのタイトル/説明/ナレーションと、`steps.json` のタイトル/説明/ナレーション/`t_start`/`t_end`/音声モード/レビュー済み状態の同期確認。実行後に元データへ復元）
 - 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`

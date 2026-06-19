@@ -22,6 +22,14 @@ type ReleaseCheck = {
 type V1SmokeSummary = {
   pass?: boolean;
   project_id?: number | null;
+  environment?: {
+    kind?: string;
+    source_commit?: string;
+    dependency_install?: {
+      command?: string;
+      mode?: string;
+    };
+  };
   options?: {
     ocr_provider?: string;
   };
@@ -204,6 +212,17 @@ export async function checkV1Smoke(
   if (missingArtifacts.length > 0) reasons.push(`missing artifacts: ${missingArtifacts.join(", ")}`);
   if (requireFreshEvidence && summary.options?.ocr_provider !== "none") {
     reasons.push(`expected fresh smoke to use deterministic ocr_provider=none, got ${summary.options?.ocr_provider ?? "missing"}`);
+  }
+  if (requireFreshEvidence) {
+    if (summary.environment?.kind !== "fresh_checkout") {
+      reasons.push(`expected environment.kind=fresh_checkout, got ${summary.environment?.kind ?? "missing"}`);
+    }
+    if (!summary.environment?.source_commit) {
+      reasons.push("missing environment.source_commit");
+    }
+    if (!summary.environment?.dependency_install?.command) {
+      reasons.push("missing environment.dependency_install.command");
+    }
   }
 
   if (reasons.length > 0) {

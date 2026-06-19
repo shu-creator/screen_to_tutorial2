@@ -56,6 +56,7 @@ async function checkPackageScripts(): Promise<Check> {
     "edit:smoke",
     "v1:smoke",
     "v1:release-audit",
+    "v1:fresh-env-smoke",
     "evidence:extract",
     "eval",
     "eval:audit",

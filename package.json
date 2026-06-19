@@ -18,6 +18,7 @@
     "edit:smoke": "tsx scripts/edit-artifact-smoke.ts",
     "v1:smoke": "tsx scripts/v1-smoke.ts",
     "v1:release-audit": "tsx scripts/v1-release-audit.ts",
+    "v1:fresh-env-smoke": "tsx scripts/v1-fresh-env-smoke.ts",
     "evidence:extract": "tsx server/cli/extractEvidence.ts",
     "eval": "tsx server/eval/run.ts",
     "eval:audit": "tsx scripts/eval-audit.ts",
