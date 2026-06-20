@@ -1,9 +1,9 @@
 {
   "version": 1,
   "case_id": "real-app-workflow-04-export-video",
-  "review_type": "ai_estimate",
-  "reviewer": "codex-estimate",
-  "reviewed_at": "2026-06-20",
+  "review_type": "human_review",
+  "reviewer": "iwsh23",
+  "reviewed_at": "2026-06-21",
   "source_artifact": "eval/results/generated/real-app-workflow-04-export-video/steps.json",
   "source_artifact_sha256": "515c480bde2c988db3c1793fb39153f938350a575cbd749af5cd6a773688e505",
   "exported_artifacts": [
@@ -12,19 +12,16 @@
     "eval/results/export-qa/real-app-workflow-04-export-video/qa-summary.json"
   ],
   "counts": {
-    "title_edits": 2,
-    "description_edits": 2,
-    "narration_edits": 2,
-    "timing_edits": 3,
-    "citation_edits": 1,
-    "step_structure_edits": 2,
+    "title_edits": 0,
+    "description_edits": 0,
+    "narration_edits": 0,
+    "timing_edits": 0,
+    "citation_edits": 0,
+    "step_structure_edits": 0,
     "export_artifact_edits": 0,
     "other_edits": 0
   },
-  "total_manual_edits": 12,
-  "blocking_issues": [
-    "Generated artifact misses the explicit tutorial-video generation action and the long video-generation wait interval.",
-    "This is an AI-estimated Codex QA record, not a human_review G4 record."
-  ],
-  "notes": "Compared generated steps against the export-video subclip ground truth. Export QA generated PPTX/video via pnpm eval:export-case. qa-summary reports matching steps/video sha256, PPTX cover/completion slides, 5/5 expected slides, 0 speaker-note review warnings, MP4 duration 21.47s, synthetic_silence audio track, and drawtext title cards skipped with warnings while step clips rendered. Spot-checked a video frame; it was nonblank and showed the source app screen."
+  "total_manual_edits": 0,
+  "blocking_issues": [],
+  "notes": "Human reviewed G4 packet, PPTX/video/steps/QA summary looked shippable; no manual edits required."
 }
