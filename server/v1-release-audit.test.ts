@@ -12,8 +12,10 @@ import {
   buildReleaseCheckTasks,
   checkQualityGate,
   checkV1Smoke,
+  nextActionForCheck,
   shouldExitWithFailure,
   topLevelStatus,
+  withNextAction,
 } from "../scripts/v1-release-audit";
 
 const validCounts = {
@@ -205,6 +207,56 @@ describe("v1 release audit", () => {
       "g4.human_review",
       "smoke.fresh_environment",
     ]);
+  });
+
+  it("adds actionable next steps to incomplete release checks", () => {
+    const g4 = withNextAction({
+      name: "g4.human_review",
+      status: "incomplete",
+      detail: "required real-case human_review G4 records 0/2",
+    });
+    expect(g4.next_action).toContain("pnpm g4:review-pack -- --release-candidates --overwrite");
+    expect(g4.next_action).toContain("requires a real human reviewer");
+    expect(g4.next_action).toContain("--dry-run");
+    expect(g4.next_action).toContain("pnpm g4:record");
+
+    const brokenG4 = withNextAction({
+      name: "g4.human_review",
+      status: "fail",
+      detail: "could not read eval/g4/records/broken.json",
+    });
+    expect(brokenG4.next_action).toContain("Inspect `eval/g4/records/`");
+    expect(brokenG4.next_action).not.toContain("pnpm g4:record");
+
+    const fresh = nextActionForCheck({
+      name: "smoke.fresh_environment",
+      status: "incomplete",
+      detail: "missing summary",
+    });
+    expect(fresh).toContain("explicit approval for dependency installation");
+    expect(fresh).toContain("pnpm v1:fresh-env-smoke");
+
+    const passed = withNextAction({
+      name: "model.default",
+      status: "pass",
+      detail: "ok",
+    });
+    expect(passed.next_action).toBeUndefined();
+  });
+
+  it("keeps next-action guidance available for other non-pass release checks", () => {
+    for (const name of [
+      "smoke.current_environment",
+      "export.qa",
+      "eval.quality_gate",
+      "eval.readiness",
+      "model.default",
+      "release.docs",
+    ]) {
+      expect(withNextAction({ name, status: "fail", detail: "needs action" }).next_action).toBeTruthy();
+    }
+
+    expect(withNextAction({ name: "unknown.check", status: "fail", detail: "needs action" }).next_action).toBeUndefined();
   });
 
   it("turns quality-gate runtime errors into release-audit failures", async () => {

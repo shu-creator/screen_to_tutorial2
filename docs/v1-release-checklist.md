@@ -40,7 +40,7 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - `outputs/<chosen-v1-smoke-outdir>/v1_smoke_summary.json` のパスと、その時点のSHA-256
 - `pnpm v1:fresh-env-smoke -- --preflight-only` 出力（前提確認のみ。fresh checkout証跡ではない）
 - `outputs/v1-fresh-env-smoke/v1_smoke_summary.json` の `environment` と `fresh_env_commands`
-- `pnpm v1:release-audit -- --json` の出力
+- `pnpm v1:release-audit -- --json` の出力（FAIL/INCOMPLETE checkは `next_action` を含む）
 - `outputs/project_<id>_steps.json` のパスとSHA-256
 - `outputs/project-export/project_<id>_export_summary.json` のパスと、その時点のSHA-256
 - `outputs/edit-smoke/project_<id>_edit_smoke_summary.json` のパスと、その時点のSHA-256

@@ -348,7 +348,7 @@ pnpm g4:record -- --case <case-id> --reviewer <name> --reviewed-at YYYY-MM-DD --
 
 - `pipeline:generate` の出力: `./outputs/project_<id>_steps.json`（`--dry-run` でプロジェクト作成のみ）
 - `v1:smoke` の出力: `./outputs/v1-smoke/v1_smoke_summary.json`（setup check、生成、export、編集同期の通しsummary）
-- `v1:release-audit` の出力: v1リリース条件のPASS/INCOMPLETE一覧。`human_review` G4と新規環境スモーク証跡が無い場合は未達として扱う。
+- `v1:release-audit` の出力: v1リリース条件のPASS/FAIL/INCOMPLETE一覧。FAIL/INCOMPLETE checkには次に実行する `next:` を添える。`human_review` G4と新規環境スモーク証跡が無い場合は未達として扱う。
 - `v1:fresh-env-smoke -- --preflight-only` の出力: fresh-env本実行前の前提確認（動画、clean worktree、`DATABASE_URL`、workdir）。依存インストールやsummary生成はしない。
 - `v1:fresh-env-smoke` の出力: `./outputs/v1-fresh-env-smoke/v1_smoke_summary.json`（HEADから作った一時チェックアウト、依存インストール、v1通しスモークの証跡）
 - `project:export` の出力: `./outputs/project-export/project_<id>_export_summary.json`（PPTX/MP4のstorage URL、ローカルpath、bytes、PPTX内画像/placeholderの `content_check`、`requested_audio_mode`、warnings、`still_image_fallback_count`）

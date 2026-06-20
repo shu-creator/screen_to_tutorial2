@@ -18,6 +18,7 @@ export type ReleaseCheck = {
   name: string;
   status: CheckStatus;
   detail: string;
+  next_action?: string;
 };
 
 export type ReleaseCheckTask = {
@@ -387,7 +388,7 @@ export function buildReleaseCheckTasks(options: AuditOptions): ReleaseCheckTask[
 async function runAudit(options: AuditOptions): Promise<{ pass: boolean; status: CheckStatus; checks: ReleaseCheck[] }> {
   const checks: ReleaseCheck[] = [];
   for (const task of buildReleaseCheckTasks(options)) {
-    checks.push(await task.run());
+    checks.push(withNextAction(await task.run()));
   }
   const status = topLevelStatus(checks);
   return {
@@ -395,6 +396,38 @@ async function runAudit(options: AuditOptions): Promise<{ pass: boolean; status:
     status,
     checks,
   };
+}
+
+export function withNextAction(check: ReleaseCheck): ReleaseCheck {
+  if (check.status === "pass") return check;
+  const nextAction = nextActionForCheck(check);
+  return nextAction ? { ...check, next_action: nextAction } : check;
+}
+
+export function nextActionForCheck(check: ReleaseCheck): string | undefined {
+  if (check.status === "pass") return undefined;
+  switch (check.name) {
+    case "g4.human_review":
+      return check.status === "incomplete"
+        ? "Run `pnpm g4:review-pack -- --release-candidates --overwrite`. This step requires a real human reviewer: do not run `g4:record` unless a human has completed the G4 worksheet and corrected the case to shippable state. After human review, verify with `pnpm g4:record -- --case <case-id> --reviewer <name> --reviewed-at YYYY-MM-DD --confirm-human-review --dry-run`, then write by re-running without `--dry-run` and adding `--overwrite`."
+        : "Inspect `eval/g4/records/` and `eval/dataset/` for unreadable JSON or invalid case metadata, repair the data issue, then re-run `pnpm v1:release-audit`.";
+    case "smoke.fresh_environment":
+      return "After explicit approval for dependency installation and a real `DATABASE_URL`, run `pnpm v1:fresh-env-smoke -- --video eval/dataset/synth-login-click-01/video.mp4 --allow-install --install-mode offline`.";
+    case "smoke.current_environment":
+      return "Regenerate current-environment smoke evidence with `pnpm v1:smoke -- --video eval/dataset/synth-login-click-01/video.mp4 --outdir outputs/v1-smoke-default-check --use-audio false --asr-provider none --audio-mode silent --max-frames 12`.";
+    case "export.qa":
+      return "Regenerate at least 2 export QA cases with `pnpm eval:export-case -- --case <real-case-id>` and inspect the resulting PPTX/video/qa-summary.";
+    case "eval.quality_gate":
+      return "Run `pnpm eval:quality-gate` and fix any reported G2/G3/fallback regression before release.";
+    case "eval.readiness":
+      return "Run `pnpm eval:audit` and restore the required 5 real cases, generated steps, and G4 record placeholders.";
+    case "model.default":
+      return "Keep `.env.example` aligned with the v1 model decision: `LLM_MODEL=gpt-5.4`.";
+    case "release.docs":
+      return "Restore the required release docs: `.env.example`, README, setup-local, v1 checklist, and roadmap.";
+    default:
+      return undefined;
+  }
 }
 
 export function topLevelStatus(checks: ReleaseCheck[]): CheckStatus {
@@ -415,6 +448,9 @@ function printAudit(result: { pass: boolean; status: CheckStatus; checks: Releas
   for (const check of result.checks) {
     const prefix = check.status === "pass" ? "PASS" : check.status === "fail" ? "FAIL" : "INCOMPLETE";
     console.log(`${prefix} ${check.name}: ${check.detail}`);
+    if (check.next_action) {
+      console.log(`  next: ${check.next_action}`);
+    }
   }
 }
 
