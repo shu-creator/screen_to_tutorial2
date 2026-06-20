@@ -24,6 +24,12 @@ pnpm g4:review-pack -- \
   --overwrite
 ```
 
+出力QA済みの実録画ケースから出荷判定用の候補を選ぶ場合は `--release-candidates` を使う。validなPPTX/動画QA summaryと成果物があり、まだ `human_review` G4が無いケースだけを既定2件選ぶ。
+
+```bash
+pnpm g4:review-pack -- --release-candidates --overwrite
+```
+
 既定出力は `outputs/g4-review-packets/<case-id>.md`。このMarkdownを見ながら人間がPPTX/動画/stepsを確認し、修正後に `pnpm g4:record -- --dry-run ...` で記録内容を確認する。
 
 ```bash

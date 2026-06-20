@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "vitest";
-import { buildReviewPack, writeReviewPack } from "../scripts/g4-review-pack";
+import { buildReviewPack, selectReleaseCandidateCases, writeReviewPack } from "../scripts/g4-review-pack";
 
 describe("g4 review pack helper", () => {
   it("builds a worksheet without creating a human_review record", async () => {
@@ -114,6 +114,147 @@ describe("g4 review pack helper", () => {
       await expect(writeReviewPack(pack, true)).rejects.toThrow("--outdir must be inside outputs/");
     } finally {
       await fs.rm(tempOutdir, { recursive: true, force: true });
+    }
+  });
+
+  it("selects release candidates from valid export QA cases without human_review records", async () => {
+    const caseId = "tmp-review-pack-release-candidate";
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "g4-review-pack-candidates-"));
+    const datasetRoot = path.join(tempRoot, "dataset");
+    const exportRoot = path.join(tempRoot, "export-qa");
+    const recordsDir = path.join(tempRoot, "records");
+    const datasetDir = path.join(datasetRoot, caseId);
+    const exportDir = path.join(exportRoot, caseId);
+    const g4Path = path.join(recordsDir, `${caseId}.json`);
+
+    try {
+      await fs.mkdir(datasetDir, { recursive: true });
+      await fs.mkdir(exportDir, { recursive: true });
+      await fs.mkdir(recordsDir, { recursive: true });
+      await fs.writeFile(path.join(datasetDir, "meta.json"), `${JSON.stringify({
+        case_id: caseId,
+        synthetic: false,
+      })}\n`);
+      await fs.writeFile(path.join(exportDir, `${caseId}.pptx`), "pptx");
+      await fs.writeFile(path.join(exportDir, `${caseId}.mp4`), "mp4");
+      await fs.writeFile(path.join(exportDir, "qa-summary.json"), `${JSON.stringify({
+        case_id: caseId,
+        artifacts: {
+          pptx: path.join(exportDir, `${caseId}.pptx`),
+          video: path.join(exportDir, `${caseId}.mp4`),
+        },
+        qa_checks: {
+          pptx: {
+            cover_slide: true,
+            completion_slide: true,
+            slide_count: 3,
+            expected_slide_count: 3,
+          },
+          video: {
+            duration_sec: 2.5,
+            audio_stream: true,
+          },
+        },
+      })}\n`);
+
+      await expect(selectReleaseCandidateCases(99, { datasetRoot, exportRoot, recordsDir })).resolves.toContain(caseId);
+
+      await fs.writeFile(g4Path, `${JSON.stringify({ review_type: "ai_estimate" })}\n`);
+
+      await expect(selectReleaseCandidateCases(99, { datasetRoot, exportRoot, recordsDir })).resolves.toContain(caseId);
+
+      await fs.writeFile(g4Path, `${JSON.stringify({ review_type: "human_review" })}\n`);
+      await expect(selectReleaseCandidateCases(99, { datasetRoot, exportRoot, recordsDir })).resolves.not.toContain(caseId);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does not select export QA summaries without explicit slide counts", async () => {
+    const caseId = "tmp-review-pack-missing-slide-counts";
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "g4-review-pack-candidates-"));
+    const datasetRoot = path.join(tempRoot, "dataset");
+    const exportRoot = path.join(tempRoot, "export-qa");
+    const recordsDir = path.join(tempRoot, "records");
+    const datasetDir = path.join(datasetRoot, caseId);
+    const exportDir = path.join(exportRoot, caseId);
+
+    try {
+      await fs.mkdir(datasetDir, { recursive: true });
+      await fs.mkdir(exportDir, { recursive: true });
+      await fs.mkdir(recordsDir, { recursive: true });
+      await fs.writeFile(path.join(datasetDir, "meta.json"), `${JSON.stringify({
+        case_id: caseId,
+        synthetic: false,
+      })}\n`);
+      await fs.writeFile(path.join(exportDir, `${caseId}.pptx`), "pptx");
+      await fs.writeFile(path.join(exportDir, `${caseId}.mp4`), "mp4");
+      await fs.writeFile(path.join(exportDir, "qa-summary.json"), `${JSON.stringify({
+        case_id: caseId,
+        artifacts: {
+          pptx: path.join(exportDir, `${caseId}.pptx`),
+          video: path.join(exportDir, `${caseId}.mp4`),
+        },
+        qa_checks: {
+          pptx: {
+            cover_slide: true,
+            completion_slide: true,
+          },
+          video: {
+            duration_sec: 2.5,
+            audio_stream: true,
+          },
+        },
+      })}\n`);
+
+      await expect(selectReleaseCandidateCases(99, { datasetRoot, exportRoot, recordsDir })).resolves.not.toContain(caseId);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does not select export QA summaries with zero slides", async () => {
+    const caseId = "tmp-review-pack-zero-slides";
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "g4-review-pack-candidates-"));
+    const datasetRoot = path.join(tempRoot, "dataset");
+    const exportRoot = path.join(tempRoot, "export-qa");
+    const recordsDir = path.join(tempRoot, "records");
+    const datasetDir = path.join(datasetRoot, caseId);
+    const exportDir = path.join(exportRoot, caseId);
+
+    try {
+      await fs.mkdir(datasetDir, { recursive: true });
+      await fs.mkdir(exportDir, { recursive: true });
+      await fs.mkdir(recordsDir, { recursive: true });
+      await fs.writeFile(path.join(datasetDir, "meta.json"), `${JSON.stringify({
+        case_id: caseId,
+        synthetic: false,
+      })}\n`);
+      await fs.writeFile(path.join(exportDir, `${caseId}.pptx`), "pptx");
+      await fs.writeFile(path.join(exportDir, `${caseId}.mp4`), "mp4");
+      await fs.writeFile(path.join(exportDir, "qa-summary.json"), `${JSON.stringify({
+        case_id: caseId,
+        artifacts: {
+          pptx: path.join(exportDir, `${caseId}.pptx`),
+          video: path.join(exportDir, `${caseId}.mp4`),
+        },
+        qa_checks: {
+          pptx: {
+            cover_slide: true,
+            completion_slide: true,
+            slide_count: 0,
+            expected_slide_count: 0,
+          },
+          video: {
+            duration_sec: 2.5,
+            audio_stream: true,
+          },
+        },
+      })}\n`);
+
+      await expect(selectReleaseCandidateCases(99, { datasetRoot, exportRoot, recordsDir })).resolves.not.toContain(caseId);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
 });

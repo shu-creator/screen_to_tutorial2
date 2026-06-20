@@ -339,6 +339,9 @@ pnpm eval:export-case -- --case real-app-workflow-04-export-video
 # 人間G4レビュー用の作業シートを生成
 pnpm g4:review-pack -- --case real-app-workflow-04-export-video --overwrite
 
+# 出力QA済みの実録画ケースから、人間G4レビュー候補2件の作業シートを生成
+pnpm g4:review-pack -- --release-candidates --overwrite
+
 # 人間レビュー後のG4修正コスト記録（dry-runで確認してから書き込み）
 pnpm g4:record -- --case <case-id> --reviewer <name> --reviewed-at YYYY-MM-DD --confirm-human-review --dry-run
 ```
@@ -353,6 +356,7 @@ pnpm g4:record -- --case <case-id> --reviewer <name> --reviewed-at YYYY-MM-DD --
 - 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`
 - `eval:export-case` の出力: `eval/results/export-qa/<case-id>/`（PPTX、MP4、`qa-summary.json`。`eval/results/` はgitignore対象）
 - `g4:review-pack` の出力: `outputs/g4-review-packets/<case-id>.md`（人間レビュー用の作業シート。`human_review` G4記録は書かない）
+- `g4:review-pack -- --release-candidates` は、validな出力QAと成果物があり、まだ `human_review` G4が無い実録画ケースから既定2件を選ぶ。
 - `g4:record` の出力: `eval/g4/records/<case-id>.json`（`human_review` G4記録。書き込みには `--confirm-human-review`、既存record置換には `--overwrite` が必要）
 - 新規環境の詳細手順: [docs/setup-local.md](./docs/setup-local.md)
 - v1最小リリースチェック: [docs/v1-release-checklist.md](./docs/v1-release-checklist.md)

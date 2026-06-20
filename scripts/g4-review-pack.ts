@@ -11,6 +11,8 @@ type Options = {
   cases: string[];
   outdir: string;
   overwrite: boolean;
+  releaseCandidates: boolean;
+  limit: number;
 };
 
 type StepsArtifact = {
@@ -79,6 +81,17 @@ type ExistingG4Record = {
   notes?: string;
 };
 
+type CaseMeta = {
+  case_id?: string;
+  synthetic?: boolean;
+};
+
+type CandidateRoots = {
+  datasetRoot: string;
+  exportRoot: string;
+  recordsDir: string;
+};
+
 export type ReviewPack = {
   caseId: string;
   markdown: string;
@@ -90,6 +103,8 @@ function parseArgs(argv: string[]): Options {
     cases: [],
     outdir: defaultOutdir,
     overwrite: false,
+    releaseCandidates: false,
+    limit: 2,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -105,6 +120,11 @@ function parseArgs(argv: string[]): Options {
       i += 1;
     } else if (arg === "--overwrite") {
       options.overwrite = true;
+    } else if (arg === "--release-candidates") {
+      options.releaseCandidates = true;
+    } else if (arg === "--limit") {
+      options.limit = parseLimit(requireValue(arg, next));
+      i += 1;
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -113,7 +133,12 @@ function parseArgs(argv: string[]): Options {
     }
   }
 
-  if (options.cases.length === 0) throw new Error("--case is required at least once");
+  if (options.cases.length === 0 && !options.releaseCandidates) {
+    throw new Error("--case is required at least once, unless --release-candidates is used");
+  }
+  if (options.cases.length > 0 && options.releaseCandidates) {
+    throw new Error("--case and --release-candidates cannot be combined");
+  }
   return options;
 }
 
@@ -122,9 +147,16 @@ function requireValue(arg: string, value: string | undefined): string {
   return value;
 }
 
+function parseLimit(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error("--limit must be a positive integer");
+  return parsed;
+}
+
 function printHelp(): void {
   console.log(`Usage:
   pnpm g4:review-pack -- --case <case-id> [--case <case-id> ...] [--outdir outputs/g4-review-packets] [--overwrite]
+  pnpm g4:review-pack -- --release-candidates [--limit 2] [--outdir outputs/g4-review-packets] [--overwrite]
 
 This command creates Markdown worksheets for human G4 review.
 It never writes human_review G4 records; use pnpm g4:record after a real human review.
@@ -194,6 +226,73 @@ function formatSeconds(ms: number | undefined): string {
 function formatJson(value: unknown): string {
   if (value === undefined || value === null) return "-";
   return `\`${JSON.stringify(value)}\``;
+}
+
+async function readRealCaseIds(datasetRoot = path.join(repoRoot, "eval", "dataset")): Promise<Set<string>> {
+  const entries = await fs.readdir(datasetRoot, { withFileTypes: true }).catch(() => []);
+  const realCaseIds = new Set<string>();
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const metaPath = path.join(datasetRoot, entry.name, "meta.json");
+    const meta = await maybeReadJson<CaseMeta>(metaPath);
+    if (meta?.case_id === entry.name && meta.synthetic === false) realCaseIds.add(meta.case_id);
+  }
+  return realCaseIds;
+}
+
+async function isHumanReviewRecorded(caseId: string, recordsRoot = path.join(repoRoot, "eval", "g4", "records")): Promise<boolean> {
+  const g4RecordPath = path.join(recordsRoot, `${caseId}.json`);
+  const existingG4 = await maybeReadJson<ExistingG4Record>(g4RecordPath);
+  return existingG4?.review_type === "human_review";
+}
+
+function isReleaseQaCandidate(summary: QaSummary): boolean {
+  const pptx = summary.qa_checks?.pptx;
+  const video = summary.qa_checks?.video;
+  return Boolean(
+    summary.case_id
+      && summary.artifacts?.pptx
+      && summary.artifacts?.video
+      && pptx?.cover_slide === true
+      && pptx.completion_slide === true
+      && typeof pptx.slide_count === "number"
+      && typeof pptx.expected_slide_count === "number"
+      && pptx.slide_count > 0
+      && pptx.slide_count === pptx.expected_slide_count
+      && (video?.duration_sec ?? 0) > 0
+      && video?.audio_stream === true,
+  );
+}
+
+export async function selectReleaseCandidateCases(limit = 2, roots?: Partial<CandidateRoots>): Promise<string[]> {
+  const exportRoot = roots?.exportRoot ?? path.join(repoRoot, "eval", "results", "export-qa");
+  const datasetRoot = roots?.datasetRoot ?? path.join(repoRoot, "eval", "dataset");
+  const g4RecordsDir = roots?.recordsDir ?? path.join(repoRoot, "eval", "g4", "records");
+  const entries = await fs.readdir(exportRoot, { withFileTypes: true }).catch(() => []);
+  const realCaseIds = await readRealCaseIds(datasetRoot);
+  const candidates: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const summaryPath = path.join(exportRoot, entry.name, "qa-summary.json");
+    const summary = await maybeReadJson<QaSummary>(summaryPath);
+    if (summary?.case_id !== entry.name) continue;
+    try {
+      if (summary?.case_id) validateCaseId(summary.case_id);
+    } catch {
+      continue;
+    }
+    if (!summary?.case_id || !realCaseIds.has(summary.case_id) || !isReleaseQaCandidate(summary)) continue;
+    const artifacts = [summary.artifacts?.pptx, summary.artifacts?.video].filter(
+      (artifactPath): artifactPath is string => Boolean(artifactPath),
+    );
+    const artifactsExist = await Promise.all(artifacts.map(async (artifactPath) => fileExists(resolveRepoPath(artifactPath))));
+    if (!artifactsExist.every(Boolean)) continue;
+    if (await isHumanReviewRecorded(summary.case_id, g4RecordsDir)) continue;
+    candidates.push(summary.case_id);
+  }
+
+  return candidates.sort().slice(0, limit);
 }
 
 export async function buildReviewPack(caseId: string, outdir = defaultOutdir): Promise<ReviewPack> {
@@ -319,7 +418,15 @@ export async function writeReviewPack(pack: ReviewPack, overwrite: boolean): Pro
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   assertOutdir(options.outdir);
-  for (const caseId of options.cases) {
+  const candidateCases = options.releaseCandidates ? await selectReleaseCandidateCases(options.limit) : [];
+  const cases = options.releaseCandidates ? candidateCases : options.cases;
+  if (options.releaseCandidates && candidateCases.length === 0) {
+    throw new Error("no release candidate cases found from eval/results/export-qa");
+  }
+  if (options.releaseCandidates && candidateCases.length < options.limit) {
+    console.warn(`warning: selected ${candidateCases.length}/${options.limit} release candidate cases`);
+  }
+  for (const caseId of cases) {
     const pack = await buildReviewPack(caseId, options.outdir);
     await writeReviewPack(pack, options.overwrite);
     console.log(`G4 review packet written: ${rel(pack.outPath)}`);
