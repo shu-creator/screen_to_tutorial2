@@ -31,14 +31,14 @@ type BaselineFile = {
   }>;
 };
 
-type GateOptions = {
+export type GateOptions = {
   maxG3Average: number;
   maxG3AverageRegression: number;
   maxG2Regression: number;
   json: boolean;
 };
 
-type CaseGateResult = {
+export type CaseGateResult = {
   caseId: string;
   g1F1?: number;
   g2Accuracy?: number;
@@ -51,18 +51,33 @@ type CaseGateResult = {
   invalidReasons: string[];
 };
 
+export type QualityGateResult = {
+  pass: boolean;
+  realCaseCount: number;
+  g2Average?: number;
+  baselineG2Average?: number;
+  g3Average?: number;
+  baselineG3Average?: number;
+  results: CaseGateResult[];
+  notes: string[];
+};
+
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const datasetDir = path.join(repoRoot, "eval", "dataset");
 const generatedDir = path.join(repoRoot, "eval", "results", "generated");
 const baselinePath = path.join(repoRoot, "eval", "baseline.json");
 
-function parseArgs(argv: string[]): GateOptions {
-  const options: GateOptions = {
+export function defaultQualityGateOptions(): GateOptions {
+  return {
     maxG3Average: 0.1,
     maxG3AverageRegression: 0,
     maxG2Regression: 0,
     json: false,
   };
+}
+
+function parseArgs(argv: string[]): GateOptions {
+  const options = defaultQualityGateOptions();
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = argv[i + 1];
@@ -157,16 +172,7 @@ function pct(value: number | undefined): string {
   return value === undefined ? "-" : `${(value * 100).toFixed(1)}%`;
 }
 
-async function runGate(options: GateOptions): Promise<{
-  pass: boolean;
-  realCaseCount: number;
-  g2Average?: number;
-  baselineG2Average?: number;
-  g3Average?: number;
-  baselineG3Average?: number;
-  results: CaseGateResult[];
-  notes: string[];
-}> {
+export async function runQualityGate(options: GateOptions = defaultQualityGateOptions()): Promise<QualityGateResult> {
   const realCases = await readRealCases();
   const baseline = await readJson<BaselineFile>(baselinePath);
   const baselineByCase = new Map((baseline.results ?? []).map((entry) => [entry.caseId, entry]));
@@ -258,7 +264,7 @@ async function runGate(options: GateOptions): Promise<{
   };
 }
 
-function printResult(result: Awaited<ReturnType<typeof runGate>>): void {
+function printResult(result: QualityGateResult): void {
   console.log(`Sprint 2 quality gate: ${result.pass ? "PASS" : "FAIL"}`);
   console.log(`Real cases: ${result.realCaseCount}`);
   console.log(`G2 avg: ${pct(result.g2Average)} (baseline ${pct(result.baselineG2Average)})`);
@@ -285,7 +291,7 @@ function printResult(result: Awaited<ReturnType<typeof runGate>>): void {
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  const result = await runGate(options);
+  const result = await runQualityGate(options);
   if (options.json) {
     console.log(JSON.stringify(result, null, 2));
   } else {

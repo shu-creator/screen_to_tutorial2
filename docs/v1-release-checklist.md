@@ -64,7 +64,7 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - V1 smoke summary: `outputs/v1-smoke-default-check/v1_smoke_summary.json`
 - V1 smoke result: `pass=true`, project 32, default `ocr_provider=none`, steps SHA-256 `ffd61bc1e3fff231f764d26a6d59d86cb137c7b5120cea10fc88e5c744c6a945`, `step_count=3`, `needs_review_count=3`, `fallback_reason_count=0`
 - V1 release audit command: `pnpm v1:release-audit -- --allow-incomplete`
-- V1 release audit result: `INCOMPLETE`。`release.docs`、`model.default`、`eval.readiness`、`smoke.current_environment`、`export.qa` はPASS。`g4.human_review` と `smoke.fresh_environment` は未達。
+- V1 release audit result: `INCOMPLETE`。`release.docs`、`model.default`、`eval.readiness`、`eval.quality_gate`、`smoke.current_environment`、`export.qa` はPASS。`g4.human_review` と `smoke.fresh_environment` は未達。
 
 これは生成経路のスモークであり、v1出荷品質の証明ではない。OCRなしで実行したため全stepが `needs_review` になっており、PPTXの機械的な画像/placeholder検査はpassしたが、実画面として妥当かの目視確認は未記録である。最終v1判定には実録画/人間レビューG4/品質gate/PPTX目視確認が別途必要。
 

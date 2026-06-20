@@ -3,8 +3,9 @@ import fs from "fs/promises";
 import path from "path";
 import { pathToFileURL } from "url";
 import { auditEvalReadiness, readCaseMetas, validateG4Record, type CaseMeta, type G4Record } from "./eval-audit";
+import { runQualityGate, type QualityGateResult } from "./eval-quality-gate";
 
-type AuditOptions = {
+export type AuditOptions = {
   json: boolean;
   allowIncomplete: boolean;
   v1SmokeSummary: string;
@@ -17,6 +18,11 @@ export type ReleaseCheck = {
   name: string;
   status: CheckStatus;
   detail: string;
+};
+
+export type ReleaseCheckTask = {
+  name: string;
+  run: () => Promise<ReleaseCheck>;
 };
 
 type V1SmokeSummary = {
@@ -248,6 +254,33 @@ async function checkEvalReadiness(): Promise<ReleaseCheck> {
     : fail("eval.readiness", result.notes.join("; ") || "eval readiness failed");
 }
 
+export async function checkQualityGate(
+  qualityGateRunner: () => Promise<QualityGateResult> = runQualityGate,
+): Promise<ReleaseCheck> {
+  let result: QualityGateResult;
+  try {
+    result = await qualityGateRunner();
+  } catch (error) {
+    return assessQualityGateError(error);
+  }
+  return assessQualityGate(result);
+}
+
+export function assessQualityGate(result: QualityGateResult): ReleaseCheck {
+  const detail = `real_cases=${result.realCaseCount}; G2=${pct(result.g2Average)}; G3=${pct(result.g3Average)}`;
+  return result.pass
+    ? pass("eval.quality_gate", detail)
+    : fail("eval.quality_gate", `${detail}; ${result.notes.join("; ") || "quality gate failed"}`);
+}
+
+export function assessQualityGateError(error: unknown): ReleaseCheck {
+  return fail("eval.quality_gate", `runQualityGate threw: ${error instanceof Error ? error.message : String(error)}`);
+}
+
+function pct(value: number | undefined): string {
+  return value === undefined ? "-" : `${(value * 100).toFixed(1)}%`;
+}
+
 async function checkHumanG4(): Promise<ReleaseCheck> {
   const recordsDir = path.join(repoRoot, "eval", "g4", "records");
   const entries = await fs.readdir(recordsDir, { withFileTypes: true }).catch(() => []);
@@ -338,16 +371,24 @@ async function checkExportQa(): Promise<ReleaseCheck> {
   return pass("export.qa", `valid export QA cases: ${validCases.sort().join(", ")}`);
 }
 
-async function runAudit(options: AuditOptions): Promise<{ pass: boolean; status: CheckStatus; checks: ReleaseCheck[] }> {
-  const checks = [
-    await checkRequiredFiles(),
-    await checkModelDefault(),
-    await checkEvalReadiness(),
-    await checkV1Smoke(options.v1SmokeSummary, "smoke.current_environment", false, "fail"),
-    await checkExportQa(),
-    await checkHumanG4(),
-    await checkV1Smoke(options.freshEnvSummary, "smoke.fresh_environment", true),
+export function buildReleaseCheckTasks(options: AuditOptions): ReleaseCheckTask[] {
+  return [
+    { name: "release.docs", run: checkRequiredFiles },
+    { name: "model.default", run: checkModelDefault },
+    { name: "eval.readiness", run: checkEvalReadiness },
+    { name: "eval.quality_gate", run: checkQualityGate },
+    { name: "smoke.current_environment", run: () => checkV1Smoke(options.v1SmokeSummary, "smoke.current_environment", false, "fail") },
+    { name: "export.qa", run: checkExportQa },
+    { name: "g4.human_review", run: checkHumanG4 },
+    { name: "smoke.fresh_environment", run: () => checkV1Smoke(options.freshEnvSummary, "smoke.fresh_environment", true) },
   ];
+}
+
+async function runAudit(options: AuditOptions): Promise<{ pass: boolean; status: CheckStatus; checks: ReleaseCheck[] }> {
+  const checks: ReleaseCheck[] = [];
+  for (const task of buildReleaseCheckTasks(options)) {
+    checks.push(await task.run());
+  }
   const status = topLevelStatus(checks);
   return {
     pass: status === "pass",

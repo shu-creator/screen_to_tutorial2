@@ -3,8 +3,18 @@ import os from "os";
 import path from "path";
 import { describe, expect, it } from "vitest";
 import type { CaseMeta, G4Record } from "../scripts/eval-audit";
+import type { QualityGateResult } from "../scripts/eval-quality-gate";
 import { assertSafeOutdir, buildChildEnv } from "../scripts/v1-fresh-env-smoke";
-import { assessHumanG4, checkV1Smoke, shouldExitWithFailure, topLevelStatus } from "../scripts/v1-release-audit";
+import {
+  assessHumanG4,
+  assessQualityGate,
+  assessQualityGateError,
+  buildReleaseCheckTasks,
+  checkQualityGate,
+  checkV1Smoke,
+  shouldExitWithFailure,
+  topLevelStatus,
+} from "../scripts/v1-release-audit";
 
 const validCounts = {
   title_edits: 0,
@@ -26,6 +36,20 @@ function humanG4(caseId: string, overrides: Partial<G4Record> = {}): G4Record {
     source_artifact: `eval/results/generated/${caseId}/steps.json`,
     counts: validCounts,
     total_manual_edits: 0,
+    ...overrides,
+  };
+}
+
+function qualityGateResult(overrides: Partial<QualityGateResult> = {}): QualityGateResult {
+  return {
+    pass: true,
+    realCaseCount: 5,
+    g2Average: 0.694,
+    baselineG2Average: 0.694,
+    g3Average: 0.07,
+    baselineG3Average: 0.07,
+    results: [],
+    notes: [],
     ...overrides,
   };
 }
@@ -142,6 +166,65 @@ describe("v1 release audit", () => {
     const result = await checkV1Smoke(summaryPath, "smoke.fresh", true);
 
     expect(result.status).toBe("pass");
+  });
+
+  it("reports the Sprint 2 quality gate as a release-audit check", () => {
+    const passed = assessQualityGate(qualityGateResult());
+    expect(passed).toEqual({
+      name: "eval.quality_gate",
+      status: "pass",
+      detail: "real_cases=5; G2=69.4%; G3=7.0%",
+    });
+
+    const failed = assessQualityGate(qualityGateResult({
+      pass: false,
+      notes: ["real-app-workflow-03-generate-steps: g2_regression"],
+    }));
+    expect(failed).toEqual({
+      name: "eval.quality_gate",
+      status: "fail",
+      detail: "real_cases=5; G2=69.4%; G3=7.0%; real-app-workflow-03-generate-steps: g2_regression",
+    });
+  });
+
+  it("keeps the Sprint 2 quality gate wired into the release-audit task order", () => {
+    const tasks = buildReleaseCheckTasks({
+      json: false,
+      allowIncomplete: false,
+      v1SmokeSummary: "outputs/current.json",
+      freshEnvSummary: "outputs/fresh.json",
+    });
+
+    expect(tasks.map((task) => task.name)).toEqual([
+      "release.docs",
+      "model.default",
+      "eval.readiness",
+      "eval.quality_gate",
+      "smoke.current_environment",
+      "export.qa",
+      "g4.human_review",
+      "smoke.fresh_environment",
+    ]);
+  });
+
+  it("turns quality-gate runtime errors into release-audit failures", async () => {
+    const result = await checkQualityGate(async () => {
+      throw new Error("missing baseline.json");
+    });
+
+    expect(result).toEqual({
+      name: "eval.quality_gate",
+      status: "fail",
+      detail: "runQualityGate threw: missing baseline.json",
+    });
+  });
+
+  it("formats quality-gate errors consistently", () => {
+    expect(assessQualityGateError("missing baseline.json")).toEqual({
+      name: "eval.quality_gate",
+      status: "fail",
+      detail: "runQualityGate threw: missing baseline.json",
+    });
   });
 
   it("rejects non-human, synthetic, and unrelated G4 records as release evidence", async () => {
