@@ -16,6 +16,7 @@ type Options = {
   workdir?: string;
   keepWorkdir: boolean;
   allowInstall: boolean;
+  preflightOnly: boolean;
   installMode: "offline" | "online";
   maxFrames?: number;
 };
@@ -26,6 +27,19 @@ type CommandRecord = {
   exit_code: number;
   stdout_tail: string;
   stderr_tail: string;
+};
+
+export type FreshEnvPreflightFacts = {
+  videoExists: boolean;
+  trackedWorktreeClean: boolean;
+  databaseUrlSet: boolean;
+  workdirEmpty: boolean;
+  workdirSpecified: boolean;
+};
+
+export type FreshEnvPreflightResult = {
+  pass: boolean;
+  checks: Array<{ name: string; pass: boolean; detail: string }>;
 };
 
 const safeOutputsRoot = path.join(repoRoot, "outputs");
@@ -42,6 +56,7 @@ function parseArgs(argv: string[]): Options {
     outdir: path.join(repoRoot, "outputs", "v1-fresh-env-smoke"),
     keepWorkdir: false,
     allowInstall: false,
+    preflightOnly: false,
     installMode: "offline",
     maxFrames: 12,
   };
@@ -65,6 +80,8 @@ function parseArgs(argv: string[]): Options {
       i += 1;
     } else if (arg === "--allow-install") {
       options.allowInstall = true;
+    } else if (arg === "--preflight-only") {
+      options.preflightOnly = true;
     } else if (arg === "--install-mode") {
       if (next !== "offline" && next !== "online") throw new Error("--install-mode requires offline or online");
       options.installMode = next;
@@ -84,7 +101,7 @@ function parseArgs(argv: string[]): Options {
   }
 
   if (!options.video) throw new Error("--video is required");
-  if (!options.allowInstall) {
+  if (!options.allowInstall && !options.preflightOnly) {
     throw new Error("--allow-install is required because this command installs dependencies in a temporary checkout");
   }
   if (options.maxFrames !== undefined && (!Number.isInteger(options.maxFrames) || options.maxFrames <= 0)) {
@@ -100,8 +117,11 @@ function printHelp(): void {
     [--install-mode offline|online] [--outdir ./outputs/v1-fresh-env-smoke] \\
     [--workdir /tmp/screen-to-tutorial-fresh] [--keep-workdir] [--max-frames 12]
 
+  pnpm v1:fresh-env-smoke -- --video ./sample.mp4 --preflight-only
+
 Creates a temporary checkout from HEAD, installs dependencies there, runs v1:smoke,
 and copies the resulting fresh-env evidence into the requested outdir.
+Use --preflight-only to check prerequisites without creating a checkout or installing dependencies.
 `);
 }
 
@@ -230,8 +250,63 @@ async function assertTrackedWorktreeClean(): Promise<void> {
   }
 }
 
+export function assessFreshEnvPreflight(facts: FreshEnvPreflightFacts): FreshEnvPreflightResult {
+  const workdirDetail = facts.workdirSpecified
+    ? facts.workdirEmpty ? "workdir exists and is empty, or does not exist yet" : "workdir exists and is not empty"
+    : "workdir not specified; mkdtemp will create a clean directory";
+  const checks = [
+    { name: "video.exists", pass: facts.videoExists, detail: facts.videoExists ? "input video exists" : "input video is missing" },
+    { name: "worktree.clean", pass: facts.trackedWorktreeClean, detail: facts.trackedWorktreeClean ? "tracked worktree is clean" : "tracked worktree is not clean, or git clean-state check failed" },
+    { name: "database_url.set", pass: facts.databaseUrlSet, detail: facts.databaseUrlSet ? "DATABASE_URL is set" : "DATABASE_URL is missing" },
+    { name: "workdir.empty", pass: facts.workdirEmpty, detail: workdirDetail },
+  ];
+  return { pass: checks.every((check) => check.pass), checks };
+}
+
+async function trackedWorktreeClean(): Promise<boolean> {
+  try {
+    await assertTrackedWorktreeClean();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function workdirEmpty(workdir: string | undefined): Promise<boolean> {
+  if (!workdir) return true;
+  try {
+    const entries = await fs.readdir(workdir);
+    return entries.length === 0;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT";
+  }
+}
+
+async function collectFreshEnvPreflightFacts(options: Options): Promise<FreshEnvPreflightFacts> {
+  return {
+    videoExists: await fs.access(options.video as string).then(() => true, () => false),
+    trackedWorktreeClean: await trackedWorktreeClean(),
+    databaseUrlSet: Boolean(process.env.DATABASE_URL),
+    workdirEmpty: await workdirEmpty(options.workdir),
+    workdirSpecified: Boolean(options.workdir),
+  };
+}
+
+function printFreshEnvPreflight(result: FreshEnvPreflightResult): void {
+  console.log(`fresh env smoke preflight: ${result.pass ? "PASS" : "FAIL"}`);
+  for (const check of result.checks) {
+    console.log(`${check.pass ? "PASS" : "FAIL"} ${check.name}: ${check.detail}`);
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  if (options.preflightOnly) {
+    const result = assessFreshEnvPreflight(await collectFreshEnvPreflightFacts(options));
+    printFreshEnvPreflight(result);
+    if (!result.pass) process.exit(1);
+    return;
+  }
   const videoPath = options.video as string;
   const commands: CommandRecord[] = [];
   const childEnv = buildChildEnv();

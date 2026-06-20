@@ -77,6 +77,14 @@ pnpm v1:smoke -- --video ./sample.mp4 --outdir ./outputs/v1-smoke --use-audio fa
 - `checks` の `setup.check`、`pipeline.generate`、`steps.version`、`steps.count`、`steps.fallback_reasons`、`project.export`、`export.slide.bytes`、`export.slide.content_check`、`export.video.bytes`、`export.video.still_image_fallback_count`、`edit.smoke`、`edit.summary` がすべてpass
 - `artifacts.steps`、`artifacts.export_summary`、`artifacts.edit_smoke_summary` が存在する
 
+依存インストールを伴うfresh checkout検証の前に、承認不要の前提確認だけを実行する:
+
+```bash
+pnpm v1:fresh-env-smoke -- --video ./sample.mp4 --preflight-only
+```
+
+preflightは入力動画、tracked worktreeのclean状態、`DATABASE_URL`、指定workdirの空き状態を確認する。依存インストール、checkout作成、summary生成は行わない。
+
 個別に生成だけを確認する場合:
 
 ```bash

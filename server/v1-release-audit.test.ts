@@ -4,7 +4,7 @@ import path from "path";
 import { describe, expect, it } from "vitest";
 import type { CaseMeta, G4Record } from "../scripts/eval-audit";
 import type { QualityGateResult } from "../scripts/eval-quality-gate";
-import { assertSafeOutdir, buildChildEnv } from "../scripts/v1-fresh-env-smoke";
+import { assertSafeOutdir, assessFreshEnvPreflight, buildChildEnv } from "../scripts/v1-fresh-env-smoke";
 import {
   assessHumanG4,
   assessQualityGate,
@@ -328,5 +328,31 @@ describe("v1 release audit", () => {
       if (originalInternalSecret === undefined) delete process.env.SOME_INTERNAL_SECRET;
       else process.env.SOME_INTERNAL_SECRET = originalInternalSecret;
     }
+  });
+
+  it("summarizes fresh-env preflight facts without installing dependencies", () => {
+    const passed = assessFreshEnvPreflight({
+      videoExists: true,
+      trackedWorktreeClean: true,
+      databaseUrlSet: true,
+      workdirEmpty: true,
+      workdirSpecified: false,
+    });
+    expect(passed.pass).toBe(true);
+    expect(passed.checks.find((check) => check.name === "workdir.empty")?.detail).toContain("mkdtemp");
+
+    const failed = assessFreshEnvPreflight({
+      videoExists: false,
+      trackedWorktreeClean: true,
+      databaseUrlSet: false,
+      workdirEmpty: false,
+      workdirSpecified: true,
+    });
+    expect(failed.pass).toBe(false);
+    expect(failed.checks.filter((check) => !check.pass).map((check) => check.name)).toEqual([
+      "video.exists",
+      "database_url.set",
+      "workdir.empty",
+    ]);
   });
 });

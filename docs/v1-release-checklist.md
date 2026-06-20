@@ -17,6 +17,7 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - [ ] `pnpm eval:audit` が通る
 - [ ] `pnpm eval:quality-gate` が通る
 - [ ] `pnpm v1:smoke -- --video <sample.mp4> --outdir ./outputs/v1-smoke --use-audio false --asr-provider none --ocr-provider none` が `pass=true` で完了する
+- [ ] `pnpm v1:fresh-env-smoke -- --video <sample.mp4> --preflight-only` が `PASS` で完了する
 - [ ] `pnpm v1:fresh-env-smoke -- --video <sample.mp4> --allow-install --install-mode offline` が `outputs/v1-fresh-env-smoke/v1_smoke_summary.json` を生成し、`environment.kind=fresh_checkout` を記録する
 - [ ] `pnpm v1:release-audit` が `PASS` で完了する
 - [ ] `pnpm pipeline:generate --video <sample.mp4> --outdir ./outputs --use-audio false --asr-provider none --ocr-provider llm` で `project_<id>_steps.json` が生成される
@@ -37,6 +38,7 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - `pnpm setup:check` 出力
 - `pnpm check` / `pnpm test` / `pnpm eval:audit` / `pnpm eval:quality-gate` 出力
 - `outputs/<chosen-v1-smoke-outdir>/v1_smoke_summary.json` のパスと、その時点のSHA-256
+- `pnpm v1:fresh-env-smoke -- --preflight-only` 出力（前提確認のみ。fresh checkout証跡ではない）
 - `outputs/v1-fresh-env-smoke/v1_smoke_summary.json` の `environment` と `fresh_env_commands`
 - `pnpm v1:release-audit -- --json` の出力
 - `outputs/project_<id>_steps.json` のパスとSHA-256
