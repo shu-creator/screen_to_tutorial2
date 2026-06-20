@@ -29,6 +29,15 @@ type CommandRecord = {
   stderr_tail: string;
 };
 
+type FreshSmokeSummary = Record<string, unknown> & {
+  artifacts?: {
+    steps?: string | null;
+    export_summary?: string | null;
+    edit_smoke_summary?: string | null;
+    [key: string]: unknown;
+  };
+};
+
 export type FreshEnvPreflightFacts = {
   videoExists: boolean;
   trackedWorktreeClean: boolean;
@@ -299,6 +308,23 @@ function printFreshEnvPreflight(result: FreshEnvPreflightResult): void {
   }
 }
 
+export function rewriteFreshSummaryArtifactPaths(summary: FreshSmokeSummary, outdir: string): FreshSmokeSummary {
+  if (!summary.artifacts) return summary;
+  const rewrite = (artifactPath: string | null | undefined, subdir: string): string | null | undefined => {
+    if (!artifactPath) return artifactPath;
+    return path.relative(repoRoot, path.join(outdir, subdir, path.basename(artifactPath)));
+  };
+  return {
+    ...summary,
+    artifacts: {
+      ...summary.artifacts,
+      steps: rewrite(summary.artifacts.steps, "pipeline"),
+      export_summary: rewrite(summary.artifacts.export_summary, "project-export"),
+      edit_smoke_summary: rewrite(summary.artifacts.edit_smoke_summary, "edit-smoke"),
+    },
+  };
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   if (options.preflightOnly) {
@@ -362,7 +388,7 @@ async function main(): Promise<void> {
     await fs.cp(freshOutdir, options.outdir, { recursive: true });
 
     const summaryPath = path.join(options.outdir, "v1_smoke_summary.json");
-    const summary = await readJson<Record<string, unknown>>(summaryPath);
+    const summary = rewriteFreshSummaryArtifactPaths(await readJson<FreshSmokeSummary>(summaryPath), options.outdir);
     summary.environment = {
       kind: "fresh_checkout",
       source_commit: sourceCommit,

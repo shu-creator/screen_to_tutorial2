@@ -4,7 +4,12 @@ import path from "path";
 import { describe, expect, it } from "vitest";
 import type { CaseMeta, G4Record } from "../scripts/eval-audit";
 import type { QualityGateResult } from "../scripts/eval-quality-gate";
-import { assertSafeOutdir, assessFreshEnvPreflight, buildChildEnv } from "../scripts/v1-fresh-env-smoke";
+import {
+  assertSafeOutdir,
+  assessFreshEnvPreflight,
+  buildChildEnv,
+  rewriteFreshSummaryArtifactPaths,
+} from "../scripts/v1-fresh-env-smoke";
 import {
   assessHumanG4,
   assessQualityGate,
@@ -490,5 +495,39 @@ describe("v1 release audit", () => {
       "database_url.set",
       "workdir.empty",
     ]);
+  });
+
+  it("rewrites fresh-env summary artifact paths after copying from a temp checkout", () => {
+    const summary = rewriteFreshSummaryArtifactPaths({
+      artifacts: {
+        steps: "../../../../../../tmp/fresh/checkout/outputs/v1-fresh-env-smoke/pipeline/project_33_steps.json",
+        export_summary: "../../../../../../tmp/fresh/checkout/outputs/v1-fresh-env-smoke/project-export/project_33_export_summary.json",
+        edit_smoke_summary: "../../../../../../tmp/fresh/checkout/outputs/v1-fresh-env-smoke/edit-smoke/project_33_edit_smoke_summary.json",
+        steps_sha256: "abc123",
+      },
+    }, path.join(process.cwd(), "outputs", "v1-fresh-env-smoke"));
+
+    expect(summary.artifacts?.steps).toBe("outputs/v1-fresh-env-smoke/pipeline/project_33_steps.json");
+    expect(summary.artifacts?.export_summary).toBe("outputs/v1-fresh-env-smoke/project-export/project_33_export_summary.json");
+    expect(summary.artifacts?.edit_smoke_summary).toBe("outputs/v1-fresh-env-smoke/edit-smoke/project_33_edit_smoke_summary.json");
+    expect(summary.artifacts?.steps_sha256).toBe("abc123");
+  });
+
+  it("leaves missing or null fresh-env summary artifact fields unchanged", () => {
+    const withoutArtifacts = { pass: true };
+    expect(rewriteFreshSummaryArtifactPaths(withoutArtifacts, path.join(process.cwd(), "outputs", "v1-fresh-env-smoke"))).toBe(withoutArtifacts);
+
+    const withNullArtifacts = rewriteFreshSummaryArtifactPaths({
+      artifacts: {
+        steps: null,
+        export_summary: null,
+        edit_smoke_summary: null,
+        steps_sha256: "abc123",
+      },
+    }, path.join(process.cwd(), "outputs", "v1-fresh-env-smoke"));
+    expect(withNullArtifacts.artifacts?.steps).toBeNull();
+    expect(withNullArtifacts.artifacts?.export_summary).toBeNull();
+    expect(withNullArtifacts.artifacts?.edit_smoke_summary).toBeNull();
+    expect(withNullArtifacts.artifacts?.steps_sha256).toBe("abc123");
   });
 });
