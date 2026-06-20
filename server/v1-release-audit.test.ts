@@ -12,6 +12,8 @@ import {
   buildReleaseCheckTasks,
   checkQualityGate,
   checkV1Smoke,
+  isValidExportQaEntry,
+  isValidExportQaSummary,
   nextActionForCheck,
   shouldExitWithFailure,
   topLevelStatus,
@@ -257,6 +259,88 @@ describe("v1 release audit", () => {
     }
 
     expect(withNextAction({ name: "unknown.check", status: "fail", detail: "needs action" }).next_action).toBeUndefined();
+  });
+
+  it("requires export QA summaries to have positive explicit slide counts and existing artifacts", () => {
+    const validSummary = {
+      case_id: "real-case",
+      artifacts: {
+        pptx: "eval/results/export-qa/real-case/real-case.pptx",
+        video: "eval/results/export-qa/real-case/real-case.mp4",
+      },
+      qa_checks: {
+        pptx: {
+          cover_slide: true,
+          completion_slide: true,
+          slide_count: 3,
+          expected_slide_count: 3,
+        },
+        video: {
+          duration_sec: 5,
+          audio_stream: true,
+        },
+      },
+    };
+
+    expect(isValidExportQaSummary(validSummary, [true, true])).toBe(true);
+    expect(isValidExportQaSummary({
+      ...validSummary,
+      qa_checks: {
+        ...validSummary.qa_checks,
+        pptx: {
+          cover_slide: true,
+          completion_slide: true,
+        },
+      },
+    }, [true, true])).toBe(false);
+    expect(isValidExportQaSummary({
+      ...validSummary,
+      qa_checks: {
+        ...validSummary.qa_checks,
+        pptx: {
+          cover_slide: true,
+          completion_slide: true,
+          slide_count: 0,
+          expected_slide_count: 0,
+        },
+      },
+    }, [true, true])).toBe(false);
+    expect(isValidExportQaSummary({
+      ...validSummary,
+      qa_checks: {
+        ...validSummary.qa_checks,
+        pptx: {
+          cover_slide: true,
+          completion_slide: true,
+          slide_count: 3,
+          expected_slide_count: 4,
+        },
+      },
+    }, [true, true])).toBe(false);
+    expect(isValidExportQaSummary(validSummary, [true, false])).toBe(false);
+    expect(isValidExportQaEntry("real-case", validSummary, [true, true])).toBe(true);
+    expect(isValidExportQaEntry("other-directory", validSummary, [true, true])).toBe(false);
+    for (const pptx of [
+      { cover_slide: false, completion_slide: true, slide_count: 3, expected_slide_count: 3 },
+      { cover_slide: true, completion_slide: false, slide_count: 3, expected_slide_count: 3 },
+    ]) {
+      expect(isValidExportQaSummary({
+        ...validSummary,
+        qa_checks: { ...validSummary.qa_checks, pptx },
+      }, [true, true])).toBe(false);
+    }
+    for (const video of [
+      { duration_sec: 0, audio_stream: true },
+      { duration_sec: 5, audio_stream: false },
+    ]) {
+      expect(isValidExportQaSummary({
+        ...validSummary,
+        qa_checks: { ...validSummary.qa_checks, video },
+      }, [true, true])).toBe(false);
+    }
+    expect(isValidExportQaSummary({ ...validSummary, case_id: undefined }, [true, true])).toBe(false);
+    expect(isValidExportQaSummary(validSummary, [])).toBe(false);
+    expect(isValidExportQaSummary(validSummary, [true])).toBe(false);
   });
 
   it("turns quality-gate runtime errors into release-audit failures", async () => {

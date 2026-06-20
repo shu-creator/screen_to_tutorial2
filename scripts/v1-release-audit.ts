@@ -52,7 +52,7 @@ type V1SmokeSummary = {
   checks?: Array<{ name?: string; pass?: boolean; detail?: string }>;
 };
 
-type ExportQaSummary = {
+export type ExportQaSummary = {
   case_id?: string;
   artifacts?: {
     pptx?: string;
@@ -72,6 +72,30 @@ type ExportQaSummary = {
     };
   };
 };
+
+export function isValidExportQaSummary(summary: ExportQaSummary, artifactsExist: boolean[]): boolean {
+  const pptx = summary.qa_checks?.pptx;
+  const video = summary.qa_checks?.video;
+  const artifactPaths = [summary.artifacts?.pptx, summary.artifacts?.video].filter(Boolean);
+  return Boolean(
+    summary.case_id
+      && pptx?.cover_slide === true
+      && pptx.completion_slide === true
+      && typeof pptx.slide_count === "number"
+      && typeof pptx.expected_slide_count === "number"
+      && pptx.slide_count > 0
+      && pptx.slide_count === pptx.expected_slide_count
+      && (video?.duration_sec ?? 0) > 0
+      && video?.audio_stream === true
+      && artifactPaths.length === 2
+      && artifactsExist.length === 2
+      && artifactsExist.every(Boolean),
+  );
+}
+
+export function isValidExportQaEntry(entryName: string, summary: ExportQaSummary, artifactsExist: boolean[]): boolean {
+  return summary.case_id === entryName && isValidExportQaSummary(summary, artifactsExist);
+}
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const requiredExportQaCases = 2;
@@ -330,37 +354,29 @@ export async function assessHumanG4(
 async function checkExportQa(): Promise<ReleaseCheck> {
   const exportRoot = path.join(repoRoot, "eval", "results", "export-qa");
   const entries = await fs.readdir(exportRoot, { withFileTypes: true }).catch(() => []);
-  const summaries: ExportQaSummary[] = [];
+  const summaries: Array<{ entryName: string; summary: ExportQaSummary }> = [];
   const unreadable: string[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const summaryPath = path.join(exportRoot, entry.name, "qa-summary.json");
     if (await fileExists(summaryPath)) {
       const parsed = await safeReadJson<ExportQaSummary>(summaryPath);
-      if (parsed.value) summaries.push(parsed.value);
+      if (parsed.value) summaries.push({ entryName: entry.name, summary: parsed.value });
       else unreadable.push(`${rel(summaryPath)}: ${parsed.error ?? "invalid JSON"}`);
     }
   }
 
   const validCases: string[] = [];
   const invalid: string[] = [];
-  for (const summary of summaries) {
+  for (const { entryName, summary } of summaries) {
     const caseId = summary.case_id ?? "unknown";
-    const pptx = summary.qa_checks?.pptx;
-    const video = summary.qa_checks?.video;
     const artifactPaths = [summary.artifacts?.pptx, summary.artifacts?.video].filter(
       (artifactPath): artifactPath is string => Boolean(artifactPath),
     );
     const artifactsExist = await Promise.all(artifactPaths.map(async (artifactPath) => fileExists(resolveRepoPath(artifactPath))));
-    const ok = pptx?.cover_slide === true
-      && pptx.completion_slide === true
-      && pptx.slide_count === pptx.expected_slide_count
-      && (video?.duration_sec ?? 0) > 0
-      && video?.audio_stream === true
-      && artifactPaths.length === 2
-      && artifactsExist.every(Boolean);
+    const ok = isValidExportQaEntry(entryName, summary, artifactsExist);
     if (ok) validCases.push(caseId);
-    else invalid.push(caseId);
+    else invalid.push(summary.case_id === entryName ? caseId : `${entryName}(case_id=${caseId})`);
   }
 
   if (unreadable.length > 0 || invalid.length > 0) {
