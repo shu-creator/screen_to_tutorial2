@@ -327,6 +327,13 @@ Still open:
   `authoring-v2-grounded-3`; the measured case 03 candidate from
   `authoring-v2-grounded-2` has not been copied into
   `eval/results/generated/*` or `eval/baseline.json`.
+- A new `authoring-v2-grounded-3` candidate still needs to be generated and
+  measured before any low-G2/G3 artifact promotion decision.
+- `pnpm g4:review-pack -- --missing-human-review --overwrite` is available to
+  regenerate worksheets for real generated cases that still lack human G4.
+
+Current candidate guardrails:
+
 - `eval:candidate -- --require-g2-improvement` compares against
   `eval/baseline.json`, which still records the fixed v1 case 03 G2 `41.7%`;
   it is not a substitute for comparing a candidate against the current tracked
@@ -341,10 +348,8 @@ Still open:
   allows no current G2 or no-citation regression, and requires current G3
   improvement. It also requires candidate `config.prompt_version` to match the
   active authoring prompt version.
-- Add `--details` to print candidate G2 cited-label diagnostics when a
+- `--details` prints candidate G2 cited-label diagnostics when a
   candidate fails or when low-G2 cases need label-level triage.
-- `pnpm g4:review-pack -- --missing-human-review --overwrite` is available to
-  regenerate worksheets for real generated cases that still lack human G4.
 
 Validation result for the Phase 7 starter slice:
 
