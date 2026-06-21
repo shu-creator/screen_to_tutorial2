@@ -29,12 +29,12 @@ Review packets have been generated for:
 Regenerate the packets with:
 
 ```bash
-pnpm g4:review-pack -- \
-  --case real-app-workflow-01 \
-  --case real-app-workflow-02-create-project \
-  --case real-app-workflow-03-generate-steps \
-  --overwrite
+pnpm g4:review-pack -- --missing-human-review --overwrite
 ```
+
+This selector creates packets for real generated cases that do not yet have
+`review_type: "human_review"`. On this branch it should surface cases 01, 02,
+and 03.
 
 After actual human review, dry-run each record first:
 
@@ -172,13 +172,12 @@ pnpm eval:quality-gate
 pnpm v1:release-audit
 ```
 
-If any generated artifact or G4 record changes, also run the relevant focused
-command:
+If generated artifacts changed and `pnpm eval:audit` still reports real cases
+without `human_review`, regenerate the relevant review packets:
 
 ```bash
-pnpm g4:review-pack -- \
-  --case real-app-workflow-01 \
-  --case real-app-workflow-02-create-project \
-  --case real-app-workflow-03-generate-steps \
-  --overwrite
+pnpm g4:review-pack -- --missing-human-review --overwrite
 ```
+
+Once all pending real cases have human G4 records, this selector is expected to
+find no cases and should be skipped.

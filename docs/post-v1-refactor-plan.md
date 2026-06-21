@@ -333,6 +333,8 @@ Still open:
 - `pnpm eval:candidate -- --case <case-id> --steps <steps-path> --current-generated --max-current-g2-regression 0`
   is available as the stricter tracked-artifact no-G2-regression check for
   future candidate promotion.
+- `pnpm g4:review-pack -- --missing-human-review --overwrite` is available to
+  regenerate worksheets for real generated cases that still lack human G4.
 
 Validation result for the Phase 7 starter slice:
 
@@ -352,3 +354,12 @@ Validation result for the Phase 7 low-G2 candidate slice:
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.
 - Additional candidate validation: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --require-g2-improvement` PASS, G2=71.4%, G3=0.0%, fallback=0.
+
+Validation result for the Phase 7 G4 selector slice:
+
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 26 test files and 285 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
+- Additional G4 selector validation: `pnpm vitest run server/g4-review-pack.test.ts` PASS, 9 tests. `pnpm g4:review-pack -- --missing-human-review --overwrite` regenerated packets for `real-app-workflow-01`, `real-app-workflow-02-create-project`, and `real-app-workflow-03-generate-steps`.
