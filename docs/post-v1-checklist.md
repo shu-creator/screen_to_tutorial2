@@ -155,6 +155,11 @@ Done:
 
 - Added clearer review-state affordances on project step cards: timing range,
   confidence, audio mode, narration iconography, and edit/delete icons.
+- Kept step edit forms open after blur-save so reviewers can update title,
+  operation, description, narration, timing, audio mode, and review state in one
+  pass before closing the card.
+- Suppressed no-op blur saves and reset cleared timing fields back to the stored
+  value so the persistent edit form does not drift from artifact state.
 - Checked project detail tabs, step cards, and export controls at desktop,
   390px, and 320px widths; tabs now use a three-column layout so labels stay
   visible.

@@ -308,6 +308,10 @@ Changes started:
 - Updated the authoring prompt to `authoring-v2-grounded-2` so future generation keeps distinct user intents separate and avoids OCR-unsupported UI label citations.
 - Added `pnpm eval:candidate` to score a candidate `steps.json` against `eval/baseline.json` without replacing tracked generated artifacts.
 - Polished project step cards with clearer review metadata for timing range, confidence, audio mode, narration, and edit/delete controls.
+- Kept project step edit forms open after individual blur-save updates, so
+  human reviewers can make several corrections before closing a card.
+- Suppressed no-op blur saves and reset cleared timing fields to the current
+  artifact value to keep persistent edit forms visually aligned with saved state.
 - Hardened evidence frame extraction near the end of videos and normalized cited UI labels with outer quotes / dynamic count suffixes, then measured `real-app-workflow-03-generate-steps` as a local authoring-v2 candidate: G2 `71.4%`, G3 `0.0%`, fallback reasons `0`.
 - Rechecked the tracked generated artifacts with the post-v1 label normalizer:
   current branch quality gate is G2 `82.8%`, G3 `7.0%`, fallback reasons `0`.
@@ -363,3 +367,11 @@ Validation result for the Phase 7 G4 selector slice:
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.
 - Additional G4 selector validation: `pnpm vitest run server/g4-review-pack.test.ts` PASS, 9 tests. `pnpm g4:review-pack -- --missing-human-review --overwrite` regenerated packets for `real-app-workflow-01`, `real-app-workflow-02-create-project`, and `real-app-workflow-03-generate-steps`.
+
+Validation result for the Phase 7 UI edit polish slice:
+
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 26 test files and 285 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.

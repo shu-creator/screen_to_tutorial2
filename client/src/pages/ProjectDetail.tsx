@@ -55,7 +55,11 @@ type FrameData = {
 };
 
 type StepAudioMode = "auto" | "tts" | "original" | "mixed" | "silent";
-type StepUpdateData = Partial<StepData> & {
+type StepUpdateData = {
+  title?: string;
+  operation?: string;
+  description?: string;
+  narration?: string;
   tStart?: number;
   tEnd?: number;
   audioMode?: StepAudioMode;
@@ -175,7 +179,9 @@ function SortableStepCard({
                     <Input
                       id={`title-${step.id}`}
                       defaultValue={step.title}
-                      onBlur={(e) => onUpdate(step.id, { title: e.target.value })}
+                      onBlur={(e) => {
+                        if (e.target.value !== step.title) onUpdate(step.id, { title: e.target.value });
+                      }}
                     />
                   </div>
                   <div>
@@ -183,7 +189,9 @@ function SortableStepCard({
                     <Input
                       id={`operation-${step.id}`}
                       defaultValue={step.operation}
-                      onBlur={(e) => onUpdate(step.id, { operation: e.target.value })}
+                      onBlur={(e) => {
+                        if (e.target.value !== step.operation) onUpdate(step.id, { operation: e.target.value });
+                      }}
                     />
                   </div>
                   <div>
@@ -192,7 +200,9 @@ function SortableStepCard({
                       id={`description-${step.id}`}
                       defaultValue={step.description}
                       rows={3}
-                      onBlur={(e) => onUpdate(step.id, { description: e.target.value })}
+                      onBlur={(e) => {
+                        if (e.target.value !== step.description) onUpdate(step.id, { description: e.target.value });
+                      }}
                     />
                   </div>
                   <div>
@@ -201,7 +211,9 @@ function SortableStepCard({
                       id={`narration-${step.id}`}
                       defaultValue={step.narration || ""}
                       rows={2}
-                      onBlur={(e) => onUpdate(step.id, { narration: e.target.value })}
+                      onBlur={(e) => {
+                        if (e.target.value !== (step.narration || "")) onUpdate(step.id, { narration: e.target.value });
+                      }}
                     />
                   </div>
                   {review && (
@@ -223,9 +235,17 @@ function SortableStepCard({
                             min={0}
                             defaultValue={review.tStart}
                             onBlur={(e) => {
-                              if (e.target.value.trim() === "") return;
+                              if (e.target.value.trim() === "") {
+                                e.target.value = String(review.tStart);
+                                return;
+                              }
                               const value = Number(e.target.value);
-                              if (Number.isFinite(value)) onUpdate(step.id, { tStart: Math.round(value) });
+                              if (!Number.isFinite(value)) {
+                                e.target.value = String(review.tStart);
+                                return;
+                              }
+                              const rounded = Math.round(value);
+                              if (rounded !== review.tStart) onUpdate(step.id, { tStart: rounded });
                             }}
                           />
                         </div>
@@ -237,9 +257,17 @@ function SortableStepCard({
                             min={0}
                             defaultValue={review.tEnd}
                             onBlur={(e) => {
-                              if (e.target.value.trim() === "") return;
+                              if (e.target.value.trim() === "") {
+                                e.target.value = String(review.tEnd);
+                                return;
+                              }
                               const value = Number(e.target.value);
-                              if (Number.isFinite(value)) onUpdate(step.id, { tEnd: Math.round(value) });
+                              if (!Number.isFinite(value)) {
+                                e.target.value = String(review.tEnd);
+                                return;
+                              }
+                              const rounded = Math.round(value);
+                              if (rounded !== review.tEnd) onUpdate(step.id, { tEnd: rounded });
                             }}
                           />
                         </div>
@@ -618,13 +646,12 @@ export default function ProjectDetail() {
     }
   };
 
-  const handleUpdateStep = async (stepId: number, data: any) => {
+  const handleUpdateStep = async (stepId: number, data: StepUpdateData) => {
     try {
       await updateStepMutation.mutateAsync({ id: stepId, ...data });
       toast.success("ステップを更新しました");
       refetchSteps();
       refetchArtifactInfo();
-      setEditingStepId((current) => (current === stepId ? null : current));
     } catch (error) {
       const message = error instanceof Error ? error.message : "ステップの更新に失敗しました";
       toast.error(message);
@@ -1059,6 +1086,7 @@ export default function ProjectDetail() {
                       onClick={focusNextReviewStep}
                       className="w-full sm:w-auto"
                     >
+                      <Pencil className="h-4 w-4 mr-2" />
                       次の要レビューを編集
                     </Button>
                   </AlertDescription>
