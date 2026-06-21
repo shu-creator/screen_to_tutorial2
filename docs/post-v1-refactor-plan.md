@@ -334,6 +334,11 @@ Completed or started changes:
   The candidate passed `pnpm eval:candidate -- --post-v1-promotion-gate --details`
   with G2 `100.0%`, G3 `0.0%`, no no-citation regression, no unmatched labels,
   no fallback reasons, and prompt version `authoring-v2-grounded-3`.
+- Generated reviewable project 40 exports for the measured candidate at
+  `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/export/project_40_export_summary.json`.
+  The PPTX content check passed and the MP4 has no still-image fallback; human
+  review of these local-only artifacts has not yet occurred and remains listed
+  under Still open.
 
 Still open:
 
@@ -346,9 +351,9 @@ Still open:
   explicit promotion decision plus refreshed human review evidence for the
   promoted artifact.
 - `docs/post-v1-checklist.md` contains the promotion handoff for
-  `project_40_steps.json`: generate reviewable project 40 exports after
-  accepting the local output/storage work, human-review the candidate steps and
-  export artifacts, copy the accepted candidate into `eval/results/generated/*`,
+  `project_40_steps.json`: review the generated project 40 export summary,
+  PPTX, and MP4; human-review the candidate steps and export artifacts; copy the
+  accepted candidate into `eval/results/generated/*`,
   record a replacement G4 review against the tracked artifact with
   `pnpm g4:record -- --dry-run` before `--overwrite`, then run the full phase
   gate set before committing.
@@ -690,6 +695,14 @@ Validation result for the Phase 7 approved prompt measurement slice:
   project 40 export command, human-review requirement, accepted-candidate copy
   step, tracked-artifact `g4:record` dry-run-first command, and the full phase
   gate set required before committing promotion.
+- Generated project 40 export artifacts with `pnpm project:export -- --project-id 40 --audio-mode silent --outdir outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/export`.
+  The summary is
+  `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/export/project_40_export_summary.json`.
+  PPTX content check: `pass`; slides `7`; media images `4`; slides with images
+  `4`; speaker-note review warnings `0`; placeholder hits `0`. MP4: duration
+  `11.8s`; video stream present; silent-mode audio stream present; still-image
+  fallback count `0`; warning: intro card skipped because no usable font was
+  available.
 - `pnpm check`: PASS
 - `pnpm test`: PASS, 28 test files and 316 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases.

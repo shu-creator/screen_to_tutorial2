@@ -216,12 +216,24 @@ Current-prompt promotion decision:
   Promotion would change the artifact covered by the existing case 03
   `human_review` G4 record, so replacement still requires an explicit promotion
   decision and refreshed human review evidence for the promoted artifact.
+- Reviewable export artifacts for project `40` have been generated locally. The
+  machine QA summary is suitable for handoff, but it does not replace human
+  review of the candidate steps, PPTX, and MP4.
 
 Promotion handoff for `project_40_steps.json`:
 
-1. Generate reviewable export artifacts for the measured project only after
-   accepting the local output/storage work. This command depends on local DB
-   project `40` still existing:
+1. Inspect machine QA results and locate generated artifacts:
+
+   - summary:
+     `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/export/project_40_export_summary.json`
+   - PPTX:
+     `data/storage/projects/40/slides/1782052816971.pptx`
+   - MP4:
+     `data/storage/projects/40/videos/pYfEMLFuo0B_C89M0iUVm.mp4`
+
+   These paths are local-only and gitignored. If local `outputs/` or `data/`
+   is cleared while DB project `40` still exists, regenerate the export files
+   on the same local checkout with:
 
    ```bash
    pnpm project:export -- \
@@ -230,10 +242,22 @@ Promotion handoff for `project_40_steps.json`:
      --outdir outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/export
    ```
 
-2. Human-review the candidate steps and generated export artifacts. If accepted,
-   copy the candidate into the tracked generated artifact path first, so the
-   replacement G4 record can point to a committed artifact that fresh checkouts
-   can hash-check:
+   If DB project `40` is cleared before review, export-only regeneration is not
+   possible. Re-run the prompt check with
+   `pnpm post-v1:prompt-check -- --execute --accept-side-effects --run-id <new-run-id>`
+   to create a new local project, then export that new project ID.
+
+   Machine checks: PPTX content check `pass`, total slides `7`, media images
+   `4`, slides with images `4`, speaker-note review warnings `0`, placeholder
+   hits `0`; MP4 duration `11.8s`, video stream present, silent-mode audio
+   stream present, still-image fallback count `0`. The only recorded video
+   warning is that no usable font was available, so the intro card was skipped.
+
+2. Human-review the candidate steps and generated export artifacts, including
+   whether the silent-mode audio track and skipped intro card are acceptable for
+   the promoted artifact. If accepted, copy the candidate into the tracked
+   generated artifact path first, so the replacement G4 record can point to a
+   committed artifact that fresh checkouts can hash-check:
 
    ```bash
    cp \
