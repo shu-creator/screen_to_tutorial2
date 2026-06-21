@@ -221,9 +221,26 @@ Validation result:
 
 ### Phase 4: Fallback And Heuristic Policy
 
-Status: pending.
+Status: completed.
 
 Define allowed and forbidden fallback reasons for post-v1. Strengthen `eval:quality-gate` only if current gates cannot detect forbidden fallback paths.
+
+Output:
+
+- `docs/post-v1-fallback-policy.md`
+
+Decision:
+
+- No `eval:quality-gate` implementation change is needed in Phase 4. It already detects `fallback:*` review reasons in real-case generated artifacts.
+- Video/export fallback signals are intentionally covered by `pnpm v1:smoke`, export QA, and `pnpm v1:release-audit`, not by the eval metric gate.
+
+Validation result:
+
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 24 test files and 261 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=69.4%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
 
 ### Phase 5: Artifact And DB Responsibility Design
 
