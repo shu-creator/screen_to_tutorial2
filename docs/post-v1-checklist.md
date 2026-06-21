@@ -54,13 +54,16 @@ Only after inspecting the JSON, remove `--dry-run` and add `--overwrite`.
 
 ## Quality Prompt Follow-up
 
-`server/authoring/author.ts` now uses `authoring-v2-grounded-2`. The prompt
-tightens two low-G2 failure modes:
+`server/authoring/author.ts` now uses `authoring-v2-grounded-3`. The prompt
+tightens three low-G2 failure modes:
 
 - do not merge distinct user intents such as tab open, generation start, and
   completion confirmation into one step;
 - do not quote or include `cited_ui_labels` unless the label is present in the
   source segment OCR.
+- do not include state/result-only text such as `プレビュー`, `完了`,
+  `ステップがありません`, or `ステップの生成を開始しました` in
+  `cited_ui_labels` unless that text is the explicit confirmation target.
 
 The persisted eval artifacts have not been regenerated from the current prompt.
 Measure prompt impact with low-G2 cases first:
@@ -109,6 +112,9 @@ Measured candidate:
 - `real-app-workflow-03-generate-steps` regenerated locally at
   `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json`.
 - Prompt path: `authoring-v2-grounded-2`.
+- Follow-up prompt path: `authoring-v2-grounded-3` adds the state/result-only
+  label exclusion above. The measured local candidate predates this prompt and
+  has not been regenerated.
 - Fixed-baseline gate: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --require-g2-improvement` PASS.
 - Current-artifact diagnostic: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --current-generated --json` reports current G2 delta `-3.6%` and current G3 delta `-25.0%`.
 - Strict promotion check with `--post-v1-promotion-gate` fails as expected with

@@ -305,7 +305,7 @@ Changes started:
 - Generated G4 human-review packets for cases 01/02/03.
 - Kept 01/02/03 `eval/g4/records/*.json` as `ai_estimate`; do not promote them to `human_review` without actual human review.
 - Added `docs/post-v1-checklist.md` with the human G4 workflow, low-G2 case order, prompt-regeneration path, UI polish queue, and close-out gates.
-- Updated the authoring prompt to `authoring-v2-grounded-2` so future generation keeps distinct user intents separate and avoids OCR-unsupported UI label citations.
+- Updated the authoring prompt to `authoring-v2-grounded-3` so future generation keeps distinct user intents separate, avoids OCR-unsupported UI label citations, and excludes state/result-only labels from `cited_ui_labels`.
 - Added `pnpm eval:candidate` to score a candidate `steps.json` against `eval/baseline.json` without replacing tracked generated artifacts.
 - Polished project step cards with clearer review metadata for timing range, confidence, audio mode, narration, and edit/delete controls.
 - Kept project step edit forms open after individual blur-save updates, so
@@ -324,8 +324,9 @@ Still open:
 - Actual `human_review` G4 records for cases 01/02/03 require human review and explicit `pnpm g4:record -- --confirm-human-review`.
 - Artifact sync status UI remains queued until the Phase 6 artifact-first route is merged.
 - Persisted eval artifacts have not been regenerated from
-  `authoring-v2-grounded-2`; the improved case 03 candidate has not been copied
-  into `eval/results/generated/*` or `eval/baseline.json`.
+  `authoring-v2-grounded-3`; the measured case 03 candidate from
+  `authoring-v2-grounded-2` has not been copied into
+  `eval/results/generated/*` or `eval/baseline.json`.
 - `eval:candidate -- --require-g2-improvement` compares against
   `eval/baseline.json`, which still records the fixed v1 case 03 G2 `41.7%`;
   it is not a substitute for comparing a candidate against the current tracked
@@ -428,6 +429,21 @@ Validation result for the Phase 7 candidate G2 diagnostics slice:
   still fails as expected with `current_g2_regression`; the new details report
   unmatched cited labels `プレビュー`, `完了`, `ステップがありません`, and
   `ステップの生成を開始しました`, plus `G2 no-citation steps: none`.
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 26 test files and 302 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
+
+Validation result for the Phase 7 state-label prompt guard slice:
+
+- Bumped `AUTHORING_PROMPT_VERSION` to `authoring-v2-grounded-3`.
+- Added prompt guidance that state/result-only text such as `プレビュー`, `完了`,
+  `ステップがありません`, and `ステップの生成を開始しました` should not enter
+  `cited_ui_labels` unless the step explicitly confirms that text.
+- This is prompt-only; no generated artifacts, G4 records, or
+  `eval/baseline.json` were updated.
+- `pnpm vitest run server/authoring/author.test.ts`: PASS, 10 tests.
 - `pnpm check`: PASS
 - `pnpm test`: PASS, 26 test files and 302 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
