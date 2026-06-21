@@ -12,10 +12,13 @@ work that should improve the product after v1 without weakening release gates.
 - Current post-v1 quality gate on tracked artifacts in this branch: G2
   `82.8%`, G3 `7.0%`, fallback reasons `0`
 - Required release audit remains `pnpm v1:release-audit`
-- Human G4 records already exist for release-required cases 04 and 05.
-- Cases 01, 02, and 03 still have `review_type: "ai_estimate"` records only.
+- Human G4 records exist for all five real recording cases.
+- Cases 01, 02, and 03 were reviewed by `iwsh23` on `2026-06-21` with
+  `total_manual_edits: 0` and no blocking issues.
 
 ## Human G4 For Cases 01/02/03
+
+Status: complete. Keep this workflow here for future replacement or audit runs.
 
 Do not overwrite `eval/g4/records/*.json` with `human_review` unless a human has
 actually reviewed the steps/artifacts and counted corrections.
@@ -34,8 +37,8 @@ pnpm g4:review-pack -- --missing-human-review --overwrite
 ```
 
 This selector creates packets for real generated cases that do not yet have
-`review_type: "human_review"`. On this branch it should surface cases 01, 02,
-and 03.
+`review_type: "human_review"`. After the `2026-06-21` human G4 update, it should
+not surface cases 01, 02, or 03 unless their records are intentionally reverted.
 
 After actual human review, dry-run each record first:
 
@@ -71,6 +74,24 @@ Measure prompt impact with low-G2 cases first:
 
 ```bash
 RUN_ID=$(date +%Y%m%dT%H%M)
+pnpm pipeline:generate -- \
+  --video eval/dataset/real-app-workflow-03-generate-steps/video.mp4 \
+  --outdir "outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-${RUN_ID}" \
+  --use-audio false \
+  --asr-provider none \
+  --preflight
+```
+
+`--preflight` is the no-write planning check. It exits before creating DB
+records, creating the output directory, storing the source video, processing
+evidence, or writing `project_*_steps.json`. Existing `--dry-run` is not a
+no-write mode: it still creates the output directory, creates the CLI
+user/project, and stores the source video before skipping processing.
+
+After inspecting the preflight output, run the generation command without
+`--preflight`:
+
+```bash
 pnpm pipeline:generate -- \
   --video eval/dataset/real-app-workflow-03-generate-steps/video.mp4 \
   --outdir "outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-${RUN_ID}" \

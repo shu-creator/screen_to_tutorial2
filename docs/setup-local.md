@@ -88,8 +88,14 @@ preflightは入力動画、tracked worktreeのclean状態、`DATABASE_URL`、指
 個別に生成だけを確認する場合:
 
 ```bash
+pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio false --asr-provider none --ocr-provider llm --preflight
 pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio false --asr-provider none --ocr-provider llm
 ```
+
+`pipeline:generate --preflight` はoutdir作成、DB project作成、source video
+storage、evidence処理、`steps.json` 出力の前に終了する書き込みなし確認である。
+既存の `--dry-run` はno-writeではなく、outdir作成、CLI user/project作成と
+source video storage後に処理だけをスキップする。
 
 完了条件:
 

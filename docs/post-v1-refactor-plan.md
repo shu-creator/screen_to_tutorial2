@@ -519,3 +519,41 @@ Validation result for the Phase 7 G4 review-pack dry-run slice:
 - `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.
+
+Phase 7 next slice: add a no-write preflight mode to `pnpm pipeline:generate`
+before measuring current-prompt low-G2 candidates. Existing `--dry-run` creates
+the output directory, creates the CLI local user/project, and stores the source
+video before skipping processing, so it is unsuitable as the approval-free
+planning step for prompt impact measurement. Keep `--dry-run` behavior for
+compatibility, add `--preflight` that exits before outdir/DB/storage/output
+writes, document the preflight-first workflow, and verify with the standard
+phase gate commands.
+
+Validation result for the Phase 7 pipeline preflight and human G4 slice:
+
+- Added `pnpm pipeline:generate -- --preflight` as a no-write planning check
+  that exits before outdir creation, DB user/project writes, source video
+  storage, evidence processing, and `project_*_steps.json` export.
+- Preserved existing `--dry-run` behavior for compatibility and documented that
+  it still creates outdir, DB user/project state, and source video storage
+  before skipping processing.
+- Added CLI helper and command-level tests for preflight parsing, plan output,
+  and the no-outdir-write boundary.
+- Replaced the ai-estimate G4 records for `real-app-workflow-01`,
+  `real-app-workflow-02-create-project`, and
+  `real-app-workflow-03-generate-steps` with human_review records after user
+  confirmation. Reviewer `iwsh23`, reviewed_at `2026-06-21`, all edit counts
+  `0`, and no blocking issues.
+- `pnpm g4:record -- ... --dry-run`: PASS for all three cases before
+  `--overwrite`.
+- `pnpm vitest run server/cli/generatePipeline.test.ts`: PASS, 3 tests.
+- `pnpm pipeline:generate -- --video eval/dataset/real-app-workflow-03-generate-steps/video.mp4 --outdir outputs/post-v1-prompt-check/preflight-smoke --use-audio false --asr-provider none --preflight`: PASS.
+- Independent review found no critical or major findings. Adopted minor fixes
+  for preflight `PASS` semantics, `--dry-run` outdir documentation, and the ESM
+  main guard.
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 27 test files and 310 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, no G4 warnings.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS; required real-case human_review records are
+  present for all five cases.

@@ -318,6 +318,7 @@ pnpm v1:fresh-env-smoke -- --video ./sample.mp4 --preflight-only
 pnpm v1:fresh-env-smoke -- --video ./sample.mp4 --allow-install --install-mode offline
 
 # フルパイプライン（DB + LLM APIキーが必要）
+pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true --asr-provider openai --ocr-provider engine --preflight
 pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true --asr-provider openai --ocr-provider engine
 
 # 生成済みprojectからPPTX/動画を出力
@@ -346,7 +347,8 @@ pnpm g4:review-pack -- --release-candidates --overwrite
 pnpm g4:record -- --case <case-id> --reviewer <name> --reviewed-at YYYY-MM-DD --confirm-human-review --dry-run
 ```
 
-- `pipeline:generate` の出力: `./outputs/project_<id>_steps.json`（`--dry-run` でプロジェクト作成のみ）
+- `pipeline:generate --preflight` の出力: 書き込みなしの実行計画（outdir作成、DB project、source video storage、steps生成は行わない）
+- `pipeline:generate` の出力: `./outputs/project_<id>_steps.json`（`--dry-run` はno-writeではなく、outdir作成、プロジェクト作成、source video storage後に処理だけをスキップする）
 - `v1:smoke` の出力: `./outputs/v1-smoke/v1_smoke_summary.json`（setup check、生成、export、編集同期の通しsummary）
 - `v1:release-audit` の出力: v1リリース条件のPASS/FAIL/INCOMPLETE一覧。FAIL/INCOMPLETE checkには次に実行する `next:` を添える。`human_review` G4と新規環境スモーク証跡が無い場合は未達として扱う。
 - `v1:fresh-env-smoke -- --preflight-only` の出力: fresh-env本実行前の前提確認（動画、clean worktree、`DATABASE_URL`、workdir）。依存インストールやsummary生成はしない。

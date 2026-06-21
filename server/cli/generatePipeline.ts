@@ -2,8 +2,9 @@
 import "dotenv/config";
 import fs from "fs/promises";
 import path from "path";
+import { pathToFileURL } from "url";
 
-type CliOptions = {
+export type CliOptions = {
   video?: string;
   outdir: string;
   useAudio: boolean;
@@ -12,17 +13,19 @@ type CliOptions = {
   cacheDir?: string;
   debug: boolean;
   dryRun: boolean;
+  preflight: boolean;
   threshold?: number;
   minInterval?: number;
   maxFrames?: number;
 };
 
-function parseArgs(argv: string[]): CliOptions {
+export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     outdir: path.resolve(process.cwd(), "outputs"),
     useAudio: true,
     debug: false,
     dryRun: false,
+    preflight: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -60,6 +63,9 @@ function parseArgs(argv: string[]): CliOptions {
       case "--dry-run":
         options.dryRun = true;
         break;
+      case "--preflight":
+        options.preflight = true;
+        break;
       case "--threshold":
         options.threshold = Number(next);
         i++;
@@ -80,12 +86,50 @@ function parseArgs(argv: string[]): CliOptions {
   return options;
 }
 
+function describeProvider(value: string | undefined): string {
+  return value ?? "(pipeline default)";
+}
+
+export function buildPreflightLines(options: CliOptions, status: "PASS" | "PLAN" = "PLAN"): string[] {
+  const videoPath = options.video ? path.resolve(process.cwd(), options.video) : "(missing)";
+  const asrProvider = options.asrProvider ?? (!options.useAudio ? "none" : process.env.ASR_PROVIDER);
+  const ocrProvider = options.ocrProvider ?? process.env.OCR_PROVIDER;
+  const lines = [
+    `Pipeline preflight: ${status}`,
+    `video: ${videoPath}`,
+    `outdir: ${options.outdir}`,
+    `use_audio: ${options.useAudio}`,
+    `asr_provider: ${describeProvider(asrProvider)}`,
+    `ocr_provider: ${describeProvider(ocrProvider)}`,
+    `cache_dir: ${options.cacheDir ?? "(not set)"}`,
+    `debug: ${options.debug}`,
+    `dry_run: ${options.dryRun}`,
+    `threshold: ${options.threshold ?? "(pipeline default)"}`,
+    `min_interval: ${options.minInterval ?? "(pipeline default)"}`,
+    `max_frames: ${options.maxFrames ?? "(pipeline default)"}`,
+    "writes_when_executed:",
+    "- create the output directory",
+    "- create or update the CLI local user in the configured database",
+    "- store the source video through the configured storage backend",
+    "- create a database project for the imported video",
+    "- process evidence, generate steps, and export steps.json unless --dry-run is set",
+  ];
+
+  if (options.dryRun) {
+    lines.push(
+      "dry_run_note: existing --dry-run still creates the CLI user, stores the source video, and creates a database project before skipping processing.",
+    );
+  }
+
+  return lines;
+}
+
 function printUsage(): void {
   console.log(`Usage:
   pnpm tsx server/cli/generatePipeline.ts --video ./demo.mp4 --outdir ./outputs \\
     [--use-audio true|false] [--asr-provider none|openai|local_whisper] \\
     [--ocr-provider none|llm] [--cache-dir ./data/cache] [--threshold 5] \\
-    [--min-interval 30] [--max-frames 100] [--debug] [--dry-run]`);
+    [--min-interval 30] [--max-frames 100] [--debug] [--dry-run] [--preflight]`);
 }
 
 async function main(): Promise<void> {
@@ -93,6 +137,12 @@ async function main(): Promise<void> {
   if (!options.video) {
     printUsage();
     throw new Error("--video is required");
+  }
+
+  if (options.preflight) {
+    await fs.access(options.video);
+    console.log(buildPreflightLines(options, "PASS").join("\n"));
+    return;
   }
 
   if (options.cacheDir) {
@@ -179,13 +229,15 @@ async function main(): Promise<void> {
   console.log(`steps.json exported: ${outputPath}`);
 }
 
-void main()
-  .then(async () => {
-    const { getSharedOcrEngine } = await import("../_core/ocrEngine");
-    await getSharedOcrEngine().shutdown();
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
-  });
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void main()
+    .then(async () => {
+      const { getSharedOcrEngine } = await import("../_core/ocrEngine");
+      await getSharedOcrEngine().shutdown();
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    });
+}
