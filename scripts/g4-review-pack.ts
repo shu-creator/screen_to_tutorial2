@@ -11,6 +11,7 @@ type Options = {
   cases: string[];
   outdir: string;
   overwrite: boolean;
+  dryRun: boolean;
   releaseCandidates: boolean;
   missingHumanReview: boolean;
   limit: number | null;
@@ -99,11 +100,18 @@ export type ReviewPack = {
   outPath: string;
 };
 
-function parseArgs(argv: string[]): Options {
+type ReviewPackWriteOptions = {
+  overwrite: boolean;
+  dryRun: boolean;
+  log?: (message: string) => void;
+};
+
+export function parseArgs(argv: string[]): Options {
   const options: Options = {
     cases: [],
     outdir: defaultOutdir,
     overwrite: false,
+    dryRun: false,
     releaseCandidates: false,
     missingHumanReview: false,
     limit: null,
@@ -122,6 +130,8 @@ function parseArgs(argv: string[]): Options {
       i += 1;
     } else if (arg === "--overwrite") {
       options.overwrite = true;
+    } else if (arg === "--dry-run") {
+      options.dryRun = true;
     } else if (arg === "--release-candidates") {
       options.releaseCandidates = true;
     } else if (arg === "--missing-human-review") {
@@ -163,11 +173,12 @@ function parseLimit(value: string): number {
 
 function printHelp(): void {
   console.log(`Usage:
-  pnpm g4:review-pack -- --case <case-id> [--case <case-id> ...] [--outdir outputs/g4-review-packets] [--overwrite]
-  pnpm g4:review-pack -- --release-candidates [--limit 2] [--outdir outputs/g4-review-packets] [--overwrite]
-  pnpm g4:review-pack -- --missing-human-review [--limit N] [--outdir outputs/g4-review-packets] [--overwrite]
+  pnpm g4:review-pack -- --case <case-id> [--case <case-id> ...] [--outdir outputs/g4-review-packets] [--dry-run] [--overwrite]
+  pnpm g4:review-pack -- --release-candidates [--limit 2] [--outdir outputs/g4-review-packets] [--dry-run] [--overwrite]
+  pnpm g4:review-pack -- --missing-human-review [--limit N] [--outdir outputs/g4-review-packets] [--dry-run] [--overwrite]
 
 This command creates Markdown worksheets for human G4 review.
+With --dry-run, it prints the selected cases and output paths without writing worksheets.
 It never writes human_review G4 records; use pnpm g4:record after a real human review.
 `);
 }
@@ -448,9 +459,26 @@ export async function writeReviewPack(pack: ReviewPack, overwrite: boolean): Pro
   await fs.writeFile(pack.outPath, pack.markdown);
 }
 
+export async function writeOrPreviewReviewPack(
+  pack: ReviewPack,
+  options: ReviewPackWriteOptions,
+): Promise<"dry-run" | "written"> {
+  const log = options.log ?? console.log;
+  if (options.dryRun) {
+    log(`G4 review packet dry-run: ${pack.caseId} -> ${rel(pack.outPath)}`);
+    return "dry-run";
+  }
+  await writeReviewPack(pack, options.overwrite);
+  log(`G4 review packet written: ${rel(pack.outPath)}`);
+  return "written";
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   assertOutdir(options.outdir);
+  if (options.dryRun && options.overwrite) {
+    console.warn("warning: --overwrite has no effect with --dry-run");
+  }
   const releaseCandidateLimit = options.limit ?? 2;
   const missingHumanReviewLimit = options.limit ?? Number.MAX_SAFE_INTEGER;
   const releaseCandidateCases = options.releaseCandidates
@@ -478,8 +506,7 @@ async function main(): Promise<void> {
   }
   for (const caseId of cases) {
     const pack = await buildReviewPack(caseId, options.outdir);
-    await writeReviewPack(pack, options.overwrite);
-    console.log(`G4 review packet written: ${rel(pack.outPath)}`);
+    await writeOrPreviewReviewPack(pack, options);
   }
 }
 

@@ -329,8 +329,9 @@ Still open:
   `eval/results/generated/*` or `eval/baseline.json`.
 - A new `authoring-v2-grounded-3` candidate still needs to be generated and
   measured before any low-G2/G3 artifact promotion decision.
-- `pnpm g4:review-pack -- --missing-human-review --overwrite` is available to
-  regenerate worksheets for real generated cases that still lack human G4.
+- `pnpm g4:review-pack -- --missing-human-review --dry-run` previews the real
+  generated cases that still lack human G4; add `--overwrite` after confirming
+  the selected worksheets.
 
 Current candidate guardrails:
 
@@ -369,6 +370,7 @@ Validation result for the Phase 7 low-G2 candidate slice:
 - `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.
+
 - Additional candidate validation: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --require-g2-improvement` PASS, G2=71.4%, G3=0.0%, fallback=0.
 
 Validation result for the Phase 7 G4 selector slice:
@@ -497,6 +499,23 @@ Validation result for the Phase 7 candidate prompt-version gate slice:
   as an internal post-v1 gate condition instead of a public option.
 - `pnpm check`: PASS
 - `pnpm test`: PASS, 26 test files and 305 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
+
+Validation result for the Phase 7 G4 review-pack dry-run slice:
+
+- Added `pnpm g4:review-pack -- --dry-run` so human-review worksheet selection
+  can be previewed without writing packet files or G4 records.
+- Documented the dry-run-first workflow for `--missing-human-review`.
+- Independent review found no critical or major findings; added direct coverage
+  for the dry-run no-write contract after review.
+- `pnpm vitest run server/g4-review-pack.test.ts`: PASS, 11 tests.
+- `pnpm g4:review-pack -- --missing-human-review --dry-run`: PASS; selected
+  `real-app-workflow-01`, `real-app-workflow-02-create-project`, and
+  `real-app-workflow-03-generate-steps`.
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 26 test files and 307 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.

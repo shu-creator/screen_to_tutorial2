@@ -4,12 +4,55 @@ import path from "path";
 import { describe, expect, it } from "vitest";
 import {
   buildReviewPack,
+  parseArgs,
   selectMissingHumanReviewCases,
   selectReleaseCandidateCases,
+  writeOrPreviewReviewPack,
   writeReviewPack,
 } from "../scripts/g4-review-pack";
 
 describe("g4 review pack helper", () => {
+  it("parses dry-run review packet selection without requiring case ids", () => {
+    const options = parseArgs(["--missing-human-review", "--dry-run", "--limit", "3"]);
+
+    expect(options.missingHumanReview).toBe(true);
+    expect(options.dryRun).toBe(true);
+    expect(options.limit).toBe(3);
+    expect(options.cases).toEqual([]);
+  });
+
+  it("previews review packets without writing files in dry-run mode", async () => {
+    const outputsOutdir = path.join(process.cwd(), "outputs", "g4-review-pack-dry-run-test");
+    const pack = await buildReviewPack("real-app-workflow-04-export-video", outputsOutdir);
+    const logs: string[] = [];
+
+    try {
+      await fs.rm(outputsOutdir, { recursive: true, force: true });
+      await expect(
+        writeOrPreviewReviewPack(pack, {
+          dryRun: true,
+          overwrite: true,
+          log: (message) => logs.push(message),
+        }),
+      ).resolves.toBe("dry-run");
+      await expect(fs.access(pack.outPath)).rejects.toThrow();
+      expect(logs).toEqual([
+        "G4 review packet dry-run: real-app-workflow-04-export-video -> outputs/g4-review-pack-dry-run-test/real-app-workflow-04-export-video.md",
+      ]);
+
+      await expect(
+        writeOrPreviewReviewPack(pack, {
+          dryRun: false,
+          overwrite: false,
+          log: (message) => logs.push(message),
+        }),
+      ).resolves.toBe("written");
+      await expect(fs.access(pack.outPath)).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(outputsOutdir, { recursive: true, force: true });
+    }
+  });
+
   it("builds a worksheet without creating a human_review record", async () => {
     const caseId = "tmp-review-pack-test";
     const generatedDir = path.join(process.cwd(), "eval", "results", "generated", caseId);

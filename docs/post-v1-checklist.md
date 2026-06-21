@@ -26,9 +26,10 @@ Review packets have been generated for:
 - `outputs/g4-review-packets/real-app-workflow-02-create-project.md`
 - `outputs/g4-review-packets/real-app-workflow-03-generate-steps.md`
 
-Regenerate the packets with:
+Preview the selected cases, then regenerate the packets with:
 
 ```bash
+pnpm g4:review-pack -- --missing-human-review --dry-run
 pnpm g4:review-pack -- --missing-human-review --overwrite
 ```
 
@@ -197,6 +198,7 @@ If generated artifacts changed and `pnpm eval:audit` still reports real cases
 without `human_review`, regenerate the relevant review packets:
 
 ```bash
+pnpm g4:review-pack -- --missing-human-review --dry-run
 pnpm g4:review-pack -- --missing-human-review --overwrite
 ```
 

@@ -33,6 +33,7 @@ pnpm g4:review-pack -- --release-candidates --overwrite
 post-v1で、実録画かつ生成済みstepsがあるが `human_review` G4が未記録のケースをまとめてレビュー対象に戻す場合は `--missing-human-review` を使う。これはreview packetだけを作り、`human_review` recordは書かない。
 
 ```bash
+pnpm g4:review-pack -- --missing-human-review --dry-run
 pnpm g4:review-pack -- --missing-human-review --overwrite
 ```
 
