@@ -306,18 +306,21 @@ Changes started:
 - Kept 01/02/03 `eval/g4/records/*.json` as `ai_estimate`; do not promote them to `human_review` without actual human review.
 - Added `docs/post-v1-checklist.md` with the human G4 workflow, low-G2 case order, prompt-regeneration path, UI polish queue, and close-out gates.
 - Updated the authoring prompt to `authoring-v2-grounded-2` so future generation keeps distinct user intents separate and avoids OCR-unsupported UI label citations.
+- Added `pnpm eval:candidate` to score a candidate `steps.json` against `eval/baseline.json` without replacing tracked generated artifacts.
 
 Still open:
 
 - Actual `human_review` G4 records for cases 01/02/03 require human review and explicit `pnpm g4:record -- --confirm-human-review`.
 - UI polish implementation remains queued.
 - Prompt impact has not been measured on regenerated low-G2 cases; persisted eval artifacts still reflect `authoring-v2-grounded-1`.
+- `pnpm eval:candidate -- --require-g2-improvement` now provides the local gate for accepting a regenerated low-G2 artifact.
 
 Validation result for the Phase 7 starter slice:
 
 - `pnpm check`: PASS
-- `pnpm test`: PASS, 24 test files and 262 tests passed, 1 skipped.
+- `pnpm test`: PASS, 25 test files and 266 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
 - `pnpm eval:quality-gate`: PASS, G2=69.4%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.
 - Additional G4 packet validation: `pnpm g4:review-pack -- --case real-app-workflow-01 --case real-app-workflow-02-create-project --case real-app-workflow-03-generate-steps --overwrite` PASS.
+- Additional low-G2 candidate validation: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps eval/results/generated/real-app-workflow-03-generate-steps/steps.json` PASS, G2=41.7%, G3=25.0%, fallback=0. `--case ..` is rejected before dataset path resolution.

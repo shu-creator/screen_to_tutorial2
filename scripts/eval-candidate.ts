@@ -1,0 +1,318 @@
+#!/usr/bin/env tsx
+import fs from "fs/promises";
+import path from "path";
+import { pathToFileURL } from "url";
+import {
+  computeG1,
+  computeG2,
+  computeG3,
+  type GeneratedStepLike,
+  type GroundTruthStep,
+} from "../server/eval/metrics";
+
+const repoRoot = path.resolve(import.meta.dirname, "..");
+const datasetDir = path.join(repoRoot, "eval", "dataset");
+const baselinePath = path.join(repoRoot, "eval", "baseline.json");
+
+type StepsArtifact = {
+  steps?: Array<Record<string, unknown>>;
+};
+
+type BaselineEntry = {
+  caseId: string;
+  g2?: { accuracy: number };
+  g3?: { rate: number };
+};
+
+type BaselineFile = {
+  results?: BaselineEntry[];
+};
+
+type GroundTruthFile = {
+  steps: GroundTruthStep[];
+};
+
+export type CandidateEvalOptions = {
+  maxG2Regression: number;
+  maxG3Regression: number;
+  requireG2Improvement: boolean;
+};
+
+export type CandidateEvalResult = {
+  pass: boolean;
+  caseId: string;
+  stepCount: number;
+  g1F1: number;
+  g2Accuracy: number;
+  baselineG2Accuracy?: number;
+  g2Delta?: number;
+  g2NoCitationRate: number;
+  g3Rate: number;
+  baselineG3Rate?: number;
+  g3Delta?: number;
+  fallbackReasonCount: number;
+  fallbackStepCount: number;
+  invalidReasons: string[];
+  notes: string[];
+};
+
+type CliOptions = CandidateEvalOptions & {
+  caseId?: string;
+  stepsPath?: string;
+  json: boolean;
+};
+
+function parseArgs(argv: string[]): CliOptions {
+  const options: CliOptions = {
+    maxG2Regression: 0,
+    maxG3Regression: 0,
+    requireG2Improvement: false,
+    json: false,
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    const next = argv[i + 1];
+    switch (arg) {
+      case "--":
+        break;
+      case "--case":
+        options.caseId = requireNext(arg, next);
+        i += 1;
+        break;
+      case "--steps":
+        options.stepsPath = requireNext(arg, next);
+        i += 1;
+        break;
+      case "--max-g2-regression":
+        options.maxG2Regression = parseNumber(arg, requireNext(arg, next));
+        i += 1;
+        break;
+      case "--max-g3-regression":
+        options.maxG3Regression = parseNumber(arg, requireNext(arg, next));
+        i += 1;
+        break;
+      case "--require-g2-improvement":
+        options.requireG2Improvement = true;
+        break;
+      case "--json":
+        options.json = true;
+        break;
+      case "--help":
+      case "-h":
+        printHelp();
+        process.exit(0);
+      default:
+        throw new Error(`Unknown option: ${arg}`);
+    }
+  }
+
+  return options;
+}
+
+function requireNext(arg: string, next: string | undefined): string {
+  if (!next || next.startsWith("--")) {
+    throw new Error(`${arg} requires a value`);
+  }
+  return next;
+}
+
+function parseNumber(arg: string, value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${arg} must be a non-negative number`);
+  }
+  return parsed;
+}
+
+export function validateCaseId(caseId: string): void {
+  if (!caseId.trim()) {
+    throw new Error("--case must not be empty");
+  }
+  if (caseId === "." || caseId === "..") {
+    throw new Error(`--case must not be a directory reference: ${caseId}`);
+  }
+  if (/[/\\]/.test(caseId)) {
+    throw new Error(`--case must not contain path separators: ${caseId}`);
+  }
+}
+
+function printHelp(): void {
+  console.log(`Usage:
+  pnpm eval:candidate -- --case <case-id> --steps <path/to/steps.json> [options]
+
+Options:
+  --require-g2-improvement      Fail unless candidate G2 is above baseline G2.
+  --max-g2-regression N         Allowed G2 regression as a ratio. Default: 0.
+  --max-g3-regression N         Allowed G3 regression as a ratio. Default: 0.
+  --json                        Print JSON.
+
+This command reads a candidate steps.json and compares it with eval/baseline.json.
+It does not write eval results or update the baseline.
+`);
+}
+
+async function readJson<T>(filePath: string): Promise<T> {
+  return JSON.parse(await fs.readFile(filePath, "utf8")) as T;
+}
+
+function extractSteps(artifact: StepsArtifact): GeneratedStepLike[] {
+  if (!Array.isArray(artifact.steps)) {
+    throw new Error("steps.json に steps 配列がありません");
+  }
+  return artifact.steps.map((step) => ({
+    t_start: Number(step.t_start ?? 0),
+    t_end: Number(step.t_end ?? 0),
+    title: String(step.title ?? ""),
+    operation: typeof step.operation === "string" ? step.operation : undefined,
+    instruction: typeof step.instruction === "string" ? step.instruction : undefined,
+    cited_ui_labels: Array.isArray(step.cited_ui_labels)
+      ? step.cited_ui_labels.filter((label): label is string => typeof label === "string")
+      : undefined,
+  }));
+}
+
+function detectFallbackStats(artifact: StepsArtifact): {
+  fallbackReasonCount: number;
+  fallbackStepCount: number;
+} {
+  let fallbackReasonCount = 0;
+  let fallbackStepCount = 0;
+  for (const step of artifact.steps ?? []) {
+    const reasons = Array.isArray(step.review_reasons)
+      ? step.review_reasons.filter((reason): reason is string => typeof reason === "string")
+      : [];
+    const fallbackReasons = reasons.filter((reason) => reason.startsWith("fallback:"));
+    fallbackReasonCount += fallbackReasons.length;
+    if (fallbackReasons.length > 0) fallbackStepCount += 1;
+  }
+  return { fallbackReasonCount, fallbackStepCount };
+}
+
+export function evaluateCandidate(
+  input: {
+    caseId: string;
+    groundTruth: GroundTruthStep[];
+    artifact: StepsArtifact;
+    baseline?: BaselineEntry;
+  },
+  options: CandidateEvalOptions,
+): CandidateEvalResult {
+  const generated = extractSteps(input.artifact);
+  const allowedLabels = input.groundTruth.flatMap((step) => step.ui_labels ?? []);
+  const g1 = computeG1(generated, input.groundTruth);
+  const g2 = computeG2(generated, allowedLabels);
+  const g3 = computeG3(generated, input.groundTruth);
+  const fallback = detectFallbackStats(input.artifact);
+  const baselineG2 = input.baseline?.g2?.accuracy;
+  const baselineG3 = input.baseline?.g3?.rate;
+  const g2Delta = baselineG2 === undefined ? undefined : g2.accuracy - baselineG2;
+  const g3Delta = baselineG3 === undefined ? undefined : g3.rate - baselineG3;
+  const invalidReasons: string[] = [];
+  const notes: string[] = [];
+
+  if (!input.baseline) {
+    invalidReasons.push("missing_baseline");
+  }
+  if (fallback.fallbackReasonCount > 0) {
+    invalidReasons.push("fallback_reasons_present");
+  }
+  if (g2Delta !== undefined && g2Delta < -options.maxG2Regression) {
+    invalidReasons.push("g2_regression");
+  }
+  if (g3Delta !== undefined && g3Delta > options.maxG3Regression) {
+    invalidReasons.push("g3_regression");
+  }
+  if (options.requireG2Improvement && (g2Delta === undefined || g2Delta <= 0)) {
+    invalidReasons.push("g2_not_improved");
+  }
+  if (generated.length === 0) {
+    invalidReasons.push("empty_steps");
+  }
+  if (g2.totalLabels === 0) {
+    notes.push("candidate has no cited UI labels");
+  }
+
+  return {
+    pass: invalidReasons.length === 0,
+    caseId: input.caseId,
+    stepCount: generated.length,
+    g1F1: g1.f1,
+    g2Accuracy: g2.accuracy,
+    baselineG2Accuracy: baselineG2,
+    g2Delta,
+    g2NoCitationRate: g2.noCitationRate,
+    g3Rate: g3.rate,
+    baselineG3Rate: baselineG3,
+    g3Delta,
+    fallbackReasonCount: fallback.fallbackReasonCount,
+    fallbackStepCount: fallback.fallbackStepCount,
+    invalidReasons,
+    notes,
+  };
+}
+
+function pct(value: number | undefined): string {
+  return value === undefined ? "-" : `${(value * 100).toFixed(1)}%`;
+}
+
+function signedPct(value: number | undefined): string {
+  if (value === undefined) return "-";
+  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
+}
+
+function printResult(result: CandidateEvalResult): void {
+  console.log(`Candidate eval: ${result.pass ? "PASS" : "FAIL"}`);
+  console.log(`case: ${result.caseId}`);
+  console.log(`steps: ${result.stepCount}`);
+  console.log(`G1-F1: ${pct(result.g1F1)}`);
+  console.log(`G2: ${pct(result.g2Accuracy)} (baseline ${pct(result.baselineG2Accuracy)}, delta ${signedPct(result.g2Delta)})`);
+  console.log(`G2 no-citation: ${pct(result.g2NoCitationRate)}`);
+  console.log(`G3: ${pct(result.g3Rate)} (baseline ${pct(result.baselineG3Rate)}, delta ${signedPct(result.g3Delta)})`);
+  console.log(`fallback reasons: ${result.fallbackReasonCount}`);
+  if (result.invalidReasons.length > 0) {
+    console.log("Invalid reasons:");
+    for (const reason of result.invalidReasons) console.log(`- ${reason}`);
+  }
+  if (result.notes.length > 0) {
+    console.log("Notes:");
+    for (const note of result.notes) console.log(`- ${note}`);
+  }
+}
+
+async function main(): Promise<void> {
+  const options = parseArgs(process.argv.slice(2));
+  if (!options.caseId) throw new Error("--case is required");
+  if (!options.stepsPath) throw new Error("--steps is required");
+  validateCaseId(options.caseId);
+
+  const groundTruth = await readJson<GroundTruthFile>(
+    path.join(datasetDir, options.caseId, "ground_truth.json"),
+  );
+  const artifact = await readJson<StepsArtifact>(path.resolve(options.stepsPath));
+  const baselineFile = await readJson<BaselineFile>(baselinePath);
+  const baseline = baselineFile.results?.find((entry) => entry.caseId === options.caseId);
+  const result = evaluateCandidate(
+    {
+      caseId: options.caseId,
+      groundTruth: groundTruth.steps,
+      artifact,
+      baseline,
+    },
+    options,
+  );
+
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    printResult(result);
+  }
+  if (!result.pass) process.exit(1);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

@@ -71,10 +71,27 @@ pnpm pipeline:generate -- \
   --asr-provider none
 ```
 
-Then copy the candidate `steps.json` into a temporary eval result location and
-run `pnpm eval` / `pnpm eval:quality-gate` before replacing any baseline
-artifact. Do not update `eval/baseline.json` unless the new output is reviewed
-and the improvement is intentional.
+Then evaluate the candidate without copying it over the tracked generated
+artifact:
+
+```bash
+pnpm eval:candidate -- \
+  --case real-app-workflow-03-generate-steps \
+  --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps/steps.json \
+  --require-g2-improvement
+```
+
+For diagnostic detail, the general eval runner can also score an arbitrary
+artifact:
+
+```bash
+pnpm eval -- \
+  --case real-app-workflow-03-generate-steps \
+  --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps/steps.json
+```
+
+Do not update `eval/results/generated/*` or `eval/baseline.json` unless the new
+output is reviewed and the improvement is intentional.
 
 ## Low-G2 Case Order
 

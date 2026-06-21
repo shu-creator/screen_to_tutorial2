@@ -21,6 +21,7 @@
     "v1:fresh-env-smoke": "tsx scripts/v1-fresh-env-smoke.ts",
     "evidence:extract": "tsx server/cli/extractEvidence.ts",
     "eval": "tsx server/eval/run.ts",
+    "eval:candidate": "tsx scripts/eval-candidate.ts",
     "eval:audit": "tsx scripts/eval-audit.ts",
     "eval:quality-gate": "tsx scripts/eval-quality-gate.ts",
     "eval:export-case": "tsx scripts/export-eval-case.ts",
