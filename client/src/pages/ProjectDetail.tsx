@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock, RefreshCw, Settings, Play, Film, GripVertical, Presentation, Volume2, Pause } from "lucide-react";
+import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock, RefreshCw, Settings, Play, Film, GripVertical, Presentation, Volume2, Pause, Pencil, Trash2, Gauge, Mic } from "lucide-react";
 import { Link, useParams } from "wouter";
 import { toast } from "sonner";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -75,6 +75,33 @@ function formatReviewReason(reason: string): string {
 
 function formatReviewDetails(review: { warnings: string[]; reviewReasons: string[] }): string {
   return [...review.warnings, ...review.reviewReasons.map(formatReviewReason)].filter(Boolean).join(" / ");
+}
+
+const LOW_CONFIDENCE_THRESHOLD = 0.5;
+
+function formatStepTime(ms: number): string {
+  if (!Number.isFinite(ms)) return "-";
+  const seconds = Math.max(0, ms / 1000);
+  if (seconds < 60) {
+    const displaySeconds = seconds < 10
+      ? Math.min(9.9, seconds).toFixed(1)
+      : Math.min(59, Math.round(seconds)).toString();
+    return `${displaySeconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${rest}`;
+}
+
+function formatAudioMode(mode: string): string {
+  const labels: Record<string, string> = {
+    auto: "自動",
+    tts: "TTS",
+    original: "元音声",
+    mixed: "混合",
+    silent: "無音",
+  };
+  return labels[mode] ?? mode;
 }
 
 function SortableStepCard({
@@ -260,9 +287,32 @@ function SortableStepCard({
                     )}
                   </div>
                   {review?.needsReview && (
-                    <p className="text-xs text-destructive mt-1">
+                    <p className="mt-1 text-xs leading-relaxed text-destructive">
                       {formatReviewDetails(review) || "信頼度が低いステップです"}
                     </p>
+                  )}
+                  {review && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline" className="gap-1">
+                        <Clock className="h-3 w-3" />
+                        {formatStepTime(review.tStart)}-{formatStepTime(review.tEnd)}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className={
+                          review.needsReview && review.confidence < LOW_CONFIDENCE_THRESHOLD
+                            ? "gap-1 border-destructive/40 text-destructive"
+                            : "gap-1"
+                        }
+                      >
+                        <Gauge className="h-3 w-3" />
+                        {Math.round(review.confidence * 100)}%
+                      </Badge>
+                      <Badge variant="outline" className="gap-1">
+                        <Volume2 className="h-3 w-3" />
+                        {formatAudioMode(review.audioMode)}
+                      </Badge>
+                    </div>
                   )}
                   <CardDescription className="mt-2">
                     <strong>操作:</strong> {step.operation}
@@ -270,8 +320,9 @@ function SortableStepCard({
                   <p className="text-sm text-foreground mt-2">{step.description}</p>
                   {step.narration && (
                     <div className="mt-2 space-y-2">
-                      <p className="text-sm text-muted-foreground italic">
-                        🎙️ {step.narration}
+                      <p className="flex items-start gap-2 text-sm text-muted-foreground italic">
+                        <Mic className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>{step.narration}</span>
                       </p>
                       {step.audioUrl && (
                         <audio
@@ -303,14 +354,19 @@ function SortableStepCard({
                 variant="ghost"
                 size="sm"
                 onClick={onToggleEdit}
+                aria-label={isEditing ? "編集を終了" : "ステップを編集"}
               >
+                {isEditing ? <CheckCircle className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
                 {isEditing ? "完了" : "編集"}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => onDelete(step.id)}
+                className="text-destructive hover:text-destructive"
+                aria-label="ステップを削除"
               >
+                <Trash2 className="h-4 w-4" />
                 削除
               </Button>
             </div>
@@ -891,17 +947,25 @@ export default function ProjectDetail() {
 
         {/* Tabs */}
         <Tabs defaultValue="frames" className="w-full">
-          <TabsList className="flex w-full justify-start overflow-x-auto">
-            <TabsTrigger value="frames">
-              <ImageIcon className="h-4 w-4 mr-2" />
-              フレーム ({frames?.length || 0})
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger
+              value="frames"
+              className="min-w-0 px-1 text-xs sm:px-2 sm:text-sm"
+              aria-label={`フレーム (${frames?.length || 0})`}
+            >
+              <ImageIcon className="h-4 w-4" />
+              フレーム<span className="hidden sm:inline"> ({frames?.length || 0})</span>
             </TabsTrigger>
-            <TabsTrigger value="steps">
-              <FileText className="h-4 w-4 mr-2" />
-              ステップ ({steps?.length || 0})
+            <TabsTrigger
+              value="steps"
+              className="min-w-0 px-1 text-xs sm:px-2 sm:text-sm"
+              aria-label={`ステップ (${steps?.length || 0})`}
+            >
+              <FileText className="h-4 w-4" />
+              ステップ<span className="hidden sm:inline"> ({steps?.length || 0})</span>
             </TabsTrigger>
-            <TabsTrigger value="preview">
-              <Play className="h-4 w-4 mr-2" />
+            <TabsTrigger value="preview" className="min-w-0 px-1 text-xs sm:px-2 sm:text-sm">
+              <Play className="h-4 w-4" />
               プレビュー
             </TabsTrigger>
           </TabsList>

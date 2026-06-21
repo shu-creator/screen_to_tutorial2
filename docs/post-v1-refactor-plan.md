@@ -307,11 +307,12 @@ Changes started:
 - Added `docs/post-v1-checklist.md` with the human G4 workflow, low-G2 case order, prompt-regeneration path, UI polish queue, and close-out gates.
 - Updated the authoring prompt to `authoring-v2-grounded-2` so future generation keeps distinct user intents separate and avoids OCR-unsupported UI label citations.
 - Added `pnpm eval:candidate` to score a candidate `steps.json` against `eval/baseline.json` without replacing tracked generated artifacts.
+- Polished project step cards with clearer review metadata for timing range, confidence, audio mode, narration, and edit/delete controls.
 
 Still open:
 
 - Actual `human_review` G4 records for cases 01/02/03 require human review and explicit `pnpm g4:record -- --confirm-human-review`.
-- UI polish implementation remains queued.
+- Artifact sync status UI remains queued until the Phase 6 artifact-first route is merged.
 - Prompt impact has not been measured on regenerated low-G2 cases; persisted eval artifacts still reflect `authoring-v2-grounded-1`.
 - `pnpm eval:candidate -- --require-g2-improvement` now provides the local gate for accepting a regenerated low-G2 artifact.
 

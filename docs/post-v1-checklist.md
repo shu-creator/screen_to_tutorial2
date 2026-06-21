@@ -103,12 +103,21 @@ output is reviewed and the improvement is intentional.
 
 ## UI Polish Queue
 
+Open:
+
 - Keep edit/delete/reorder UI behavior aligned with the artifact-first route
   contract once the Phase 6 branch is merged.
-- Add clearer review-state affordances for `needs_review`, timing/audio edits,
-  and artifact sync status.
-- Check mobile widths for project detail tabs, step cards, and export controls.
-- Verify that button labels and icons fit without wrapping or overlap.
+- Artifact sync status remains queued because the Phase 6 artifact-first route
+  is still separate from this branch.
+
+Done:
+
+- Added clearer review-state affordances on project step cards: timing range,
+  confidence, audio mode, narration iconography, and edit/delete icons.
+- Checked project detail tabs, step cards, and export controls at desktop,
+  390px, and 320px widths; tabs now use a three-column layout so labels stay
+  visible.
+- Verified that the updated button labels and icons fit without overlap.
 
 ## Gate Before Closing Phase 7
 
