@@ -73,6 +73,20 @@ The persisted eval artifacts have not been regenerated from the current prompt.
 Measure prompt impact with low-G2 cases first:
 
 ```bash
+pnpm post-v1:prompt-check -- --run-id "$(date +%Y%m%dT%H%M)"
+```
+
+The default mode prints a no-write plan, including the preflight command, the
+side-effecting execution command, and the promotion-gate command. To run the
+measurement from that single runner, use `--execute --accept-side-effects` only
+after accepting the DB/storage/provider effects described below. The printed
+promotion-gate command uses `project_<project-id>_steps.json` as a template;
+replace `<project-id>` with the generated project id when running the command
+manually, or use the runner's `--execute` mode to resolve it automatically.
+
+Manual equivalent:
+
+```bash
 RUN_ID=$(date +%Y%m%dT%H%M)
 pnpm pipeline:generate -- \
   --video eval/dataset/real-app-workflow-03-generate-steps/video.mp4 \
@@ -181,8 +195,9 @@ Remaining measurement:
 - `authoring-v2-grounded-3` has not been measured on a freshly generated case 03
   artifact. This is the only low-G2/G3 prompt measurement still open on
   `codex/post-v1-refactor`.
-- Run the preflight block first. Run the real generation block only after
-  explicitly accepting the DB/storage/provider side effects above.
+- Run `pnpm post-v1:prompt-check` or the manual preflight block first. Run the
+  real generation block only after explicitly accepting the DB/storage/provider
+  side effects above.
 - Do not promote the result unless `pnpm eval:candidate -- --post-v1-promotion-gate`
   passes and the product tradeoff is accepted.
 

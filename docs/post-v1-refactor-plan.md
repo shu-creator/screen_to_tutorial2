@@ -343,6 +343,12 @@ Still open:
 - Do not run that side-effecting generation from automation unless the operator
   explicitly accepts those local DB/storage/provider effects for the current
   checkout.
+- Use `pnpm post-v1:prompt-check` as the default no-write runner for the
+  remaining measurement. It prints the preflight, execution, side-effect, and
+  promotion-gate plan; `--execute` is rejected unless paired with
+  `--accept-side-effects`. The printed promotion-gate path is a
+  `project_<project-id>_steps.json` template for manual replacement; execute
+  mode resolves the actual generated artifact automatically.
 
 Current candidate guardrails:
 
@@ -588,6 +594,40 @@ Validation result for the Phase 7 G4 close-out no-op slice:
 - `pnpm vitest run server/g4-review-pack.test.ts`: PASS, 13 tests.
 - `pnpm check`: PASS
 - `pnpm test`: PASS, 27 test files and 312 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS; required real-case human_review records are
+  present for all five cases.
+
+Validation result for the Phase 7 prompt-check runner slice:
+
+- Added `pnpm post-v1:prompt-check` as the no-write default runner for the
+  remaining `authoring-v2-grounded-3` measurement.
+- Default mode prints the case 03 video path, output directory, preflight
+  command, side-effecting execution command, side-effect list, and promotion
+  gate template without creating files or calling providers.
+- `--execute` is rejected unless paired with `--accept-side-effects`; passing
+  `--accept-side-effects` without `--execute` is also rejected.
+- Execute mode is the explicit side-effecting path: it runs
+  `pnpm pipeline:generate`, resolves the actual `project_*_steps.json`, then
+  runs `pnpm eval:candidate -- --post-v1-promotion-gate --details`.
+- Independent review initially found a critical issue in the printed promotion
+  command: a quoted glob would not expand when copied. The plan now prints a
+  `project_<project-id>_steps.json` template and explains that `<project-id>`
+  must be replaced manually, while execute mode resolves the artifact
+  automatically.
+- Second review found no critical or major findings. Adopted minor fixes for
+  consistent shell quoting and preserving `readdir` errors during artifact
+  discovery.
+- `pnpm vitest run server/post-v1-prompt-check.test.ts`: PASS, 4 tests.
+- `pnpm post-v1:prompt-check -- --run-id test-run`: PASS and prints a no-write
+  plan.
+- `pnpm post-v1:prompt-check -- --execute --run-id test-run`: exits 1 as
+  expected with `--execute requires --accept-side-effects`.
+- `pnpm post-v1:prompt-check -- --accept-side-effects --run-id test-run`: exits
+  1 as expected with `--accept-side-effects requires --execute`.
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 28 test files and 316 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases.
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS; required real-case human_review records are
