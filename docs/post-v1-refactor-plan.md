@@ -70,7 +70,7 @@ Validation result:
 
 ### Phase 1: Inventory
 
-Status: pending.
+Status: completed.
 
 Targets:
 
@@ -98,6 +98,82 @@ Phase 1 output will update this document with:
 - high-risk areas
 - safe touch order
 - validation commands for each planned change category
+
+Inventory result:
+
+#### `delete_candidate`
+
+| Path | Evidence | Required verification before deletion |
+| --- | --- | --- |
+| `scripts/requirements.txt` | No package script or runtime reference found. Root `requirements.txt` is the documented Python dependency file and already reflects the post-OpenCV setup. `scripts/requirements.txt` still contains only `opencv-python-headless` and `numpy`, while `docs/plans/phase-5-consolidation.md` says OpenCV/Numpy were refreshed away. | Confirm no external setup docs or shell snippets use this path, then delete in a small Phase 3 commit. Run full phase validation plus `pnpm setup:check`. |
+
+No other file-level delete candidate is safe in Phase 1. Most targeted files are connected to v1 audit, smoke, export, eval, G4 evidence, or artifact compatibility.
+
+#### `keep_for_v1`
+
+| Area | Evidence |
+| --- | --- |
+| `scripts/v1-smoke.ts`, `scripts/v1-release-audit.ts`, `scripts/v1-fresh-env-smoke.ts` | Package scripts and baseline gates. They validate setup, generation, export content, edit restore, current smoke, fresh-environment smoke, human G4, and fallback-free summaries. |
+| `scripts/eval-audit.ts`, `scripts/eval-quality-gate.ts` | Package scripts; `v1-release-audit` imports both. These enforce real-case readiness, required scenario tags, G2/G3 non-regression, and `fallback:*` absence. |
+| `scripts/export-project.ts`, `scripts/edit-artifact-smoke.ts` | Used by `v1:smoke` and release evidence. They validate export summaries and DB/artifact edit synchronization. |
+| `scripts/export-eval-case.ts`, `scripts/g4-record.ts`, `scripts/g4-review-pack.ts` | Required for Sprint 4 export QA and human G4 workflow. Tests cover record safety and review candidate selection. |
+| `scripts/model-rematch.ts` | Current rematch workbench. Tests cover fallback-heavy runs, zero-step runs, 520/429/quota signals, and timeout detection. |
+| `server/authoring/` | Imported by `server/stepGenerator.ts` for evidence-driven authoring. Tests cover chunk failure fallback, unassigned segments, UI label verification, low confidence, and waiting-only handling. |
+| `server/evidence/` | Imported by `videoProcessor`, `stepGenerator`, `videoGenerator`, and `evidence:extract`. Tests cover segmentation, extraction helpers, and integration. |
+| `README.md`, `docs/setup-local.md`, `docs/v1-release-checklist.md`, `docs/roadmap.md`, `eval/README.md` | Release docs and setup/eval source of truth for current CLI. `v1-release-audit` checks the release doc set. |
+| `eval/baseline.json`, `eval/dataset/*/{meta.json,ground_truth.json}`, `eval/g4/README.md`, `eval/g4/records/*.json` | Required by `eval:audit`, `eval:quality-gate`, and release audit. G4 records contain release evidence. |
+
+#### `post_v1_maybe`
+
+| Area | Why deferred |
+| --- | --- |
+| `scripts/ocr_server.py` | No package script directly invokes it, but `server/_core/ocrEngine.ts` spawns it for `OCR_PROVIDER=engine`. Defer unless local OCR engine support is intentionally dropped or moved. |
+| Legacy scene-detection fallback in `server/videoProcessor.ts` | Phase docs and `docs/v1-release-checklist.md` say it is retained through v1 and should only be removed after post-v1 real-recording QA. |
+| Legacy single-frame analysis path in `server/stepGenerator.ts` | Used when `evidence.json` is missing and can emit `fallback:legacy_step_analysis_failed`. Defer until Phase 4 fallback policy decides whether this fallback remains allowed. |
+| `docs/plans/phase-0-eval-harness.md` | Contains stale "real data waiting" and one-real-case language. Keep as history, but move stale claims into `Historical Notes` in Phase 2. |
+| `docs/plans/phase-2-step-authoring.md` | Contains stale "real LLM/G1-G3 measurement waiting" language. Keep design history, update status in Phase 2. |
+| `docs/plans/phase-3-slide-quality.md` | Still frames some heuristics as waiting for real-data evaluation. Reclassify under Phase 4 fallback/heuristic policy. |
+| `docs/plans/phase-4-clip-video.md` | Contains likely stale notes about step-level timing/audio UI. Verify against Sprint 3 implementation before editing. |
+| `docs/roadmap.md`, `docs/v1-release-checklist.md` local evidence sections | Both still contain earlier `INCOMPLETE` release-audit evidence even though the baseline audit now passes. Update as narrative evidence in Phase 2 without deleting historical context. |
+| Ignored `eval/results/` and `outputs/` local artifacts | Release audit and eval gates read some of these local evidence files. They are not tracked, but deleting them would break local audit PASS unless regenerated. Treat cleanup as a separate evidence-retention decision, not dead-code removal. |
+
+#### `high_risk`
+
+| Area | Risk |
+| --- | --- |
+| `server/stepsArtifact.ts` and `server/stepsArtifact.test.ts` | Central schema, migration, invalidation, artifact-to-DB compatibility, and unknown-version safety layer. Used by routers, step generation, slides, video generation, export, and edit smoke. |
+| `server/videoClips.ts` and `server/videoClips.test.ts` | Controls clip planning, audio-mode resolution, silent/original/TTS behavior, warnings, and `still_image_fallback_count`. Export QA and v1 smoke depend on this summary behavior. |
+| `server/evidence/artifactStore.ts` | Retry invalidation and parse behavior affect fallback routing. Changes can silently alter evidence/artifact source selection. |
+| DB/artifact sync paths in `server/routers.ts`, `server/stepGenerator.ts`, and `scripts/edit-artifact-smoke.ts` | v1 keeps artifact-first plus DB compatibility. Changing this belongs to Phase 5 design or Phase 6 separate branch. |
+| Export pipeline: `server/slideGenerator.ts`, `server/videoGenerator.ts`, `scripts/export-project.ts`, `scripts/export-eval-case.ts` | Release audit depends on export QA, slide content checks, and video fallback counts. |
+| Eval metrics and evidence: `server/eval/`, `eval/baseline.json`, `eval/g4/records/*.json` | These define the quality gate and human-review release proof. |
+
+Safe touch order:
+
+1. Docs-only stale narrative: `docs/roadmap.md`, `docs/v1-release-checklist.md`.
+2. Historical plan docs: `docs/plans/phase-0-eval-harness.md`, `phase-2-step-authoring.md`, `phase-3-slide-quality.md`, `phase-4-clip-video.md`.
+3. Setup-only cleanup: `scripts/requirements.txt`.
+4. Non-runtime helper scripts with focused tests: G4/review helpers and eval audit helpers.
+5. Smoke/audit scripts, only while preserving artifact/log validation semantics.
+6. Authoring/evidence internals, only with focused tests plus the quality gate.
+7. `stepsArtifact`, DB sync, video clip, and export paths last; prefer separate design or branch if behavior changes.
+
+Validation matrix:
+
+| Change category | Commands |
+| --- | --- |
+| End of every phase | `pnpm check`; `pnpm test`; `pnpm eval:audit`; `pnpm eval:quality-gate`; `pnpm v1:release-audit` |
+| Docs/setup cleanup | Required phase commands plus `pnpm setup:check` |
+| Runtime cleanup near fallback/artifacts/export | Required phase commands plus `pnpm v1:smoke -- --video eval/dataset/synth-login-click-01/video.mp4 --outdir outputs/v1-smoke-default-check --use-audio false --asr-provider none --audio-mode silent --max-frames 12`; inspect summary fields, not exit code alone |
+| G4/export QA flow changes | Required phase commands plus `pnpm g4:review-pack -- --release-candidates --overwrite` when review packet behavior changes |
+
+Validation result:
+
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 24 test files and 261 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=69.4%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
 
 ### Phase 2: Docs Cleanup
 
