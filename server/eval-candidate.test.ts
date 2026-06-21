@@ -21,8 +21,11 @@ const groundTruth: GroundTruthStep[] = [
   },
 ];
 
-function artifact(overrides: Record<string, unknown> = {}) {
+function artifact(overrides: Record<string, unknown> = {}, promptVersion = "candidate-prompt") {
   return {
+    config: {
+      prompt_version: promptVersion,
+    },
     steps: [
       {
         t_start: 0,
@@ -62,7 +65,7 @@ describe("eval candidate", () => {
       {
         caseId: "case-01",
         groundTruth,
-        artifact: artifact(),
+        artifact: artifact({}, " candidate-prompt "),
         baseline: {
           caseId: "case-01",
           g2: { accuracy: 0.5 },
@@ -77,10 +80,52 @@ describe("eval candidate", () => {
     );
 
     expect(result.pass).toBe(true);
+    expect(result.promptVersion).toBe("candidate-prompt");
     expect(result.g2Accuracy).toBe(1);
     expect(result.g2Delta).toBe(0.5);
     expect(result.g3Rate).toBe(0);
     expect(result.invalidReasons).toEqual([]);
+  });
+
+  it("omits prompt version diagnostics for legacy or invalid artifact config", () => {
+    const candidate = artifact();
+    const withoutConfig = {
+      steps: candidate.steps,
+    };
+    const invalidConfig = {
+      config: {
+        prompt_version: 42,
+      },
+      steps: candidate.steps,
+    };
+
+    const legacyResult = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: withoutConfig,
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+      },
+    );
+    const invalidResult = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: invalidConfig,
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+      },
+    );
+
+    expect(legacyResult.promptVersion).toBeUndefined();
+    expect(invalidResult.promptVersion).toBeUndefined();
   });
 
   it("fails candidates with fallback review reasons", () => {
@@ -137,7 +182,7 @@ describe("eval candidate", () => {
         caseId: "case-01",
         groundTruth,
         artifact: unmatchedArtifact(),
-        currentArtifact: artifact(),
+        currentArtifact: artifact({}, "current-prompt"),
         baseline: {
           caseId: "case-01",
           g2: { accuracy: 0 },
@@ -153,6 +198,7 @@ describe("eval candidate", () => {
 
     expect(result.pass).toBe(true);
     expect(result.g2Accuracy).toBe(0);
+    expect(result.currentPromptVersion).toBe("current-prompt");
     expect(result.currentG2Accuracy).toBe(1);
     expect(result.currentG2Delta).toBe(-1);
     expect(result.invalidReasons).toEqual([]);

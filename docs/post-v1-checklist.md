@@ -95,6 +95,12 @@ pnpm eval:candidate -- \
   --details
 ```
 
+The output prints the candidate `prompt version` and, when comparing against the
+tracked generated artifact, `current artifact prompt version`. Confirm these
+before promoting a candidate; the measured `project_39_steps.json` candidate is
+from `authoring-v2-grounded-2`, while the active authoring prompt in code is
+`authoring-v2-grounded-3`.
+
 For diagnostic detail, the general eval runner can also score an arbitrary
 artifact:
 

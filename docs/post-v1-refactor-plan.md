@@ -449,3 +449,25 @@ Validation result for the Phase 7 state-label prompt guard slice:
 - `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.
+
+Validation result for the Phase 7 candidate prompt-version diagnostics slice:
+
+- Added candidate and current generated artifact `config.prompt_version` reporting to
+  `pnpm eval:candidate` text and JSON output.
+- This keeps old prompt candidates visible during post-v1 promotion checks; it
+  does not change pass/fail thresholds, generated artifacts, G4 records, or
+  `eval/baseline.json`.
+- `pnpm vitest run server/eval-candidate.test.ts`: PASS, 31 tests.
+- Existing case 03 prompt candidate with `--post-v1-promotion-gate --details`
+  still fails as expected with `current_g2_regression` while reporting candidate
+  prompt version `authoring-v2-grounded-2` and current artifact prompt version
+  `authoring-v2-grounded-1`.
+- Independent review found no critical or major findings; adopted minor fixes for
+  prompt-version trimming, clearer current-artifact wording, and legacy artifact
+  test coverage.
+- `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --current-generated --json`: PASS and includes `promptVersion` / `currentPromptVersion`.
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 26 test files and 303 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.

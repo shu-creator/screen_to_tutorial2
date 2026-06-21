@@ -18,6 +18,9 @@ const generatedDir = path.join(repoRoot, "eval", "results", "generated");
 const baselinePath = path.join(repoRoot, "eval", "baseline.json");
 
 type StepsArtifact = {
+  config?: {
+    prompt_version?: unknown;
+  };
   steps?: Array<Record<string, unknown>>;
 };
 
@@ -70,6 +73,8 @@ export type CandidateEvalResult = {
   pass: boolean;
   caseId: string;
   stepCount: number;
+  promptVersion?: string;
+  currentPromptVersion?: string;
   g1F1: number;
   g2Accuracy: number;
   baselineG2Accuracy?: number;
@@ -280,6 +285,12 @@ function detectFallbackStats(artifact: StepsArtifact): {
   return { fallbackReasonCount, fallbackStepCount };
 }
 
+function artifactPromptVersion(artifact: StepsArtifact | undefined): string | undefined {
+  const value = artifact?.config?.prompt_version;
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed || undefined;
+}
+
 function labelEntriesForStep(
   step: GeneratedStepLike,
 ): Array<{ source: G2LabelSource; label: string }> {
@@ -465,6 +476,8 @@ export function evaluateCandidate(
     pass: invalidReasons.length === 0,
     caseId: input.caseId,
     stepCount: generated.length,
+    promptVersion: artifactPromptVersion(input.artifact),
+    currentPromptVersion: artifactPromptVersion(input.currentArtifact),
     g1F1: g1.f1,
     g2Accuracy: g2.accuracy,
     baselineG2Accuracy: baselineG2,
@@ -500,6 +513,10 @@ function printResult(result: CandidateEvalResult): void {
   console.log(`Candidate eval: ${result.pass ? "PASS" : "FAIL"}`);
   console.log(`case: ${result.caseId}`);
   console.log(`steps: ${result.stepCount}`);
+  console.log(`prompt version: ${result.promptVersion ?? "-"}`);
+  if (result.currentPromptVersion !== undefined) {
+    console.log(`current artifact prompt version: ${result.currentPromptVersion}`);
+  }
   console.log(`G1-F1: ${pct(result.g1F1)}`);
   console.log(`G2: ${pct(result.g2Accuracy)} (baseline ${pct(result.baselineG2Accuracy)}, delta ${signedPct(result.g2Delta)})`);
   if (result.currentG2Accuracy !== undefined) {
