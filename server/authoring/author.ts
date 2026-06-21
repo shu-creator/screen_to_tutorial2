@@ -20,6 +20,7 @@ import {
   DEFAULT_CHUNK_SIZE,
   type AuthoringChunk,
 } from "./digest";
+import { AUTHORING_PROMPT_VERSION } from "./promptVersion";
 import {
   checkCrossStepIntegrity,
   checkSegmentIntegrity,
@@ -28,9 +29,9 @@ import {
   verifyCitedLabels,
 } from "./verification";
 
-const logger = createLogger("Authoring");
+export { AUTHORING_PROMPT_VERSION };
 
-export const AUTHORING_PROMPT_VERSION = "authoring-v2-grounded-3";
+const logger = createLogger("Authoring");
 
 /** LLM応答のステップ（検証前） */
 interface RawAuthoredStep {

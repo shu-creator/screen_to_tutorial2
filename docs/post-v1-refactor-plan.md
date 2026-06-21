@@ -339,7 +339,8 @@ Still open:
   is available as the combined future candidate promotion check. It compares
   with the current generated artifact, requires fixed-baseline G2 improvement,
   allows no current G2 or no-citation regression, and requires current G3
-  improvement.
+  improvement. It also requires candidate `config.prompt_version` to match the
+  active authoring prompt version.
 - Add `--details` to print candidate G2 cited-label diagnostics when a
   candidate fails or when low-G2 cases need label-level triage.
 - `pnpm g4:review-pack -- --missing-human-review --overwrite` is available to
@@ -352,6 +353,7 @@ Validation result for the Phase 7 starter slice:
 - `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
 - `pnpm eval:quality-gate`: PASS, G2=69.4%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.
+
 - Additional G4 packet validation: `pnpm g4:review-pack -- --case real-app-workflow-01 --case real-app-workflow-02-create-project --case real-app-workflow-03-generate-steps --overwrite` PASS.
 - Additional low-G2 candidate validation: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps eval/results/generated/real-app-workflow-03-generate-steps/steps.json` PASS, G2=41.7%, G3=25.0%, fallback=0. `--case ..` is rejected before dataset path resolution.
 
@@ -468,6 +470,28 @@ Validation result for the Phase 7 candidate prompt-version diagnostics slice:
 - `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --current-generated --json`: PASS and includes `promptVersion` / `currentPromptVersion`.
 - `pnpm check`: PASS
 - `pnpm test`: PASS, 26 test files and 303 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
+
+Validation result for the Phase 7 candidate prompt-version gate slice:
+
+- Moved `AUTHORING_PROMPT_VERSION` to a lightweight authoring prompt-version
+  module while preserving the existing `server/authoring/author.ts` export.
+- Tightened `pnpm eval:candidate -- --post-v1-promotion-gate` so candidate
+  `config.prompt_version` must match the active authoring prompt version.
+- This blocks stale prompt candidates from promotion without changing ordinary
+  candidate diagnostics, generated artifacts, G4 records, or `eval/baseline.json`.
+- `pnpm vitest run server/eval-candidate.test.ts server/authoring/author.test.ts`: PASS, 43 tests.
+- Existing case 03 prompt candidate with `--post-v1-promotion-gate --details`
+  still fails as expected while now reporting `prompt_version_mismatch`,
+  required prompt version `authoring-v2-grounded-3`, and current-artifact
+  G2 regression.
+- Independent review found no critical or major findings; adopted minor fixes
+  for idiomatic prompt-version export and keeping the required prompt version
+  as an internal post-v1 gate condition instead of a public option.
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 26 test files and 305 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.

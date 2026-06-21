@@ -105,3 +105,6 @@ G4の記録フォーマットは [eval/g4/README.md](./g4/README.md) と [eval/g
 含める場合は `--require-current-g3-improvement`、G2退行を禁止する場合は
 `--max-current-g2-regression 0`、引用を落として見かけのG2を守る退化を防ぐ
 場合は `--max-current-no-citation-regression 0` を併用する。
+post-v1の候補昇格では `--post-v1-promotion-gate` を使い、固定baseline G2改善、
+現行artifact比のG2/無引用/G3条件、候補 `config.prompt_version` と現行authoring
+prompt versionの一致をまとめて確認する。

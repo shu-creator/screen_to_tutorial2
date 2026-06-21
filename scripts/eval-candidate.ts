@@ -11,6 +11,7 @@ import {
   type GeneratedStepLike,
   type GroundTruthStep,
 } from "../server/eval/metrics";
+import { AUTHORING_PROMPT_VERSION } from "../server/authoring/promptVersion";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const datasetDir = path.join(repoRoot, "eval", "dataset");
@@ -75,6 +76,7 @@ export type CandidateEvalResult = {
   stepCount: number;
   promptVersion?: string;
   currentPromptVersion?: string;
+  requiredPromptVersion?: string;
   g1F1: number;
   g2Accuracy: number;
   baselineG2Accuracy?: number;
@@ -237,8 +239,10 @@ Options:
   --post-v1-promotion-gate      Strict post-v1 candidate gate: compare against the current
                                 generated artifact, require fixed-baseline G2 improvement,
                                 allow no current G2/no-citation regression, and require
-                                current G3 improvement. Current G2 and no-citation
-                                tolerances are fixed at 0 while this flag is active.
+                                current G3 improvement. The candidate prompt version must
+                                match the active authoring prompt version. Current G2 and
+                                no-citation tolerances are fixed at 0 while this flag is
+                                active.
   --details                     Print G2 cited-label diagnostics for the candidate.
   --json                        Print JSON.
 
@@ -378,6 +382,11 @@ export function evaluateCandidate(
   const g3Delta = baselineG3 === undefined ? undefined : g3.rate - baselineG3;
   const requireG2Improvement = options.requireG2Improvement || Boolean(options.postV1PromotionGate);
   const requireCurrentG3Improvement = options.requireCurrentG3Improvement || Boolean(options.postV1PromotionGate);
+  const promptVersion = artifactPromptVersion(input.artifact);
+  const currentPromptVersion = artifactPromptVersion(input.currentArtifact);
+  const requiredPromptVersion = options.postV1PromotionGate
+    ? AUTHORING_PROMPT_VERSION
+    : undefined;
   const maxCurrentG2Regression = options.postV1PromotionGate
     ? 0
     : options.maxCurrentG2Regression;
@@ -422,6 +431,9 @@ export function evaluateCandidate(
   }
   if (fallback.fallbackReasonCount > 0) {
     invalidReasons.push("fallback_reasons_present");
+  }
+  if (requiredPromptVersion !== undefined && promptVersion !== requiredPromptVersion) {
+    invalidReasons.push("prompt_version_mismatch");
   }
   if (g2Delta !== undefined && g2Delta < -options.maxG2Regression) {
     invalidReasons.push("g2_regression");
@@ -476,8 +488,9 @@ export function evaluateCandidate(
     pass: invalidReasons.length === 0,
     caseId: input.caseId,
     stepCount: generated.length,
-    promptVersion: artifactPromptVersion(input.artifact),
-    currentPromptVersion: artifactPromptVersion(input.currentArtifact),
+    promptVersion,
+    currentPromptVersion,
+    requiredPromptVersion,
     g1F1: g1.f1,
     g2Accuracy: g2.accuracy,
     baselineG2Accuracy: baselineG2,
@@ -514,6 +527,9 @@ function printResult(result: CandidateEvalResult): void {
   console.log(`case: ${result.caseId}`);
   console.log(`steps: ${result.stepCount}`);
   console.log(`prompt version: ${result.promptVersion ?? "-"}`);
+  if (result.requiredPromptVersion !== undefined) {
+    console.log(`required prompt version: ${result.requiredPromptVersion}`);
+  }
   if (result.currentPromptVersion !== undefined) {
     console.log(`current artifact prompt version: ${result.currentPromptVersion}`);
   }

@@ -99,7 +99,8 @@ The output prints the candidate `prompt version` and, when comparing against the
 tracked generated artifact, `current artifact prompt version`. Confirm these
 before promoting a candidate; the measured `project_39_steps.json` candidate is
 from `authoring-v2-grounded-2`, while the active authoring prompt in code is
-`authoring-v2-grounded-3`.
+`authoring-v2-grounded-3`. The `--post-v1-promotion-gate` check rejects
+candidates whose prompt version does not match the active authoring prompt.
 
 For diagnostic detail, the general eval runner can also score an arbitrary
 artifact:
@@ -124,8 +125,10 @@ Measured candidate:
 - Fixed-baseline gate: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --require-g2-improvement` PASS.
 - Current-artifact diagnostic: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --current-generated --json` reports current G2 delta `-3.6%` and current G3 delta `-25.0%`.
 - Strict promotion check with `--post-v1-promotion-gate` fails as expected with
-  `current_g2_regression`; add `--details` to list candidate cited labels that
-  do not match the case's allowed UI label set.
+  `prompt_version_mismatch` and current-artifact G2 regression; this candidate
+  predates the active `authoring-v2-grounded-3` prompt and should not be
+  promoted. Add `--details` to list candidate cited labels that do not match
+  the case's allowed UI label set.
 - Result vs fixed baseline: G2 `71.4%` (baseline `41.7%`, delta `+29.8%`),
   G3 `0.0%` (baseline `25.0%`, delta `-25.0%`), fallback reasons `0`,
   `needs_review` steps `0`.

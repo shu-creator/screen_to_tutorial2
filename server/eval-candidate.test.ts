@@ -4,6 +4,7 @@ import {
   evaluateCandidate,
   validateCaseId,
 } from "../scripts/eval-candidate";
+import { AUTHORING_PROMPT_VERSION } from "./authoring/promptVersion";
 import type { GroundTruthStep } from "./eval/metrics";
 
 const groundTruth: GroundTruthStep[] = [
@@ -41,22 +42,32 @@ function artifact(overrides: Record<string, unknown> = {}, promptVersion = "cand
   };
 }
 
-function unmatchedArtifact() {
-  return artifact({
-    title: "削除する",
-    operation: "削除を実行する",
-    instruction: "「削除」をクリックします。",
-    cited_ui_labels: ["削除"],
-  });
+function unmatchedArtifact(promptVersion = "candidate-prompt") {
+  return artifact(
+    {
+      title: "削除する",
+      operation: "削除を実行する",
+      instruction: "「削除」をクリックします。",
+      cited_ui_labels: ["削除"],
+    },
+    promptVersion,
+  );
 }
 
-function noCitationArtifact() {
-  return artifact({
-    title: "保存する",
-    operation: "保存を実行する",
-    instruction: "保存します。",
-    cited_ui_labels: [],
-  });
+function noCitationArtifact(promptVersion = "candidate-prompt") {
+  return artifact(
+    {
+      title: "保存する",
+      operation: "保存を実行する",
+      instruction: "保存します。",
+      cited_ui_labels: [],
+    },
+    promptVersion,
+  );
+}
+
+function currentPromptArtifact(overrides: Record<string, unknown> = {}) {
+  return artifact(overrides, AUTHORING_PROMPT_VERSION);
 }
 
 describe("eval candidate", () => {
@@ -81,6 +92,7 @@ describe("eval candidate", () => {
 
     expect(result.pass).toBe(true);
     expect(result.promptVersion).toBe("candidate-prompt");
+    expect(result.requiredPromptVersion).toBeUndefined();
     expect(result.g2Accuracy).toBe(1);
     expect(result.g2Delta).toBe(0.5);
     expect(result.g3Rate).toBe(0);
@@ -703,7 +715,7 @@ describe("eval candidate", () => {
       {
         caseId: "case-01",
         groundTruth,
-        artifact: artifact(),
+        artifact: currentPromptArtifact(),
         currentArtifact: artifact({ t_start: 1000, t_end: 2000 }),
         baseline: {
           caseId: "case-01",
@@ -727,12 +739,69 @@ describe("eval candidate", () => {
     expect(result.invalidReasons).toEqual([]);
   });
 
+  it("requires the active authoring prompt version for the post-v1 promotion gate", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact({}, "authoring-v2-grounded-2"),
+        currentArtifact: artifact({ t_start: 1000, t_end: 2000 }),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0.5 },
+          g3: { rate: 1 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        postV1PromotionGate: true,
+      },
+    );
+
+    expect(result.pass).toBe(false);
+    expect(result.promptVersion).toBe("authoring-v2-grounded-2");
+    expect(result.requiredPromptVersion).toBe(AUTHORING_PROMPT_VERSION);
+    expect(result.invalidReasons).toEqual(["prompt_version_mismatch"]);
+  });
+
+  it("requires a prompt version on post-v1 promotion candidates", () => {
+    const candidate = currentPromptArtifact();
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: {
+          steps: candidate.steps,
+        },
+        currentArtifact: artifact({ t_start: 1000, t_end: 2000 }),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0.5 },
+          g3: { rate: 1 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        postV1PromotionGate: true,
+      },
+    );
+
+    expect(result.pass).toBe(false);
+    expect(result.promptVersion).toBeUndefined();
+    expect(result.requiredPromptVersion).toBe(AUTHORING_PROMPT_VERSION);
+    expect(result.invalidReasons).toEqual(["prompt_version_mismatch"]);
+  });
+
   it("uses the post-v1 promotion gate as a fixed-baseline G2 improvement check", () => {
     const result = evaluateCandidate(
       {
         caseId: "case-01",
         groundTruth,
-        artifact: artifact(),
+        artifact: currentPromptArtifact(),
         currentArtifact: artifact({ t_start: 1000, t_end: 2000 }),
         baseline: {
           caseId: "case-01",
@@ -758,7 +827,7 @@ describe("eval candidate", () => {
       {
         caseId: "case-01",
         groundTruth,
-        artifact: unmatchedArtifact(),
+        artifact: unmatchedArtifact(AUTHORING_PROMPT_VERSION),
         currentArtifact: artifact(),
         baseline: {
           caseId: "case-01",
@@ -784,7 +853,7 @@ describe("eval candidate", () => {
       {
         caseId: "case-01",
         groundTruth,
-        artifact: noCitationArtifact(),
+        artifact: noCitationArtifact(AUTHORING_PROMPT_VERSION),
         currentArtifact: artifact({ t_start: 1000, t_end: 2000 }),
         baseline: {
           caseId: "case-01",
@@ -810,7 +879,7 @@ describe("eval candidate", () => {
       {
         caseId: "case-01",
         groundTruth,
-        artifact: artifact(),
+        artifact: currentPromptArtifact(),
         baseline: {
           caseId: "case-01",
           g2: { accuracy: 0.5 },
