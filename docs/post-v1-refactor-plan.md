@@ -339,6 +339,9 @@ Completed or started changes:
   The PPTX content check passed and the MP4 has no still-image fallback; human
   review of these local-only artifacts has not yet occurred and remains listed
   under Still open.
+- Added the local-only project 40 human review worksheet at
+  `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/human-review-packet.md`
+  (`sha256:5ffd8bcc250970eb8d7ba03e9f4a6126c785cbc04b31950b4c5d1e2bb92f0771`).
 
 Still open:
 
@@ -352,8 +355,8 @@ Still open:
   promoted artifact.
 - `docs/post-v1-checklist.md` contains the promotion handoff for
   `project_40_steps.json`: review the generated project 40 export summary,
-  PPTX, and MP4; human-review the candidate steps and export artifacts; copy the
-  accepted candidate into `eval/results/generated/*`,
+  human-review worksheet, PPTX, and MP4; human-review the candidate steps and
+  export artifacts; copy the accepted candidate into `eval/results/generated/*`,
   record a replacement G4 review against the tracked artifact with
   `pnpm g4:record -- --dry-run` before `--overwrite`, then run the full phase
   gate set before committing.
@@ -703,6 +706,13 @@ Validation result for the Phase 7 approved prompt measurement slice:
   `11.8s`; video stream present; silent-mode audio stream present; still-image
   fallback count `0`; warning: intro card skipped because no usable font was
   available.
+- Added the local-only project 40 human review worksheet at
+  `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/human-review-packet.md`
+  with review target, artifact hashes, machine QA, step review table, human
+  review checklist, G4 count worksheet, and promotion command templates.
+  Worksheet hash computed with
+  `shasum -a 256 outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/human-review-packet.md`:
+  `5ffd8bcc250970eb8d7ba03e9f4a6126c785cbc04b31950b4c5d1e2bb92f0771`.
 - `pnpm check`: PASS
 - `pnpm test`: PASS, 28 test files and 316 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases.

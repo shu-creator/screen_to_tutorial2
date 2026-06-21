@@ -230,6 +230,9 @@ Promotion handoff for `project_40_steps.json`:
      `data/storage/projects/40/slides/1782052816971.pptx`
    - MP4:
      `data/storage/projects/40/videos/pYfEMLFuo0B_C89M0iUVm.mp4`
+   - human-review worksheet:
+     `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/human-review-packet.md`
+     (`sha256:5ffd8bcc250970eb8d7ba03e9f4a6126c785cbc04b31950b4c5d1e2bb92f0771`)
 
    These paths are local-only and gitignored. If local `outputs/` or `data/`
    is cleared while DB project `40` still exists, regenerate the export files
@@ -241,6 +244,10 @@ Promotion handoff for `project_40_steps.json`:
      --audio-mode silent \
      --outdir outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/export
    ```
+
+   The export command does not regenerate `human-review-packet.md`. If the
+   worksheet is lost before review, recreate it from the candidate steps,
+   export summary, artifact paths, and hashes before human review proceeds.
 
    If DB project `40` is cleared before review, export-only regeneration is not
    possible. Re-run the prompt check with
