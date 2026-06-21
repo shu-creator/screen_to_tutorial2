@@ -345,6 +345,13 @@ Still open:
   existing case 03 `human_review` G4 record, so artifact replacement requires an
   explicit promotion decision plus refreshed human review evidence for the
   promoted artifact.
+- `docs/post-v1-checklist.md` contains the promotion handoff for
+  `project_40_steps.json`: generate reviewable project 40 exports after
+  accepting the local output/storage work, human-review the candidate steps and
+  export artifacts, copy the accepted candidate into `eval/results/generated/*`,
+  record a replacement G4 review against the tracked artifact with
+  `pnpm g4:record -- --dry-run` before `--overwrite`, then run the full phase
+  gate set before committing.
 
 Operational guardrail for future measurement reruns:
 
@@ -369,8 +376,9 @@ Current candidate guardrails:
   is available as the combined future candidate promotion check. It compares
   with the current generated artifact, requires fixed-baseline G2 improvement,
   allows no current G2 or no-citation regression, and requires current G3
-  improvement. It also requires candidate `config.prompt_version` to match the
-  active authoring prompt version.
+  improvement, meaning a lower G3 contamination rate than the current artifact.
+  It also requires candidate `config.prompt_version` to match the active
+  authoring prompt version.
 - `--details` prints candidate G2 cited-label diagnostics when a
   candidate fails or when low-G2 cases need label-level triage.
 
@@ -678,6 +686,10 @@ Validation result for the Phase 7 approved prompt measurement slice:
   Promotion would require an explicit replacement decision and refreshed human
   review evidence because the existing case 03 `human_review` G4 record covers
   the current tracked artifact.
+- Added the promotion handoff to `docs/post-v1-checklist.md`, including the
+  project 40 export command, human-review requirement, accepted-candidate copy
+  step, tracked-artifact `g4:record` dry-run-first command, and the full phase
+  gate set required before committing promotion.
 - `pnpm check`: PASS
 - `pnpm test`: PASS, 28 test files and 316 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases.

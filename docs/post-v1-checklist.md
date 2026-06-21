@@ -217,6 +217,61 @@ Current-prompt promotion decision:
   `human_review` G4 record, so replacement still requires an explicit promotion
   decision and refreshed human review evidence for the promoted artifact.
 
+Promotion handoff for `project_40_steps.json`:
+
+1. Generate reviewable export artifacts for the measured project only after
+   accepting the local output/storage work. This command depends on local DB
+   project `40` still existing:
+
+   ```bash
+   pnpm project:export -- \
+     --project-id 40 \
+     --audio-mode silent \
+     --outdir outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/export
+   ```
+
+2. Human-review the candidate steps and generated export artifacts. If accepted,
+   copy the candidate into the tracked generated artifact path first, so the
+   replacement G4 record can point to a committed artifact that fresh checkouts
+   can hash-check:
+
+   ```bash
+   cp \
+     outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/project_40_steps.json \
+     eval/results/generated/real-app-workflow-03-generate-steps/steps.json
+   ```
+
+3. Record a replacement G4 review against the tracked generated artifact.
+   Always dry-run first:
+
+   Replace `YYYY-MM-DD` with the actual review date before running both the
+   dry-run and live write. Update the edit counts and `--notes` to reflect the
+   actual findings from step 2 before issuing the live write.
+
+   ```bash
+   pnpm g4:record -- \
+     --case real-app-workflow-03-generate-steps \
+     --reviewer "iwsh23" \
+     --reviewed-at YYYY-MM-DD \
+     --confirm-human-review \
+     --dry-run \
+     --title_edits 0 --description_edits 0 --narration_edits 0 --timing_edits 0 \
+     --citation_edits 0 --step_structure_edits 0 --export_artifact_edits 0 --other_edits 0 \
+     --notes "Human reviewed promoted authoring-v2-grounded-3 candidate and export artifacts."
+   ```
+
+4. Only after inspecting the dry-run JSON and confirming the human review,
+   rerun without `--dry-run` and with `--overwrite`. Then rerun the full phase
+   gate set before committing the promotion:
+
+   ```bash
+   pnpm check
+   pnpm test
+   pnpm eval:audit
+   pnpm eval:quality-gate
+   pnpm v1:release-audit
+   ```
+
 ## Low-G2/G3 Case Order
 
 | Priority | Case | Tracked G2 (post-v1 norm) | Tracked G3 (post-v1 norm) | v1 baseline G2 | Focus |
