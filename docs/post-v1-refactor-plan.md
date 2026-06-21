@@ -291,8 +291,9 @@ Opening criteria:
 
 ### Phase 7: Release Follow-up
 
-Status: mostly complete on `codex/post-v1-refactor`; current-prompt
-regeneration remains a side-effecting measurement step.
+Status: mostly complete on `codex/post-v1-refactor`; the only remaining
+same-branch Phase 7 item is an explicit-approval `authoring-v2-grounded-3`
+regeneration measurement.
 
 Output:
 
@@ -337,7 +338,11 @@ Still open:
 - A new `authoring-v2-grounded-3` candidate still needs to be generated and
   measured before any low-G2/G3 artifact promotion decision. This requires
   running `pnpm pipeline:generate` without `--preflight`, which creates outdir,
-  DB user/project state, source video storage, and exported `steps.json`.
+  DB user/project state, source video storage, invokes the configured pipeline
+  providers, and exports `steps.json`.
+- Do not run that side-effecting generation from automation unless the operator
+  explicitly accepts those local DB/storage/provider effects for the current
+  checkout.
 
 Current candidate guardrails:
 

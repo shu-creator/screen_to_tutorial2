@@ -89,7 +89,11 @@ no-write mode: it still creates the output directory, creates the CLI
 user/project, and stores the source video before skipping processing.
 
 After inspecting the preflight output, run the generation command without
-`--preflight`:
+`--preflight` only after explicitly accepting the local side effects. The real
+generation command creates the output directory, creates or updates CLI
+user/project state in the configured database, stores the source video, invokes
+the pipeline/authoring providers configured by the environment, and writes an
+exported `project_*_steps.json`.
 
 ```bash
 pnpm pipeline:generate -- \
@@ -171,6 +175,16 @@ Promotion decision:
 - The candidate improves timing/overlap but lowers G2 versus the current
   tracked artifact, so replacing `eval/results/generated/*` or
   `eval/baseline.json` still needs explicit product/human review.
+
+Remaining measurement:
+
+- `authoring-v2-grounded-3` has not been measured on a freshly generated case 03
+  artifact. This is the only low-G2/G3 prompt measurement still open on
+  `codex/post-v1-refactor`.
+- Run the preflight block first. Run the real generation block only after
+  explicitly accepting the DB/storage/provider side effects above.
+- Do not promote the result unless `pnpm eval:candidate -- --post-v1-promotion-gate`
+  passes and the product tradeoff is accepted.
 
 ## Low-G2/G3 Case Order
 
