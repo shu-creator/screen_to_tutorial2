@@ -291,9 +291,10 @@ Opening criteria:
 
 ### Phase 7: Release Follow-up
 
-Status: mostly complete on `codex/post-v1-refactor`; the only remaining
-same-branch Phase 7 item is an explicit-approval `authoring-v2-grounded-3`
-regeneration measurement.
+Status: mostly complete on `codex/post-v1-refactor`. The explicit-approval
+`authoring-v2-grounded-3` regeneration measurement has been run locally and
+passed the machine promotion gate; tracked artifact promotion remains a separate
+human-review decision.
 
 Output:
 
@@ -316,10 +317,10 @@ Completed or started changes:
   human reviewers can make several corrections before closing a card.
 - Suppressed no-op blur saves and reset cleared timing fields to the current
   artifact value to keep persistent edit forms visually aligned with saved state.
-- Hardened evidence frame extraction near the end of videos and normalized cited UI labels with outer quotes / dynamic count suffixes, then measured `real-app-workflow-03-generate-steps` as a local authoring-v2 candidate: G2 `71.4%`, G3 `0.0%`, fallback reasons `0`.
+- Hardened evidence frame extraction near the end of videos and normalized cited UI labels with outer quotes / dynamic count suffixes, then measured `real-app-workflow-03-generate-steps` as a local `authoring-v2-grounded-2` candidate: G2 `71.4%`, G3 `0.0%`, fallback reasons `0`.
 - Rechecked the tracked generated artifacts with the post-v1 label normalizer:
   current branch quality gate is G2 `82.8%`, G3 `7.0%`, fallback reasons `0`.
-- Kept the case 03 candidate local for now because it improves G3 (`25.0%` to
+- Kept the earlier case 03 candidate local because it improves G3 (`25.0%` to
   `0.0%`) but scores lower G2 than the current tracked case 03 artifact under
   the same normalizer (`71.4%` vs `75.0%`).
 - Added a no-write `pnpm pipeline:generate -- --preflight` path so low-G2
@@ -327,28 +328,32 @@ Completed or started changes:
 - Changed `pnpm g4:review-pack -- --missing-human-review --dry-run` so an
   empty selection is a successful close-out no-op after all real cases have
   `human_review` records. Empty `--release-candidates` remains a failure.
+- After explicit side-effect approval, regenerated case 03 with
+  `authoring-v2-grounded-3` as
+  `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/project_40_steps.json`.
+  The candidate passed `pnpm eval:candidate -- --post-v1-promotion-gate --details`
+  with G2 `100.0%`, G3 `0.0%`, no no-citation regression, no unmatched labels,
+  no fallback reasons, and prompt version `authoring-v2-grounded-3`.
 
 Still open:
 
 - Artifact sync status UI remains queued until the Phase 6 artifact-first route is merged.
-- Persisted eval artifacts have not been regenerated from
-  `authoring-v2-grounded-3`; the measured case 03 candidate from
-  `authoring-v2-grounded-2` has not been copied into
+- The measured `authoring-v2-grounded-3` case 03 candidate
+  (`project_40_steps.json`) has not been copied into
   `eval/results/generated/*` or `eval/baseline.json`.
-- A new `authoring-v2-grounded-3` candidate still needs to be generated and
-  measured before any low-G2/G3 artifact promotion decision. This requires
-  running `pnpm pipeline:generate` without `--preflight`, which creates outdir,
-  DB user/project state, source video storage, invokes the configured pipeline
-  providers, and exports `steps.json`.
-- Do not run that side-effecting generation from automation unless the operator
-  explicitly accepts those local DB/storage/provider effects for the current
-  checkout.
-- Use `pnpm post-v1:prompt-check` as the default no-write runner for the
-  remaining measurement. It prints the preflight, execution, side-effect, and
-  promotion-gate plan; `--execute` is rejected unless paired with
-  `--accept-side-effects`. The printed promotion-gate path is a
-  `project_<project-id>_steps.json` template for manual replacement; execute
-  mode resolves the actual generated artifact automatically.
+- Promoting `project_40_steps.json` would change the artifact covered by the
+  existing case 03 `human_review` G4 record, so artifact replacement requires an
+  explicit promotion decision plus refreshed human review evidence for the
+  promoted artifact.
+
+Operational guardrail for future measurement reruns:
+
+- Use `pnpm post-v1:prompt-check` as the default no-write runner. It prints the
+  preflight, execution, side-effect, and promotion-gate plan; `--execute` is
+  rejected unless paired with `--accept-side-effects`. The printed
+  promotion-gate path is a `project_<project-id>_steps.json` template for manual
+  replacement; execute mode resolves the actual generated artifact
+  automatically.
 
 Current candidate guardrails:
 
@@ -648,6 +653,31 @@ Validation result for the Phase 7 prompt-check close-out verification slice:
   verifies the no-outdir-write boundary; the wider timeout prevents unrelated
   process startup contention from failing the full suite.
 - `pnpm vitest run server/cli/generatePipeline.test.ts`: PASS, 3 tests.
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 28 test files and 316 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS; required real-case human_review records are
+  present for all five cases.
+
+Validation result for the Phase 7 approved prompt measurement slice:
+
+- Ran `pnpm post-v1:prompt-check -- --execute --accept-side-effects --run-id approved-20260621T220758`
+  after explicit operator approval for DB/storage/provider/output side effects.
+- The run created project `40` and exported
+  `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/project_40_steps.json`.
+- Candidate prompt version: `authoring-v2-grounded-3`; required prompt version:
+  `authoring-v2-grounded-3`.
+- `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/project_40_steps.json --post-v1-promotion-gate --details`:
+  PASS.
+- Candidate metrics: G2 `100.0%` versus fixed baseline `41.7%` and current
+  tracked artifact `75.0%`; G2 no-citation `0.0%` with no current regression;
+  unmatched cited labels `none`; G3 `0.0%` versus fixed baseline/current
+  `25.0%`; fallback reasons `0`; `needs_review` steps `0`.
+- The tracked generated artifact and `eval/baseline.json` were not updated.
+  Promotion would require an explicit replacement decision and refreshed human
+  review evidence because the existing case 03 `human_review` G4 record covers
+  the current tracked artifact.
 - `pnpm check`: PASS
 - `pnpm test`: PASS, 28 test files and 316 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases.

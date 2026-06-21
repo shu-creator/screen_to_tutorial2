@@ -15,6 +15,9 @@ work that should improve the product after v1 without weakening release gates.
 - Human G4 records exist for all five real recording cases.
 - Cases 01, 02, and 03 were reviewed by `iwsh23` on `2026-06-21` with
   `total_manual_edits: 0` and no blocking issues.
+- A fresh case 03 `authoring-v2-grounded-3` candidate has been measured locally
+  and passed `--post-v1-promotion-gate`; tracked generated artifacts have not
+  been replaced.
 
 ## Human G4 For Cases 01/02/03
 
@@ -69,8 +72,8 @@ tightens three low-G2 failure modes:
   `ステップがありません`, or `ステップの生成を開始しました` in
   `cited_ui_labels` unless that text is the explicit confirmation target.
 
-The persisted eval artifacts have not been regenerated from the current prompt.
-Measure prompt impact with low-G2 cases first:
+The persisted eval artifacts have not been replaced with current-prompt output.
+Use this workflow to re-run low-G2 prompt impact checks:
 
 ```bash
 pnpm post-v1:prompt-check -- --run-id "$(date +%Y%m%dT%H%M)"
@@ -137,10 +140,11 @@ pnpm eval:candidate -- \
 
 The output prints the candidate `prompt version` and, when comparing against the
 tracked generated artifact, `current artifact prompt version`. Confirm these
-before promoting a candidate; the measured `project_39_steps.json` candidate is
-from `authoring-v2-grounded-2`, while the active authoring prompt in code is
-`authoring-v2-grounded-3`. The `--post-v1-promotion-gate` check rejects
-candidates whose prompt version does not match the active authoring prompt.
+before promoting a candidate. The earlier `project_39_steps.json` candidate was
+from `authoring-v2-grounded-2` and is retained below as a stale-prompt example;
+the current `project_40_steps.json` candidate is from `authoring-v2-grounded-3`.
+The `--post-v1-promotion-gate` check rejects candidates whose prompt version
+does not match the active authoring prompt.
 
 For diagnostic detail, the general eval runner can also score an arbitrary
 artifact:
@@ -154,7 +158,7 @@ pnpm eval -- \
 Do not update `eval/results/generated/*` or `eval/baseline.json` unless the new
 output is reviewed and the improvement is intentional.
 
-Measured candidate:
+Earlier measured candidate:
 
 - `real-app-workflow-03-generate-steps` regenerated locally at
   `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json`.
@@ -183,23 +187,35 @@ Measured candidate:
 
 Promotion decision:
 
-- Do not promote this candidate yet. Under the current post-v1 label
+- Do not promote the `project_39_steps.json` candidate. Under the current post-v1 label
   normalizer, the tracked case 03 artifact scores G2 `75.0%` and G3 `25.0%`;
   the local candidate scores G2 `71.4%` and G3 `0.0%`.
 - The candidate improves timing/overlap but lowers G2 versus the current
   tracked artifact, so replacing `eval/results/generated/*` or
   `eval/baseline.json` still needs explicit product/human review.
 
-Remaining measurement:
+Current-prompt measured candidate:
 
-- `authoring-v2-grounded-3` has not been measured on a freshly generated case 03
-  artifact. This is the only low-G2/G3 prompt measurement still open on
-  `codex/post-v1-refactor`.
-- Run `pnpm post-v1:prompt-check` or the manual preflight block first. Run the
-  real generation block only after explicitly accepting the DB/storage/provider
-  side effects above.
-- Do not promote the result unless `pnpm eval:candidate -- --post-v1-promotion-gate`
-  passes and the product tradeoff is accepted.
+- `real-app-workflow-03-generate-steps` regenerated locally after explicit
+  side-effect approval at
+  `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/project_40_steps.json`.
+- Prompt path: `authoring-v2-grounded-3`.
+- Promotion gate:
+  `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/project_40_steps.json --post-v1-promotion-gate --details`
+  PASS.
+- Result vs fixed baseline: G2 `100.0%` (baseline `41.7%`, delta `+58.3%`),
+  G3 `0.0%` (baseline `25.0%`, delta `-25.0%`), fallback reasons `0`,
+  `needs_review` steps `0`.
+- Result vs current tracked artifact: G2 `100.0%` (current `75.0%`, delta
+  `+25.0%`), G2 no-citation `0.0%` (no regression), G3 `0.0%` (current
+  `25.0%`, delta `-25.0%`), unmatched cited labels `none`.
+
+Current-prompt promotion decision:
+
+- The tracked generated artifact and `eval/baseline.json` were not updated.
+  Promotion would change the artifact covered by the existing case 03
+  `human_review` G4 record, so replacement still requires an explicit promotion
+  decision and refreshed human review evidence for the promoted artifact.
 
 ## Low-G2/G3 Case Order
 
