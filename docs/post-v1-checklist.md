@@ -93,6 +93,17 @@ pnpm eval -- \
 Do not update `eval/results/generated/*` or `eval/baseline.json` unless the new
 output is reviewed and the improvement is intentional.
 
+Measured candidate:
+
+- `real-app-workflow-03-generate-steps` regenerated locally at
+  `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json`.
+- Prompt path: `authoring-v2-grounded-2`.
+- Gate: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --require-g2-improvement` PASS.
+- Result: G2 `71.4%` (baseline `41.7%`, delta `+29.8%`), G3 `0.0%`
+  (baseline `25.0%`, delta `-25.0%`), fallback reasons `0`, `needs_review`
+  steps `0`.
+- The tracked generated artifact and `eval/baseline.json` were not updated.
+
 ## Low-G2 Case Order
 
 | Priority | Case | Current G2 | Current G3 | Focus |

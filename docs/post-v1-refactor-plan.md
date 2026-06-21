@@ -308,12 +308,13 @@ Changes started:
 - Updated the authoring prompt to `authoring-v2-grounded-2` so future generation keeps distinct user intents separate and avoids OCR-unsupported UI label citations.
 - Added `pnpm eval:candidate` to score a candidate `steps.json` against `eval/baseline.json` without replacing tracked generated artifacts.
 - Polished project step cards with clearer review metadata for timing range, confidence, audio mode, narration, and edit/delete controls.
+- Hardened evidence frame extraction near the end of videos and normalized cited UI labels with outer quotes / dynamic count suffixes, then measured `real-app-workflow-03-generate-steps` as a local authoring-v2 candidate: G2 `71.4%`, G3 `0.0%`, fallback reasons `0`.
 
 Still open:
 
 - Actual `human_review` G4 records for cases 01/02/03 require human review and explicit `pnpm g4:record -- --confirm-human-review`.
 - Artifact sync status UI remains queued until the Phase 6 artifact-first route is merged.
-- Prompt impact has not been measured on regenerated low-G2 cases; persisted eval artifacts still reflect `authoring-v2-grounded-1`.
+- Persisted eval artifacts still reflect `authoring-v2-grounded-1`; the improved case 03 candidate has not been copied into `eval/results/generated/*` or `eval/baseline.json`.
 - `pnpm eval:candidate -- --require-g2-improvement` now provides the local gate for accepting a regenerated low-G2 artifact.
 
 Validation result for the Phase 7 starter slice:
@@ -325,3 +326,12 @@ Validation result for the Phase 7 starter slice:
 - `pnpm v1:release-audit`: PASS.
 - Additional G4 packet validation: `pnpm g4:review-pack -- --case real-app-workflow-01 --case real-app-workflow-02-create-project --case real-app-workflow-03-generate-steps --overwrite` PASS.
 - Additional low-G2 candidate validation: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps eval/results/generated/real-app-workflow-03-generate-steps/steps.json` PASS, G2=41.7%, G3=25.0%, fallback=0. `--case ..` is rejected before dataset path resolution.
+
+Validation result for the Phase 7 low-G2 candidate slice:
+
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 26 test files and 275 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
+- Additional candidate validation: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --require-g2-improvement` PASS, G2=71.4%, G3=0.0%, fallback=0.

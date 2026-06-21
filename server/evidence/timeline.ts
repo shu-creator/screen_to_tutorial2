@@ -112,6 +112,21 @@ export async function sampleGrayTimeline(
   return { width, height, fps, frames, durationMs };
 }
 
+export function clampFrameTimestampMs(
+  timestampMs: number,
+  durationMs?: number,
+): number {
+  const requested = Number.isFinite(timestampMs) ? Math.max(0, Math.round(timestampMs)) : 0;
+  if (durationMs === undefined || !Number.isFinite(durationMs) || durationMs <= 0) {
+    return requested;
+  }
+
+  const roundedDuration = Math.round(durationMs);
+  const endSafetyMs = Math.min(1000, Math.max(1, Math.floor(roundedDuration / 2)));
+  const latestSafeTimestamp = Math.max(0, roundedDuration - endSafetyMs);
+  return Math.min(requested, latestSafeTimestamp);
+}
+
 /**
  * 指定タイムスタンプのフルサイズフレームをJPEGで抽出する。
  * 代表フレーム/比較用フレームの取り出しに使用（セグメント数に比例した回数のみ実行）。
@@ -120,17 +135,33 @@ export async function extractFullFrame(
   videoPath: string,
   timestampMs: number,
   outputPath: string,
-): Promise<void> {
-  await execFileAsync(
-    "ffmpeg",
-    [
-      "-y",
-      "-ss", (timestampMs / 1000).toFixed(3),
-      "-i", videoPath,
-      "-vframes", "1",
-      "-q:v", "2",
-      outputPath,
-    ],
-    { timeout: 30_000 },
-  );
+  durationMs?: number,
+): Promise<number> {
+  const initialTimestamp = clampFrameTimestampMs(timestampMs, durationMs);
+  const candidates = [initialTimestamp, initialTimestamp - 500, initialTimestamp - 1000]
+    .filter((candidate) => candidate >= 0)
+    .filter((candidate, index, values) => values.indexOf(candidate) === index);
+
+  let lastError: unknown = null;
+  for (const candidate of candidates) {
+    try {
+      await execFileAsync(
+        "ffmpeg",
+        [
+          "-y",
+          "-ss", (candidate / 1000).toFixed(3),
+          "-i", videoPath,
+          "-vframes", "1",
+          "-q:v", "2",
+          outputPath,
+        ],
+        { timeout: 30_000 },
+      );
+      return candidate;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
 }
