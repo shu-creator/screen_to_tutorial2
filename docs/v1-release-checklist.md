@@ -47,7 +47,21 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - 出力QAの `eval/results/export-qa/<case-id>/qa-summary.json`
 - G4記録の対象ケース、review_type、総修正件数
 
-## Latest Local Smoke Evidence
+## Final v1 Baseline Evidence
+
+`v1.0.0` points to `e034c9cc3b9938ea91931d2f520f77e79080682c`.
+
+Final release audit at the v1 baseline:
+
+- Command: `pnpm v1:release-audit`
+- Result: PASS
+- Passing checks: `release.docs`, `model.default`, `eval.readiness`, `eval.quality_gate`, `smoke.current_environment`, `export.qa`, `g4.human_review`, `smoke.fresh_environment`
+- Current smoke evidence: `outputs/v1-smoke-default-check/v1_smoke_summary.json`, project 32, `steps=3`, `fallback_reasons=0`
+- Fresh-env smoke evidence: `outputs/v1-fresh-env-smoke/v1_smoke_summary.json`, project 34, `steps=3`, `fallback_reasons=0`, `environment.kind=fresh_checkout`
+- Export QA cases: `real-app-workflow-04-export-video`, `real-app-workflow-05-narrated-create-project`
+- Required human G4 cases: `real-app-workflow-04-export-video`, `real-app-workflow-05-narrated-create-project`
+
+## Historical Local Smoke Evidence
 
 2026-06-20時点の既存ローカル環境では、合成評価動画で生成経路のスモークを通した。
 
@@ -66,9 +80,9 @@ v1は「実録画からsteps.json v2を生成し、編集し、PPTX/動画を出
 - V1 smoke summary: `outputs/v1-smoke-default-check/v1_smoke_summary.json`
 - V1 smoke result: `pass=true`, project 32, default `ocr_provider=none`, steps SHA-256 `ffd61bc1e3fff231f764d26a6d59d86cb137c7b5120cea10fc88e5c744c6a945`, `step_count=3`, `needs_review_count=3`, `fallback_reason_count=0`
 - V1 release audit command: `pnpm v1:release-audit -- --allow-incomplete`
-- V1 release audit result: `INCOMPLETE`。`release.docs`、`model.default`、`eval.readiness`、`eval.quality_gate`、`smoke.current_environment`、`export.qa` はPASS。`g4.human_review` と `smoke.fresh_environment` は未達。
+- V1 release audit result at that time: `INCOMPLETE`。`release.docs`、`model.default`、`eval.readiness`、`eval.quality_gate`、`smoke.current_environment`、`export.qa` はPASS。`g4.human_review` と `smoke.fresh_environment` は未達だった。これは最終v1判定ではなく、上記のFinal v1 Baseline Evidenceで解消済み。
 
-これは生成経路のスモークであり、v1出荷品質の証明ではない。OCRなしで実行したため全stepが `needs_review` になっており、PPTXの機械的な画像/placeholder検査はpassしたが、実画面として妥当かの目視確認は未記録である。最終v1判定には実録画/人間レビューG4/品質gate/PPTX目視確認が別途必要。
+このhistorical smoke単体は生成経路の確認であり、v1出荷品質の証明ではなかった。OCRなしで実行したため全stepが `needs_review` になっており、PPTXの機械的な画像/placeholder検査はpassしたが、実画面として妥当かの目視確認は未記録だった。最終v1判定では、上記のFinal v1 Baseline Evidenceにある実録画/人間レビューG4/品質gate/export QA/fresh-env smokeを組み合わせて確認する。
 
 ## Known Non-Release-Blocking Caveats
 

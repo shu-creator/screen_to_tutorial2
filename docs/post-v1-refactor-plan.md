@@ -177,9 +177,26 @@ Validation result:
 
 ### Phase 2: Docs Cleanup
 
-Status: pending.
+Status: completed.
 
 Use `docs/v1-release-checklist.md` as the source of truth for v1 facts. Move historical material into a `Historical Notes` section when it should be retained.
+
+Changes completed:
+
+- Updated `docs/roadmap.md` so the final v1 baseline is PASS at `v1.0.0`, while the earlier `INCOMPLETE` audit remains marked as an initial run.
+- Added final v1 baseline evidence to `docs/v1-release-checklist.md` and renamed the earlier smoke section as historical evidence.
+- Moved stale "real data waiting" notes in `docs/plans/phase-0-eval-harness.md` into `Historical Notes`.
+- Updated `docs/plans/phase-2-step-authoring.md` to reflect v1 quality-gate PASS while leaving confidence calibration as post-v1 work.
+- Reworded `docs/plans/phase-3-slide-quality.md` and `docs/plans/phase-4-clip-video.md` so post-v1 heuristic/audio QA status is not confused with pre-v1 incompletion.
+
+Validation result:
+
+- `pnpm setup:check`: PASS
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 24 test files and 261 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=69.4%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
 
 ### Phase 3: Unused Code Removal
 

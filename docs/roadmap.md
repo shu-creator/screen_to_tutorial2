@@ -1,6 +1,6 @@
 # ロードマップ: パイプライン刷新
 
-最終更新: 2026-06-20
+最終更新: 2026-06-21
 前提: [要件定義](./requirements.md) を参照。フェーズ詳細は `docs/plans/` を参照。
 
 ## Sprint 0 現状固定（2026-06-20）
@@ -67,9 +67,9 @@
 - スモーク証跡: `project_28_steps.json` SHA-256 `2e752ae86dd7e89b55c06425de73a3a0b96bf292cff1910209a08053689969c9`。`project_28_export_summary.json` は再実行ごとにtimestampと出力URLが変わるため固定SHAは記録しない。直近runではPPTX 154503 bytes、MP4 72262 bytes、`slide.content_check.status=pass`、`total_slide_count=6`、`slides_with_images=3`、`media_image_count=3`、`expected_step_image_count_source=steps_artifact`、`placeholder_text_hits=[]`、動画 `still_image_fallback_count=0`。
 - `pnpm edit:smoke -- --project-id 28 --outdir outputs/edit-smoke` を追加し、DB stepのタイトル/操作/説明/ナレーションと、`steps.json` artifactのタイトル/操作/説明/ナレーション/`t_start` / `t_end`/ステップ音声モード/レビュー済み状態の同期を一時編集で確認できるようにした。直近runは `pass=true`、`restored_after_check=true`、`restore_error=null`。
 - `pnpm v1:smoke -- --video <sample.mp4> ...` を追加し、`setup:check`、`pipeline:generate`、`project:export`、`edit:smoke` を1コマンドで実行して `v1_smoke_summary.json` に集約できるようにした。既存ローカル環境で `eval/dataset/synth-login-click-01/video.mp4` を使った直近runは project 32、`pass=true`、既定 `ocr_provider=none`、steps SHA-256 `ffd61bc1e3fff231f764d26a6d59d86cb137c7b5120cea10fc88e5c744c6a945`、`step_count=3`、`needs_review_count=3`、`fallback_reason_count=0`。
-- `pnpm v1:release-audit` を追加し、v1リリース条件を `release.docs` / `model.default` / `eval.readiness` / `eval.quality_gate` / `smoke.current_environment` / `export.qa` / `g4.human_review` / `smoke.fresh_environment` に分けて監査できるようにした。直近runは `INCOMPLETE` で、既存環境の機械証跡とSprint 2品質gateはPASS、人間G4と新規環境スモーク証跡は未達。
+- `pnpm v1:release-audit` を追加し、v1リリース条件を `release.docs` / `model.default` / `eval.readiness` / `eval.quality_gate` / `smoke.current_environment` / `export.qa` / `g4.human_review` / `smoke.fresh_environment` に分けて監査できるようにした。初期runは `INCOMPLETE` だったが、G4 human reviewとfresh-env smoke証跡を追加後、`v1.0.0` タグ時点ではPASS。
 - `pnpm v1:fresh-env-smoke` を追加し、HEADから一時チェックアウトを作成して依存インストール後に `v1:smoke` を実行し、`outputs/v1-fresh-env-smoke/v1_smoke_summary.json` へ `environment.kind=fresh_checkout` と実行command証跡を残せるようにした。依存インストールを伴うため実行には `--allow-install` が必須。
-- このスモークは生成経路の確認であり、出荷品質の確認ではない。設定値は `LLM_MODEL=gpt-5.4`。OCRなしで実行したため `needs_review=3/3`、review reasonsは `verification:unverified_ui_label` / `verification:low_confidence`。PPTXの機械的な画像/placeholder検査はpassしたが、実画面として妥当かの目視確認は未記録。Sprint 5完了条件の「新規環境でセットアップから生成まで通る」はまだ未検証。
+- 最終v1証跡は `outputs/v1-fresh-env-smoke/v1_smoke_summary.json` と `outputs/v1-smoke-default-check/v1_smoke_summary.json`。設定値は `LLM_MODEL=gpt-5.4`。OCRなしの生成スモークで `needs_review=3/3` だが、fallback reasonは0で、PPTXの画像/placeholder検査、export QA、edit smoke、fresh checkout証跡はrelease auditでPASS。
 
 ## 全体像
 
@@ -90,17 +90,14 @@
 
 | Phase | 内容 | 規模 | 依存 | 状態 | 詳細プラン |
 |-------|------|------|------|------|-----------|
-| 0 | 評価基盤 + ベースライン測定 + 早期改善実験 | M | なし | 実装済み（実測は実データ待ち） | [phase-0](./plans/phase-0-eval-harness.md) |
+| 0 | 評価基盤 + ベースライン測定 + 早期改善実験 | M | なし | 実装済み（v1で5ケース監査PASS） | [phase-0](./plans/phase-0-eval-harness.md) |
 | 1 | 証拠抽出パイプライン刷新（evidence.json） | L | 0 | 実装済み | [phase-1](./plans/phase-1-evidence-extraction.md) |
-| 2 | ステップ執筆の一括化 + 機械検証（steps.json v2） | L | 1 | 実装済み（LLM品質実測待ち） | [phase-2](./plans/phase-2-step-authoring.md) |
+| 2 | ステップ執筆の一括化 + 機械検証（steps.json v2） | L | 1 | 実装済み（v1品質gate PASS、低G2改善はpost-v1） | [phase-2](./plans/phase-2-step-authoring.md) |
 | 3 | スライド品質改善 + ヒューリスティック退役 | M | 2 | 実装済み（退役は一部保留） | [phase-3](./plans/phase-3-slide-quality.md) |
 | 4 | クリップベース動画生成 | M | 2 | 実装済み | [phase-4](./plans/phase-4-clip-video.md) |
 | 5 | 負債整理（単一ソース化・ストリーミング・死にコード削除） | M | 2 | 実装済み（5.1単一ソース化は保留） | [phase-5](./plans/phase-5-consolidation.md) |
 
-**実装ステータス補足（2026-06-12）**: 全フェーズのコード実装が完了。実行環境にLLM APIキーと
-実録画が無いため、「実データでのG1-G3測定によるマージゲート」は未消化のまま実装を進めた。
-残タスク: (1) APIキー設定+実録画追加 → `pnpm eval` でベースライン確定と品質実測、
-(2) Phase 3のヒューリスティック退役判断、(3) Phase 2のconfidence較正、(4) 5.1の単一ソース化判断。
+**v1固定点（2026-06-21）**: `v1.0.0` は `e034c9cc3b9938ea91931d2f520f77e79080682c` を指す。`pnpm v1:release-audit` はPASSし、実録画5ケースの `eval:audit`、`eval:quality-gate`、export QA、2件のhuman G4、fresh-env smokeが揃っている。残タスクはpost-v1扱い: (1) G2が低いケースの改善、(2) Phase 3系ヒューリスティックの退役判断、(3) confidence式の較正、(4) 5.1の単一ソース化判断。
 
 規模感: S = 1セッション程度 / M = 数セッション / L = 大きめ・PR複数に分割推奨
 
