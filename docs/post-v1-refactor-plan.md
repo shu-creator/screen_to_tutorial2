@@ -244,15 +244,50 @@ Validation result:
 
 ### Phase 5: Artifact And DB Responsibility Design
 
-Status: pending.
+Status: completed.
 
 Design only. Enumerate read paths, write paths, UI edit persistence, export reads, and edit smoke guarantees before choosing whether to keep artifact-first plus DB compatibility or move toward `steps.json` as the single source of truth.
+
+Output:
+
+- `docs/post-v1-artifact-db-responsibility.md`
+
+Decision:
+
+- Keep the v1 split on this branch: artifact-first generation/export/rendering plus DB compatibility for current UI list/edit routes.
+- Do not implement `steps.json` single-source migration on `codex/post-v1-refactor`.
+- Move single-source migration to a separate Phase 6 branch after expanding edit/delete/reorder/regenerate/export compatibility tests.
+
+Current source-of-truth map:
+
+- `steps.json` v2 owns rich generated metadata: overview, timing, representative frames, evidence links, review reasons, warnings, confidence, audio mode, and artifact audio references.
+- DB `steps` owns current UI list compatibility and legacy DB IDs.
+- `legacy_step_db_id` bridges the two layers.
+- Slide generation, video generation, CLI pipeline export, and project export prefer artifact data where possible.
+- UI list/edit routes still depend on DB rows, with artifact metadata layered in through `step.artifactInfo` and `step.update` dual-write behavior.
+- `step.update` dual-write is not atomic across artifact storage and DB; Phase 6 must either collapse edits to one writer or add consistency recovery.
+- Edit smoke verifies DB/artifact storage sync, artifact timing/audio-mode edits, review-state clearing, and restoration by re-read, but it does not exercise the tRPC/UI `step.update` route or every delete/reorder/regenerate/migration edge case.
+
+Validation result:
+
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 24 test files and 261 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=69.4%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
 
 ### Phase 6: `steps.json` Single Source
 
 Status: deferred.
 
 Recommended separate branch: `codex/post-v1-steps-source`.
+
+Opening criteria:
+
+- Keep existing DB-only projects loadable through migration or explicit compatibility fallback.
+- Move UI list/read/edit paths to one artifact-derived contract.
+- Define whether `legacy_step_db_id` remains as a bridge or is removed after all DB-ID-dependent routes move.
+- Add tests for tRPC/UI edit, delete, reorder, regenerate, audio generation, slide export, video export, and edit smoke under the new source-of-truth contract.
 
 ### Phase 7: Release Follow-up
 
