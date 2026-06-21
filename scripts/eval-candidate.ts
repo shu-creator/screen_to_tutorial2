@@ -6,6 +6,8 @@ import {
   computeG1,
   computeG2,
   computeG3,
+  extractQuotedLabels,
+  normalizeLabel,
   type GeneratedStepLike,
   type GroundTruthStep,
 } from "../server/eval/metrics";
@@ -38,11 +40,30 @@ export type CandidateEvalOptions = {
   maxG3Regression: number;
   requireG2Improvement: boolean;
   postV1PromotionGate?: boolean;
+  includeG2Details?: boolean;
   maxCurrentG2Regression?: number;
   maxCurrentG3Regression?: number;
   maxCurrentNoCitationRegression?: number;
   requireCurrentG2Improvement?: boolean;
   requireCurrentG3Improvement?: boolean;
+};
+
+type G2LabelSource = "title" | "operation" | "instruction" | "cited_ui_labels";
+
+type G2LabelDetail = {
+  stepNumber: number;
+  source: G2LabelSource;
+  label: string;
+  normalized: string;
+  matched: boolean;
+};
+
+type G2Details = {
+  allowedLabels: string[];
+  allowedNormalizedLabels: string[];
+  labels: G2LabelDetail[];
+  unmatchedLabels: G2LabelDetail[];
+  noCitationStepNumbers: number[];
 };
 
 export type CandidateEvalResult = {
@@ -58,6 +79,7 @@ export type CandidateEvalResult = {
   g2NoCitationRate: number;
   currentG2NoCitationRate?: number;
   currentNoCitationDelta?: number;
+  g2Details?: G2Details;
   g3Rate: number;
   baselineG3Rate?: number;
   g3Delta?: number;
@@ -139,6 +161,9 @@ function parseArgs(argv: string[]): CliOptions {
       case "--post-v1-promotion-gate":
         options.postV1PromotionGate = true;
         break;
+      case "--details":
+        options.includeG2Details = true;
+        break;
       case "--json":
         options.json = true;
         break;
@@ -209,6 +234,7 @@ Options:
                                 allow no current G2/no-citation regression, and require
                                 current G3 improvement. Current G2 and no-citation
                                 tolerances are fixed at 0 while this flag is active.
+  --details                     Print G2 cited-label diagnostics for the candidate.
   --json                        Print JSON.
 
 This command reads a candidate steps.json and compares it with eval/baseline.json.
@@ -254,6 +280,68 @@ function detectFallbackStats(artifact: StepsArtifact): {
   return { fallbackReasonCount, fallbackStepCount };
 }
 
+function labelEntriesForStep(
+  step: GeneratedStepLike,
+): Array<{ source: G2LabelSource; label: string }> {
+  return [
+    ...extractQuotedLabels(step.title).map((label) => ({ source: "title" as const, label })),
+    ...extractQuotedLabels(step.operation ?? "").map((label) => ({
+      source: "operation" as const,
+      label,
+    })),
+    ...extractQuotedLabels(step.instruction ?? "").map((label) => ({
+      source: "instruction" as const,
+      label,
+    })),
+    ...(step.cited_ui_labels ?? []).map((label) => ({
+      source: "cited_ui_labels" as const,
+      label,
+    })),
+  ];
+}
+
+function buildG2Details(
+  generated: GeneratedStepLike[],
+  allowedLabels: string[],
+): G2Details {
+  const allowedNormalizedLabels = Array.from(
+    new Set(
+      allowedLabels.map(normalizeLabel).filter((label) => label.length > 0),
+    ),
+  ).sort();
+  const allowedSet = new Set(allowedNormalizedLabels);
+  const labels: G2LabelDetail[] = [];
+  const noCitationStepNumbers: number[] = [];
+
+  generated.forEach((step, index) => {
+    const stepLabels = labelEntriesForStep(step);
+    let validLabelCount = 0;
+    for (const entry of stepLabels) {
+      const normalized = normalizeLabel(entry.label);
+      if (!normalized) continue;
+      validLabelCount += 1;
+      labels.push({
+        stepNumber: index + 1,
+        source: entry.source,
+        label: entry.label,
+        normalized,
+        matched: allowedSet.has(normalized),
+      });
+    }
+    if (validLabelCount === 0) {
+      noCitationStepNumbers.push(index + 1);
+    }
+  });
+
+  return {
+    allowedLabels,
+    allowedNormalizedLabels,
+    labels,
+    unmatchedLabels: labels.filter((label) => !label.matched),
+    noCitationStepNumbers,
+  };
+}
+
 export function evaluateCandidate(
   input: {
     caseId: string;
@@ -268,6 +356,9 @@ export function evaluateCandidate(
   const allowedLabels = input.groundTruth.flatMap((step) => step.ui_labels ?? []);
   const g1 = computeG1(generated, input.groundTruth);
   const g2 = computeG2(generated, allowedLabels);
+  const g2Details = options.includeG2Details
+    ? buildG2Details(generated, allowedLabels)
+    : undefined;
   const g3 = computeG3(generated, input.groundTruth);
   const fallback = detectFallbackStats(input.artifact);
   const baselineG2 = input.baseline?.g2?.accuracy;
@@ -383,6 +474,7 @@ export function evaluateCandidate(
     g2NoCitationRate: g2.noCitationRate,
     currentG2NoCitationRate: currentG2?.noCitationRate,
     currentNoCitationDelta,
+    g2Details,
     g3Rate: g3.rate,
     baselineG3Rate: baselineG3,
     g3Delta,
@@ -421,6 +513,9 @@ function printResult(result: CandidateEvalResult): void {
       `G2 no-citation vs current: ${pct(result.g2NoCitationRate)} (current ${pct(result.currentG2NoCitationRate)}, delta ${signedPct(result.currentNoCitationDelta)})`,
     );
   }
+  if (result.g2Details) {
+    printG2Details(result.g2Details);
+  }
   console.log(`G3: ${pct(result.g3Rate)} (baseline ${pct(result.baselineG3Rate)}, delta ${signedPct(result.g3Delta)})`);
   if (result.currentG3Rate !== undefined) {
     console.log(
@@ -435,6 +530,25 @@ function printResult(result: CandidateEvalResult): void {
   if (result.notes.length > 0) {
     console.log("Notes:");
     for (const note of result.notes) console.log(`- ${note}`);
+  }
+}
+
+function printG2Details(details: G2Details): void {
+  console.log(`G2 allowed labels: ${details.allowedLabels.length ? details.allowedLabels.join(", ") : "(none)"}`);
+  if (details.unmatchedLabels.length > 0) {
+    console.log("G2 unmatched labels:");
+    for (const detail of details.unmatchedLabels) {
+      console.log(
+        `- step ${detail.stepNumber} ${detail.source}: ${detail.label} -> ${detail.normalized}`,
+      );
+    }
+  } else {
+    console.log("G2 unmatched labels: none");
+  }
+  if (details.noCitationStepNumbers.length > 0) {
+    console.log(`G2 no-citation steps: ${details.noCitationStepNumbers.join(", ")}`);
+  } else {
+    console.log("G2 no-citation steps: none");
   }
 }
 

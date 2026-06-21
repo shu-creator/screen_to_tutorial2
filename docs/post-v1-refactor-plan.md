@@ -339,6 +339,8 @@ Still open:
   with the current generated artifact, requires fixed-baseline G2 improvement,
   allows no current G2 or no-citation regression, and requires current G3
   improvement.
+- Add `--details` to print candidate G2 cited-label diagnostics when a
+  candidate fails or when low-G2 cases need label-level triage.
 - `pnpm g4:review-pack -- --missing-human-review --overwrite` is available to
   regenerate worksheets for real generated cases that still lack human G4.
 
@@ -411,6 +413,23 @@ Validation result for the Phase 7 post-v1 promotion gate preset slice:
   regression and G3 improvement from `25.0%` to `0.0%`.
 - `pnpm check`: PASS
 - `pnpm test`: PASS, 26 test files and 299 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
+
+Validation result for the Phase 7 candidate G2 diagnostics slice:
+
+- Added `pnpm eval:candidate -- --details` to print the allowed UI labels,
+  unmatched cited labels, and steps with no citations for a candidate artifact.
+- This is diagnostic only; it does not change pass/fail thresholds, generated
+  artifacts, G4 records, or `eval/baseline.json`.
+- `pnpm vitest run server/eval-candidate.test.ts`: PASS, 30 tests.
+- Existing case 03 prompt candidate with `--post-v1-promotion-gate --details`
+  still fails as expected with `current_g2_regression`; the new details report
+  unmatched cited labels `プレビュー`, `完了`, `ステップがありません`, and
+  `ステップの生成を開始しました`, plus `G2 no-citation steps: none`.
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 26 test files and 302 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.

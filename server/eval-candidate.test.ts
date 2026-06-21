@@ -412,6 +412,87 @@ describe("eval candidate", () => {
     expect(result.invalidReasons).toEqual(["current_no_citation_regression"]);
   });
 
+  it("includes candidate G2 label diagnostics when requested", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact({ cited_ui_labels: ["保存", "処理中"] }),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0.5 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        includeG2Details: true,
+      },
+    );
+
+    expect(result.g2Details?.allowedLabels).toEqual(["保存"]);
+    expect(result.g2Details?.unmatchedLabels).toEqual([
+      {
+        stepNumber: 1,
+        source: "cited_ui_labels",
+        label: "処理中",
+        normalized: "処理中",
+        matched: false,
+      },
+    ]);
+    expect(result.g2Details?.noCitationStepNumbers).toEqual([]);
+  });
+
+  it("tracks steps with no valid citations in candidate G2 diagnostics", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: noCitationArtifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        includeG2Details: true,
+      },
+    );
+
+    expect(result.g2NoCitationRate).toBe(1);
+    expect(result.g2Details?.noCitationStepNumbers).toEqual([1]);
+    expect(result.g2Details?.labels).toEqual([]);
+    expect(result.g2Details?.unmatchedLabels).toEqual([]);
+  });
+
+  it("omits candidate G2 label diagnostics by default", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact({ cited_ui_labels: ["保存", "処理中"] }),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0.5 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+      },
+    );
+
+    expect(result.g2Details).toBeUndefined();
+  });
+
   it("allows equal current-artifact no-citation rates at zero tolerance", () => {
     const result = evaluateCandidate(
       {

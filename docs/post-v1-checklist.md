@@ -88,7 +88,8 @@ STEPS_PATH=${STEPS_PATH:?run the generation block first}
 pnpm eval:candidate -- \
   --case real-app-workflow-03-generate-steps \
   --steps "$STEPS_PATH" \
-  --post-v1-promotion-gate
+  --post-v1-promotion-gate \
+  --details
 ```
 
 For diagnostic detail, the general eval runner can also score an arbitrary
@@ -110,8 +111,9 @@ Measured candidate:
 - Prompt path: `authoring-v2-grounded-2`.
 - Fixed-baseline gate: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --require-g2-improvement` PASS.
 - Current-artifact diagnostic: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --current-generated --json` reports current G2 delta `-3.6%` and current G3 delta `-25.0%`.
-- Strict current no-G2-regression check with `--max-current-g2-regression 0`
-  fails as expected with `current_g2_regression`.
+- Strict promotion check with `--post-v1-promotion-gate` fails as expected with
+  `current_g2_regression`; add `--details` to list candidate cited labels that
+  do not match the case's allowed UI label set.
 - Result vs fixed baseline: G2 `71.4%` (baseline `41.7%`, delta `+29.8%`),
   G3 `0.0%` (baseline `25.0%`, delta `-25.0%`), fallback reasons `0`,
   `needs_review` steps `0`.
