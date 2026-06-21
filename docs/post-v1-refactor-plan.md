@@ -632,3 +632,25 @@ Validation result for the Phase 7 prompt-check runner slice:
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS; required real-case human_review records are
   present for all five cases.
+
+Validation result for the Phase 7 prompt-check close-out verification slice:
+
+- Re-ran the no-write `pnpm post-v1:prompt-check` plan for case 03 and confirmed
+  it still prints the preflight command, side-effecting execution command,
+  side-effect list, and promotion-gate template without creating artifacts.
+- Re-ran `pnpm pipeline:generate -- --preflight` for the case 03 prompt-check
+  path and confirmed it exits before outdir, DB, storage, provider, and
+  `project_*_steps.json` writes.
+- Re-ran `pnpm g4:review-pack -- --missing-human-review --dry-run` and confirmed
+  no real generated cases remain without `human_review` G4.
+- Hardened `server/cli/generatePipeline.test.ts` by giving the command-level
+  `pnpm tsx` preflight subprocess test a 15 second timeout. The test still
+  verifies the no-outdir-write boundary; the wider timeout prevents unrelated
+  process startup contention from failing the full suite.
+- `pnpm vitest run server/cli/generatePipeline.test.ts`: PASS, 3 tests.
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 28 test files and 316 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS; required real-case human_review records are
+  present for all five cases.

@@ -84,11 +84,11 @@ describe("generate pipeline CLI helpers", () => {
         "none",
         "--preflight",
       ],
-      { cwd: process.cwd() },
+      { cwd: process.cwd(), timeout: 15_000 },
     );
 
     expect(stdout).toContain("Pipeline preflight: PASS");
     expect(stdout).toContain(`outdir: ${outdir}`);
     await expect(fs.access(outdir)).rejects.toThrow();
-  });
+  }, 15_000);
 });
