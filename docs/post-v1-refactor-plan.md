@@ -200,9 +200,24 @@ Validation result:
 
 ### Phase 3: Unused Code Removal
 
-Status: pending.
+Status: completed.
 
 Only delete code after `rg` reference checks and test coverage checks. Avoid steps artifact, DB sync, export pipeline, evidence segmentation core, and eval metrics unless a later design pass explicitly opens them.
+
+Changes:
+
+- Deleted `scripts/requirements.txt`, an unreferenced stale Python dependency file that still listed `opencv-python-headless` and `numpy`.
+- Kept root `requirements.txt` as the documented Python dependency source for dataset generation and optional OCR engine setup.
+- Did not touch steps artifact, DB sync, export pipeline, evidence segmentation core, eval metrics, legacy fallback paths, or slide heuristics.
+
+Validation result:
+
+- `pnpm setup:check`: PASS
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 24 test files and 261 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=69.4%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
 
 ### Phase 4: Fallback And Heuristic Policy
 
