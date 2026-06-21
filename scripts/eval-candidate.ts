@@ -39,6 +39,7 @@ export type CandidateEvalOptions = {
   requireG2Improvement: boolean;
   maxCurrentG2Regression?: number;
   maxCurrentG3Regression?: number;
+  maxCurrentNoCitationRegression?: number;
   requireCurrentG2Improvement?: boolean;
   requireCurrentG3Improvement?: boolean;
 };
@@ -54,6 +55,8 @@ export type CandidateEvalResult = {
   currentG2Accuracy?: number;
   currentG2Delta?: number;
   g2NoCitationRate: number;
+  currentG2NoCitationRate?: number;
+  currentNoCitationDelta?: number;
   g3Rate: number;
   baselineG3Rate?: number;
   g3Delta?: number;
@@ -117,6 +120,10 @@ function parseArgs(argv: string[]): CliOptions {
         break;
       case "--max-current-g3-regression":
         options.maxCurrentG3Regression = parseNumber(arg, requireNext(arg, next));
+        i += 1;
+        break;
+      case "--max-current-no-citation-regression":
+        options.maxCurrentNoCitationRegression = parseNumber(arg, requireNext(arg, next));
         i += 1;
         break;
       case "--require-g2-improvement":
@@ -191,6 +198,8 @@ Options:
                                 Fail unless candidate G3 is below current G3.
   --max-current-g2-regression N Allowed G2 regression versus current artifact.
   --max-current-g3-regression N Allowed G3 regression versus current artifact.
+  --max-current-no-citation-regression N
+                                Allowed no-citation-rate increase versus current artifact.
   --json                        Print JSON.
 
 This command reads a candidate steps.json and compares it with eval/baseline.json.
@@ -261,7 +270,8 @@ export function evaluateCandidate(
       options.requireCurrentG2Improvement ||
       options.requireCurrentG3Improvement ||
       options.maxCurrentG2Regression !== undefined ||
-      options.maxCurrentG3Regression !== undefined,
+      options.maxCurrentG3Regression !== undefined ||
+      options.maxCurrentNoCitationRegression !== undefined,
   );
   const currentGenerated = input.currentArtifact === undefined
     ? undefined
@@ -278,6 +288,9 @@ export function evaluateCandidate(
   const currentG3Delta = currentG3 === undefined
     ? undefined
     : g3.rate - currentG3.rate;
+  const currentNoCitationDelta = currentG2 === undefined
+    ? undefined
+    : g2.noCitationRate - currentG2.noCitationRate;
   const invalidReasons: string[] = [];
   const notes: string[] = [];
 
@@ -314,6 +327,13 @@ export function evaluateCandidate(
     invalidReasons.push("current_g3_regression");
   }
   if (
+    currentNoCitationDelta !== undefined &&
+    options.maxCurrentNoCitationRegression !== undefined &&
+    currentNoCitationDelta > options.maxCurrentNoCitationRegression
+  ) {
+    invalidReasons.push("current_no_citation_regression");
+  }
+  if (
     options.requireCurrentG2Improvement &&
     (currentG2Delta === undefined || currentG2Delta <= 0)
   ) {
@@ -343,6 +363,8 @@ export function evaluateCandidate(
     currentG2Accuracy: currentG2?.accuracy,
     currentG2Delta,
     g2NoCitationRate: g2.noCitationRate,
+    currentG2NoCitationRate: currentG2?.noCitationRate,
+    currentNoCitationDelta,
     g3Rate: g3.rate,
     baselineG3Rate: baselineG3,
     g3Delta,
@@ -376,6 +398,11 @@ function printResult(result: CandidateEvalResult): void {
     );
   }
   console.log(`G2 no-citation: ${pct(result.g2NoCitationRate)}`);
+  if (result.currentG2NoCitationRate !== undefined) {
+    console.log(
+      `G2 no-citation vs current: ${pct(result.g2NoCitationRate)} (current ${pct(result.currentG2NoCitationRate)}, delta ${signedPct(result.currentNoCitationDelta)})`,
+    );
+  }
   console.log(`G3: ${pct(result.g3Rate)} (baseline ${pct(result.baselineG3Rate)}, delta ${signedPct(result.g3Delta)})`);
   if (result.currentG3Rate !== undefined) {
     console.log(
@@ -404,7 +431,8 @@ async function main(): Promise<void> {
       options.requireCurrentG2Improvement ||
       options.requireCurrentG3Improvement ||
       options.maxCurrentG2Regression !== undefined ||
-      options.maxCurrentG3Regression !== undefined,
+      options.maxCurrentG3Regression !== undefined ||
+      options.maxCurrentNoCitationRegression !== undefined,
   );
   if (options.currentStepsPath && options.currentGenerated) {
     throw new Error("--current-steps and --current-generated cannot be used together");

@@ -103,4 +103,5 @@ G4の記録フォーマットは [eval/g4/README.md](./g4/README.md) と [eval/g
 任意の候補 `steps.json` を現行artifactと比べる場合は
 `pnpm eval:candidate -- --current-generated` を使う。低G3化をpromote条件に
 含める場合は `--require-current-g3-improvement`、G2退行を禁止する場合は
-`--max-current-g2-regression 0` を併用する。
+`--max-current-g2-regression 0`、引用を落として見かけのG2を守る退化を防ぐ
+場合は `--max-current-no-citation-regression 0` を併用する。

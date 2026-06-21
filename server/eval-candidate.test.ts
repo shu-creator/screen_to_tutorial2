@@ -47,6 +47,15 @@ function unmatchedArtifact() {
   });
 }
 
+function noCitationArtifact() {
+  return artifact({
+    title: "保存する",
+    operation: "保存を実行する",
+    instruction: "保存します。",
+    cited_ui_labels: [],
+  });
+}
+
 describe("eval candidate", () => {
   it("passes when candidate improves G2 without adding G3 or fallback reasons", () => {
     const result = evaluateCandidate(
@@ -272,6 +281,30 @@ describe("eval candidate", () => {
     expect(result.invalidReasons).toEqual(["missing_current_artifact"]);
   });
 
+  it("requires a current artifact when current no-citation regression limits are requested", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0.5 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        maxCurrentNoCitationRegression: 0,
+      },
+    );
+
+    expect(result.pass).toBe(false);
+    expect(result.invalidReasons).toEqual(["missing_current_artifact"]);
+  });
+
   it("passes when current G2 improvement is required and candidate beats current", () => {
     const result = evaluateCandidate(
       {
@@ -349,6 +382,114 @@ describe("eval candidate", () => {
     expect(result.pass).toBe(false);
     expect(result.currentG3Delta).toBe(1);
     expect(result.invalidReasons).toContain("current_g3_regression");
+  });
+
+  it("fails current-artifact no-citation regressions when requested", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: noCitationArtifact(),
+        currentArtifact: artifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        maxCurrentNoCitationRegression: 0,
+      },
+    );
+
+    expect(result.pass).toBe(false);
+    expect(result.g2NoCitationRate).toBe(1);
+    expect(result.currentG2NoCitationRate).toBe(0);
+    expect(result.currentNoCitationDelta).toBe(1);
+    expect(result.invalidReasons).toEqual(["current_no_citation_regression"]);
+  });
+
+  it("allows equal current-artifact no-citation rates at zero tolerance", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: noCitationArtifact(),
+        currentArtifact: noCitationArtifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        maxCurrentNoCitationRegression: 0,
+      },
+    );
+
+    expect(result.pass).toBe(true);
+    expect(result.currentNoCitationDelta).toBe(0);
+    expect(result.invalidReasons).toEqual([]);
+  });
+
+  it("allows current-artifact no-citation increases within tolerance", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: noCitationArtifact(),
+        currentArtifact: artifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        maxCurrentNoCitationRegression: 1,
+      },
+    );
+
+    expect(result.pass).toBe(true);
+    expect(result.currentNoCitationDelta).toBe(1);
+    expect(result.invalidReasons).toEqual([]);
+  });
+
+  it("passes current-artifact no-citation checks when no-citation rate does not increase", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact(),
+        currentArtifact: noCitationArtifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0.5 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        maxCurrentNoCitationRegression: 0,
+      },
+    );
+
+    expect(result.pass).toBe(true);
+    expect(result.g2NoCitationRate).toBe(0);
+    expect(result.currentG2NoCitationRate).toBe(1);
+    expect(result.currentNoCitationDelta).toBe(-1);
+    expect(result.invalidReasons).toEqual([]);
   });
 
   it("passes when current G3 improvement is required and candidate beats current", () => {

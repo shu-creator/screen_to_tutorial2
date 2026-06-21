@@ -90,6 +90,7 @@ pnpm eval:candidate -- \
   --steps "$STEPS_PATH" \
   --current-generated \
   --max-current-g2-regression 0 \
+  --max-current-no-citation-regression 0 \
   --require-current-g3-improvement \
   --require-g2-improvement
 ```
@@ -124,8 +125,9 @@ Measured candidate:
   label normalizer, the tracked case 03 artifact scores G2 `75.0%`, so this
   PASS does not prove improvement over the current tracked artifact. Use
   `--current-generated` plus `--max-current-g2-regression 0` and
-  `--require-current-g3-improvement` for a no-G2-regression / G3-improvement
-  promotion check.
+  `--max-current-no-citation-regression 0` and
+  `--require-current-g3-improvement` for a no-G2-regression /
+  no-citation-regression / G3-improvement promotion check.
 
 Promotion decision:
 
