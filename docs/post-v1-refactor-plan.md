@@ -291,7 +291,8 @@ Opening criteria:
 
 ### Phase 7: Release Follow-up
 
-Status: in progress.
+Status: mostly complete on `codex/post-v1-refactor`; current-prompt
+regeneration remains a side-effecting measurement step.
 
 Output:
 
@@ -300,10 +301,12 @@ Output:
 - `outputs/g4-review-packets/real-app-workflow-02-create-project.md` (ignored local review packet)
 - `outputs/g4-review-packets/real-app-workflow-03-generate-steps.md` (ignored local review packet)
 
-Changes started:
+Completed or started changes:
 
 - Generated G4 human-review packets for cases 01/02/03.
-- Kept 01/02/03 `eval/g4/records/*.json` as `ai_estimate`; do not promote them to `human_review` without actual human review.
+- Replaced 01/02/03 `eval/g4/records/*.json` with `human_review` records
+  after explicit human confirmation from `iwsh23`: reviewed_at `2026-06-21`,
+  all edit counts `0`, and no blocking issues.
 - Added `docs/post-v1-checklist.md` with the human G4 workflow, low-G2 case order, prompt-regeneration path, UI polish queue, and close-out gates.
 - Updated the authoring prompt to `authoring-v2-grounded-3` so future generation keeps distinct user intents separate, avoids OCR-unsupported UI label citations, and excludes state/result-only labels from `cited_ui_labels`.
 - Added `pnpm eval:candidate` to score a candidate `steps.json` against `eval/baseline.json` without replacing tracked generated artifacts.
@@ -318,20 +321,23 @@ Changes started:
 - Kept the case 03 candidate local for now because it improves G3 (`25.0%` to
   `0.0%`) but scores lower G2 than the current tracked case 03 artifact under
   the same normalizer (`71.4%` vs `75.0%`).
+- Added a no-write `pnpm pipeline:generate -- --preflight` path so low-G2
+  current-prompt measurement can be planned before DB/storage/output writes.
+- Changed `pnpm g4:review-pack -- --missing-human-review --dry-run` so an
+  empty selection is a successful close-out no-op after all real cases have
+  `human_review` records. Empty `--release-candidates` remains a failure.
 
 Still open:
 
-- Actual `human_review` G4 records for cases 01/02/03 require human review and explicit `pnpm g4:record -- --confirm-human-review`.
 - Artifact sync status UI remains queued until the Phase 6 artifact-first route is merged.
 - Persisted eval artifacts have not been regenerated from
   `authoring-v2-grounded-3`; the measured case 03 candidate from
   `authoring-v2-grounded-2` has not been copied into
   `eval/results/generated/*` or `eval/baseline.json`.
 - A new `authoring-v2-grounded-3` candidate still needs to be generated and
-  measured before any low-G2/G3 artifact promotion decision.
-- `pnpm g4:review-pack -- --missing-human-review --dry-run` previews the real
-  generated cases that still lack human G4; add `--overwrite` after confirming
-  the selected worksheets.
+  measured before any low-G2/G3 artifact promotion decision. This requires
+  running `pnpm pipeline:generate` without `--preflight`, which creates outdir,
+  DB user/project state, source video storage, and exported `steps.json`.
 
 Current candidate guardrails:
 
