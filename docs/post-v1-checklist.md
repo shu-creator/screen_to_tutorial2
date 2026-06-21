@@ -85,11 +85,10 @@ artifact:
 
 ```bash
 STEPS_PATH=${STEPS_PATH:?run the generation block first}
-CURRENT_STEPS=eval/results/generated/real-app-workflow-03-generate-steps/steps.json
 pnpm eval:candidate -- \
   --case real-app-workflow-03-generate-steps \
   --steps "$STEPS_PATH" \
-  --current-steps "$CURRENT_STEPS" \
+  --current-generated \
   --max-current-g2-regression 0 \
   --require-g2-improvement
 ```
@@ -112,7 +111,7 @@ Measured candidate:
   `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json`.
 - Prompt path: `authoring-v2-grounded-2`.
 - Fixed-baseline gate: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --require-g2-improvement` PASS.
-- Current-artifact diagnostic: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --current-steps eval/results/generated/real-app-workflow-03-generate-steps/steps.json --json` reports current G2 delta `-3.6%` and current G3 delta `-25.0%`.
+- Current-artifact diagnostic: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --current-generated --json` reports current G2 delta `-3.6%` and current G3 delta `-25.0%`.
 - Strict current no-G2-regression check with `--max-current-g2-regression 0`
   fails as expected with `current_g2_regression`.
 - Result vs fixed baseline: G2 `71.4%` (baseline `41.7%`, delta `+29.8%`),
@@ -123,8 +122,8 @@ Measured candidate:
   still records the fixed v1 case 03 G2 of `41.7%`. Under the current post-v1
   label normalizer, the tracked case 03 artifact scores G2 `75.0%`, so this
   PASS does not prove improvement over the current tracked artifact. Use
-  `--current-steps` plus `--max-current-g2-regression 0` for a no-G2-regression
-  promotion check.
+  `--current-generated` plus `--max-current-g2-regression 0` for a
+  no-G2-regression promotion check.
 
 Promotion decision:
 

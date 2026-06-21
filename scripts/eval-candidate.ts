@@ -12,6 +12,7 @@ import {
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const datasetDir = path.join(repoRoot, "eval", "dataset");
+const generatedDir = path.join(repoRoot, "eval", "results", "generated");
 const baselinePath = path.join(repoRoot, "eval", "baseline.json");
 
 type StepsArtifact = {
@@ -67,6 +68,7 @@ type CliOptions = CandidateEvalOptions & {
   caseId?: string;
   stepsPath?: string;
   currentStepsPath?: string;
+  currentGenerated: boolean;
   json: boolean;
 };
 
@@ -75,6 +77,7 @@ function parseArgs(argv: string[]): CliOptions {
     maxG2Regression: 0,
     maxG3Regression: 0,
     requireG2Improvement: false,
+    currentGenerated: false,
     json: false,
   };
 
@@ -95,6 +98,9 @@ function parseArgs(argv: string[]): CliOptions {
       case "--current-steps":
         options.currentStepsPath = requireNext(arg, next);
         i += 1;
+        break;
+      case "--current-generated":
+        options.currentGenerated = true;
         break;
       case "--max-g2-regression":
         options.maxG2Regression = parseNumber(arg, requireNext(arg, next));
@@ -160,6 +166,11 @@ export function validateCaseId(caseId: string): void {
   }
 }
 
+export function currentGeneratedStepsPath(caseId: string): string {
+  validateCaseId(caseId);
+  return path.join(generatedDir, caseId, "steps.json");
+}
+
 function printHelp(): void {
   console.log(`Usage:
   pnpm eval:candidate -- --case <case-id> --steps <path/to/steps.json> [options]
@@ -169,6 +180,7 @@ Options:
   --max-g2-regression N         Allowed G2 regression as a ratio. Default: 0.
   --max-g3-regression N         Allowed G3 regression as a ratio. Default: 0.
   --current-steps PATH          Compare against a current tracked/generated steps artifact.
+  --current-generated           Compare against eval/results/generated/<case-id>/steps.json.
   --require-current-g2-improvement
                                 Fail unless candidate G2 is above current G2.
   --max-current-g2-regression N Allowed G2 regression versus current artifact.
@@ -176,7 +188,7 @@ Options:
   --json                        Print JSON.
 
 This command reads a candidate steps.json and compares it with eval/baseline.json.
-When --current-steps is supplied, it also reports deltas versus that artifact.
+When --current-steps or --current-generated is supplied, it also reports deltas versus that artifact.
 It does not write eval results or update the baseline.
 `);
 }
@@ -375,20 +387,29 @@ async function main(): Promise<void> {
   validateCaseId(options.caseId);
   const currentComparisonRequested = Boolean(
     options.currentStepsPath ||
+      options.currentGenerated ||
       options.requireCurrentG2Improvement ||
       options.maxCurrentG2Regression !== undefined ||
       options.maxCurrentG3Regression !== undefined,
   );
-  if (currentComparisonRequested && !options.currentStepsPath) {
-    throw new Error("--current-steps is required for current-artifact comparison options");
+  if (options.currentStepsPath && options.currentGenerated) {
+    throw new Error("--current-steps and --current-generated cannot be used together");
+  }
+  const currentStepsPath = options.currentGenerated
+    ? currentGeneratedStepsPath(options.caseId)
+    : options.currentStepsPath;
+  if (currentComparisonRequested && !currentStepsPath) {
+    throw new Error(
+      "--current-steps or --current-generated is required for current-artifact comparison options",
+    );
   }
 
   const groundTruth = await readJson<GroundTruthFile>(
     path.join(datasetDir, options.caseId, "ground_truth.json"),
   );
   const artifact = await readJson<StepsArtifact>(path.resolve(options.stepsPath));
-  const currentArtifact = options.currentStepsPath
-    ? await readJson<StepsArtifact>(path.resolve(options.currentStepsPath))
+  const currentArtifact = currentStepsPath
+    ? await readJson<StepsArtifact>(path.resolve(currentStepsPath))
     : undefined;
   const baselineFile = await readJson<BaselineFile>(baselinePath);
   const baseline = baselineFile.results?.find((entry) => entry.caseId === options.caseId);

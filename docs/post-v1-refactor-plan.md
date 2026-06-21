@@ -330,8 +330,8 @@ Still open:
   fixed-baseline comparison gate; accepting a regenerated low-G2 artifact still
   requires comparing it with the current tracked artifact and reviewing the
   G2/G3 tradeoff.
-- `pnpm eval:candidate -- --current-steps <tracked-steps> --max-current-g2-regression 0`
-  is available as the stricter current-artifact no-G2-regression check for
+- `pnpm eval:candidate -- --case <case-id> --steps <steps-path> --current-generated --max-current-g2-regression 0`
+  is available as the stricter tracked-artifact no-G2-regression check for
   future candidate promotion.
 
 Validation result for the Phase 7 starter slice:

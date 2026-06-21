@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { evaluateCandidate, validateCaseId } from "../scripts/eval-candidate";
+import {
+  currentGeneratedStepsPath,
+  evaluateCandidate,
+  validateCaseId,
+} from "../scripts/eval-candidate";
 import type { GroundTruthStep } from "./eval/metrics";
 
 const groundTruth: GroundTruthStep[] = [
@@ -328,5 +332,12 @@ describe("eval candidate", () => {
     expect(() => validateCaseId(".")).toThrow("directory reference");
     expect(() => validateCaseId("nested/case")).toThrow("path separators");
     expect(() => validateCaseId("   ")).toThrow("empty");
+  });
+
+  it("resolves current generated artifact paths from safe case ids", () => {
+    expect(currentGeneratedStepsPath("case-01")).toMatch(
+      /eval\/results\/generated\/case-01\/steps\.json$/,
+    );
+    expect(() => currentGeneratedStepsPath("../case-01")).toThrow("path separators");
   });
 });
