@@ -30,7 +30,7 @@ import {
 
 const logger = createLogger("Authoring");
 
-export const AUTHORING_PROMPT_VERSION = "authoring-v2-grounded-1";
+export const AUTHORING_PROMPT_VERSION = "authoring-v2-grounded-2";
 
 /** LLM応答のステップ（検証前） */
 interface RawAuthoredStep {
@@ -135,10 +135,13 @@ const SYSTEM_PROMPT = `あなたは業務画面チュートリアルの執筆者
 必ず守る制約:
 - 各ステップの source_segment_ids には根拠となるセグメントIDを必ず入れる（時系列順・重複なし）
 - 連続した同種の操作（例: 複数フィールドへの入力）は1ステップに統合してよい
+- visibleなクリック・タブ切替・生成開始・ダウンロード・確認完了は、後続画面に結果がまとまって表示されても原則として破棄しない
+- 異なる目的の操作（例: タブを開く→生成ボタンを押す→完了を確認する）は1ステップに統合しない
 - スクロールのみ・ロード待ち・無意味なカーソル移動のセグメントは discarded_segments に入れて破棄する
 - activity=waiting のセグメント（進捗バー・スピナー・処理待ち）は steps に使わず必ず discarded_segments に割り当てる
 - 1つのstepの source_segment_ids は原則1〜2個。3個以上まとめるのは同一操作の連続（タイピング等）に限る
-- UIラベル（ボタン名・項目名）はOCRテキストに実在するものだけを「」で引用し、cited_ui_labels にも列挙する。OCRにないラベルは推測しない
+- UIラベル（ボタン名・項目名）は、そのstepの根拠セグメントのOCRテキストに実在するものだけを「」で引用し、cited_ui_labels にも列挙する。OCRにないラベルは推測せず、引用符なしの一般表現にする
+- cited_ui_labels は「」で引用したUIラベルだけを入れる。OCR根拠が弱い場合は cited_ui_labels を空配列にし、説明文で補う
 - 1ステップは「目的1つ・操作1つ・結果1つ」。instruction は短い命令文1文、expected_result は画面変化を1文で
 - narration は全ステップ通して読み上げたとき自然につながる文体にする（「まず」「次に」「最後に」等の接続）
 - title は重複させない

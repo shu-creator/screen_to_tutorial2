@@ -291,6 +291,33 @@ Opening criteria:
 
 ### Phase 7: Release Follow-up
 
-Status: deferred.
+Status: in progress.
 
-Track human G4 additions for cases 01/02/03, UI polish, quality prompt improvements, low-G2 case improvements, and a post-v1 checklist.
+Output:
+
+- `docs/post-v1-checklist.md`
+- `outputs/g4-review-packets/real-app-workflow-01.md` (ignored local review packet)
+- `outputs/g4-review-packets/real-app-workflow-02-create-project.md` (ignored local review packet)
+- `outputs/g4-review-packets/real-app-workflow-03-generate-steps.md` (ignored local review packet)
+
+Changes started:
+
+- Generated G4 human-review packets for cases 01/02/03.
+- Kept 01/02/03 `eval/g4/records/*.json` as `ai_estimate`; do not promote them to `human_review` without actual human review.
+- Added `docs/post-v1-checklist.md` with the human G4 workflow, low-G2 case order, prompt-regeneration path, UI polish queue, and close-out gates.
+- Updated the authoring prompt to `authoring-v2-grounded-2` so future generation keeps distinct user intents separate and avoids OCR-unsupported UI label citations.
+
+Still open:
+
+- Actual `human_review` G4 records for cases 01/02/03 require human review and explicit `pnpm g4:record -- --confirm-human-review`.
+- UI polish implementation remains queued.
+- Prompt impact has not been measured on regenerated low-G2 cases; persisted eval artifacts still reflect `authoring-v2-grounded-1`.
+
+Validation result for the Phase 7 starter slice:
+
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 24 test files and 262 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=69.4%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
+- Additional G4 packet validation: `pnpm g4:review-pack -- --case real-app-workflow-01 --case real-app-workflow-02-create-project --case real-app-workflow-03-generate-steps --overwrite` PASS.
