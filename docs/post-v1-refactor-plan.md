@@ -336,7 +336,8 @@ Still open:
   G2/G3 tradeoff.
 - `pnpm eval:candidate -- --case <case-id> --steps <steps-path> --current-generated --max-current-g2-regression 0`
   is available as the stricter tracked-artifact no-G2-regression check for
-  future candidate promotion.
+  future candidate promotion; add `--require-current-g3-improvement` when the
+  candidate is meant to reduce non-step overlap.
 - `pnpm g4:review-pack -- --missing-human-review --overwrite` is available to
   regenerate worksheets for real generated cases that still lack human G4.
 
@@ -375,3 +376,12 @@ Validation result for the Phase 7 UI edit polish slice:
 - `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.
+
+Validation result for the Phase 7 current-G3 candidate gate slice:
+
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 26 test files and 289 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.
+- Additional candidate-gate validation: `pnpm vitest run server/eval-candidate.test.ts` PASS, 17 tests. Existing case 03 prompt candidate with `--current-generated --max-current-g2-regression 0 --require-current-g3-improvement --require-g2-improvement` fails as expected with `current_g2_regression` while reporting G3 improvement from `25.0%` to `0.0%`.

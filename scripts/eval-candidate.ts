@@ -40,6 +40,7 @@ export type CandidateEvalOptions = {
   maxCurrentG2Regression?: number;
   maxCurrentG3Regression?: number;
   requireCurrentG2Improvement?: boolean;
+  requireCurrentG3Improvement?: boolean;
 };
 
 export type CandidateEvalResult = {
@@ -124,6 +125,9 @@ function parseArgs(argv: string[]): CliOptions {
       case "--require-current-g2-improvement":
         options.requireCurrentG2Improvement = true;
         break;
+      case "--require-current-g3-improvement":
+        options.requireCurrentG3Improvement = true;
+        break;
       case "--json":
         options.json = true;
         break;
@@ -183,6 +187,8 @@ Options:
   --current-generated           Compare against eval/results/generated/<case-id>/steps.json.
   --require-current-g2-improvement
                                 Fail unless candidate G2 is above current G2.
+  --require-current-g3-improvement
+                                Fail unless candidate G3 is below current G3.
   --max-current-g2-regression N Allowed G2 regression versus current artifact.
   --max-current-g3-regression N Allowed G3 regression versus current artifact.
   --json                        Print JSON.
@@ -253,6 +259,7 @@ export function evaluateCandidate(
   const needsCurrentComparison = Boolean(
     input.currentArtifact ||
       options.requireCurrentG2Improvement ||
+      options.requireCurrentG3Improvement ||
       options.maxCurrentG2Regression !== undefined ||
       options.maxCurrentG3Regression !== undefined,
   );
@@ -311,6 +318,12 @@ export function evaluateCandidate(
     (currentG2Delta === undefined || currentG2Delta <= 0)
   ) {
     invalidReasons.push("current_g2_not_improved");
+  }
+  if (
+    options.requireCurrentG3Improvement &&
+    (currentG3Delta === undefined || currentG3Delta >= 0)
+  ) {
+    invalidReasons.push("current_g3_not_improved");
   }
   if (generated.length === 0) {
     invalidReasons.push("empty_steps");
@@ -389,6 +402,7 @@ async function main(): Promise<void> {
     options.currentStepsPath ||
       options.currentGenerated ||
       options.requireCurrentG2Improvement ||
+      options.requireCurrentG3Improvement ||
       options.maxCurrentG2Regression !== undefined ||
       options.maxCurrentG3Regression !== undefined,
   );

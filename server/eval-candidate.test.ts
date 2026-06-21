@@ -200,6 +200,30 @@ describe("eval candidate", () => {
     expect(result.invalidReasons).toContain("current_g2_not_improved");
   });
 
+  it("requires a current artifact when current G3 improvement is requested", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0.5 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        requireCurrentG3Improvement: true,
+      },
+    );
+
+    expect(result.pass).toBe(false);
+    expect(result.invalidReasons).toEqual(["missing_current_artifact", "current_g3_not_improved"]);
+  });
+
   it("requires a current artifact when current regression limits are requested", () => {
     const result = evaluateCandidate(
       {
@@ -325,6 +349,85 @@ describe("eval candidate", () => {
     expect(result.pass).toBe(false);
     expect(result.currentG3Delta).toBe(1);
     expect(result.invalidReasons).toContain("current_g3_regression");
+  });
+
+  it("passes when current G3 improvement is required and candidate beats current", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact(),
+        currentArtifact: artifact({ t_start: 1000, t_end: 2000 }),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 1 },
+          g3: { rate: 1 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        requireCurrentG3Improvement: true,
+      },
+    );
+
+    expect(result.pass).toBe(true);
+    expect(result.currentG3Rate).toBe(1);
+    expect(result.currentG3Delta).toBe(-1);
+    expect(result.invalidReasons).toEqual([]);
+  });
+
+  it("requires a strict current G3 improvement instead of a tie", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact(),
+        currentArtifact: artifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 1 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        requireCurrentG3Improvement: true,
+      },
+    );
+
+    expect(result.pass).toBe(false);
+    expect(result.currentG3Delta).toBe(0);
+    expect(result.invalidReasons).toContain("current_g3_not_improved");
+  });
+
+  it("fails when current G3 improvement is required but candidate regresses", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact({ t_start: 1000, t_end: 2000 }),
+        currentArtifact: artifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 1 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        requireCurrentG3Improvement: true,
+      },
+    );
+
+    expect(result.pass).toBe(false);
+    expect(result.currentG3Delta).toBe(1);
+    expect(result.invalidReasons).toContain("current_g3_not_improved");
   });
 
   it("rejects path-like case ids before resolving dataset paths", () => {
