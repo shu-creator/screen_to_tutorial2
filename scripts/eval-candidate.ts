@@ -36,6 +36,9 @@ export type CandidateEvalOptions = {
   maxG2Regression: number;
   maxG3Regression: number;
   requireG2Improvement: boolean;
+  maxCurrentG2Regression?: number;
+  maxCurrentG3Regression?: number;
+  requireCurrentG2Improvement?: boolean;
 };
 
 export type CandidateEvalResult = {
@@ -46,10 +49,14 @@ export type CandidateEvalResult = {
   g2Accuracy: number;
   baselineG2Accuracy?: number;
   g2Delta?: number;
+  currentG2Accuracy?: number;
+  currentG2Delta?: number;
   g2NoCitationRate: number;
   g3Rate: number;
   baselineG3Rate?: number;
   g3Delta?: number;
+  currentG3Rate?: number;
+  currentG3Delta?: number;
   fallbackReasonCount: number;
   fallbackStepCount: number;
   invalidReasons: string[];
@@ -59,6 +66,7 @@ export type CandidateEvalResult = {
 type CliOptions = CandidateEvalOptions & {
   caseId?: string;
   stepsPath?: string;
+  currentStepsPath?: string;
   json: boolean;
 };
 
@@ -84,6 +92,10 @@ function parseArgs(argv: string[]): CliOptions {
         options.stepsPath = requireNext(arg, next);
         i += 1;
         break;
+      case "--current-steps":
+        options.currentStepsPath = requireNext(arg, next);
+        i += 1;
+        break;
       case "--max-g2-regression":
         options.maxG2Regression = parseNumber(arg, requireNext(arg, next));
         i += 1;
@@ -92,8 +104,19 @@ function parseArgs(argv: string[]): CliOptions {
         options.maxG3Regression = parseNumber(arg, requireNext(arg, next));
         i += 1;
         break;
+      case "--max-current-g2-regression":
+        options.maxCurrentG2Regression = parseNumber(arg, requireNext(arg, next));
+        i += 1;
+        break;
+      case "--max-current-g3-regression":
+        options.maxCurrentG3Regression = parseNumber(arg, requireNext(arg, next));
+        i += 1;
+        break;
       case "--require-g2-improvement":
         options.requireG2Improvement = true;
+        break;
+      case "--require-current-g2-improvement":
+        options.requireCurrentG2Improvement = true;
         break;
       case "--json":
         options.json = true;
@@ -145,9 +168,15 @@ Options:
   --require-g2-improvement      Fail unless candidate G2 is above baseline G2.
   --max-g2-regression N         Allowed G2 regression as a ratio. Default: 0.
   --max-g3-regression N         Allowed G3 regression as a ratio. Default: 0.
+  --current-steps PATH          Compare against a current tracked/generated steps artifact.
+  --require-current-g2-improvement
+                                Fail unless candidate G2 is above current G2.
+  --max-current-g2-regression N Allowed G2 regression versus current artifact.
+  --max-current-g3-regression N Allowed G3 regression versus current artifact.
   --json                        Print JSON.
 
 This command reads a candidate steps.json and compares it with eval/baseline.json.
+When --current-steps is supplied, it also reports deltas versus that artifact.
 It does not write eval results or update the baseline.
 `);
 }
@@ -195,6 +224,7 @@ export function evaluateCandidate(
     groundTruth: GroundTruthStep[];
     artifact: StepsArtifact;
     baseline?: BaselineEntry;
+    currentArtifact?: StepsArtifact;
   },
   options: CandidateEvalOptions,
 ): CandidateEvalResult {
@@ -208,11 +238,35 @@ export function evaluateCandidate(
   const baselineG3 = input.baseline?.g3?.rate;
   const g2Delta = baselineG2 === undefined ? undefined : g2.accuracy - baselineG2;
   const g3Delta = baselineG3 === undefined ? undefined : g3.rate - baselineG3;
+  const needsCurrentComparison = Boolean(
+    input.currentArtifact ||
+      options.requireCurrentG2Improvement ||
+      options.maxCurrentG2Regression !== undefined ||
+      options.maxCurrentG3Regression !== undefined,
+  );
+  const currentGenerated = input.currentArtifact === undefined
+    ? undefined
+    : extractSteps(input.currentArtifact);
+  const currentG2 = currentGenerated === undefined
+    ? undefined
+    : computeG2(currentGenerated, allowedLabels);
+  const currentG3 = currentGenerated === undefined
+    ? undefined
+    : computeG3(currentGenerated, input.groundTruth);
+  const currentG2Delta = currentG2 === undefined
+    ? undefined
+    : g2.accuracy - currentG2.accuracy;
+  const currentG3Delta = currentG3 === undefined
+    ? undefined
+    : g3.rate - currentG3.rate;
   const invalidReasons: string[] = [];
   const notes: string[] = [];
 
   if (!input.baseline) {
     invalidReasons.push("missing_baseline");
+  }
+  if (needsCurrentComparison && !input.currentArtifact) {
+    invalidReasons.push("missing_current_artifact");
   }
   if (fallback.fallbackReasonCount > 0) {
     invalidReasons.push("fallback_reasons_present");
@@ -225,6 +279,26 @@ export function evaluateCandidate(
   }
   if (options.requireG2Improvement && (g2Delta === undefined || g2Delta <= 0)) {
     invalidReasons.push("g2_not_improved");
+  }
+  if (
+    currentG2Delta !== undefined &&
+    options.maxCurrentG2Regression !== undefined &&
+    currentG2Delta < -options.maxCurrentG2Regression
+  ) {
+    invalidReasons.push("current_g2_regression");
+  }
+  if (
+    currentG3Delta !== undefined &&
+    options.maxCurrentG3Regression !== undefined &&
+    currentG3Delta > options.maxCurrentG3Regression
+  ) {
+    invalidReasons.push("current_g3_regression");
+  }
+  if (
+    options.requireCurrentG2Improvement &&
+    (currentG2Delta === undefined || currentG2Delta <= 0)
+  ) {
+    invalidReasons.push("current_g2_not_improved");
   }
   if (generated.length === 0) {
     invalidReasons.push("empty_steps");
@@ -241,10 +315,14 @@ export function evaluateCandidate(
     g2Accuracy: g2.accuracy,
     baselineG2Accuracy: baselineG2,
     g2Delta,
+    currentG2Accuracy: currentG2?.accuracy,
+    currentG2Delta,
     g2NoCitationRate: g2.noCitationRate,
     g3Rate: g3.rate,
     baselineG3Rate: baselineG3,
     g3Delta,
+    currentG3Rate: currentG3?.rate,
+    currentG3Delta,
     fallbackReasonCount: fallback.fallbackReasonCount,
     fallbackStepCount: fallback.fallbackStepCount,
     invalidReasons,
@@ -267,8 +345,18 @@ function printResult(result: CandidateEvalResult): void {
   console.log(`steps: ${result.stepCount}`);
   console.log(`G1-F1: ${pct(result.g1F1)}`);
   console.log(`G2: ${pct(result.g2Accuracy)} (baseline ${pct(result.baselineG2Accuracy)}, delta ${signedPct(result.g2Delta)})`);
+  if (result.currentG2Accuracy !== undefined) {
+    console.log(
+      `G2 vs current: ${pct(result.g2Accuracy)} (current ${pct(result.currentG2Accuracy)}, delta ${signedPct(result.currentG2Delta)})`,
+    );
+  }
   console.log(`G2 no-citation: ${pct(result.g2NoCitationRate)}`);
   console.log(`G3: ${pct(result.g3Rate)} (baseline ${pct(result.baselineG3Rate)}, delta ${signedPct(result.g3Delta)})`);
+  if (result.currentG3Rate !== undefined) {
+    console.log(
+      `G3 vs current: ${pct(result.g3Rate)} (current ${pct(result.currentG3Rate)}, delta ${signedPct(result.currentG3Delta)})`,
+    );
+  }
   console.log(`fallback reasons: ${result.fallbackReasonCount}`);
   if (result.invalidReasons.length > 0) {
     console.log("Invalid reasons:");
@@ -285,11 +373,23 @@ async function main(): Promise<void> {
   if (!options.caseId) throw new Error("--case is required");
   if (!options.stepsPath) throw new Error("--steps is required");
   validateCaseId(options.caseId);
+  const currentComparisonRequested = Boolean(
+    options.currentStepsPath ||
+      options.requireCurrentG2Improvement ||
+      options.maxCurrentG2Regression !== undefined ||
+      options.maxCurrentG3Regression !== undefined,
+  );
+  if (currentComparisonRequested && !options.currentStepsPath) {
+    throw new Error("--current-steps is required for current-artifact comparison options");
+  }
 
   const groundTruth = await readJson<GroundTruthFile>(
     path.join(datasetDir, options.caseId, "ground_truth.json"),
   );
   const artifact = await readJson<StepsArtifact>(path.resolve(options.stepsPath));
+  const currentArtifact = options.currentStepsPath
+    ? await readJson<StepsArtifact>(path.resolve(options.currentStepsPath))
+    : undefined;
   const baselineFile = await readJson<BaselineFile>(baselinePath);
   const baseline = baselineFile.results?.find((entry) => entry.caseId === options.caseId);
   const result = evaluateCandidate(
@@ -298,6 +398,7 @@ async function main(): Promise<void> {
       groundTruth: groundTruth.steps,
       artifact,
       baseline,
+      currentArtifact,
     },
     options,
   );
