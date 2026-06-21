@@ -334,11 +334,11 @@ Still open:
   fixed-baseline comparison gate; accepting a regenerated low-G2 artifact still
   requires comparing it with the current tracked artifact and reviewing the
   G2/G3 tradeoff.
-- `pnpm eval:candidate -- --case <case-id> --steps <steps-path> --current-generated --max-current-g2-regression 0`
-  is available as the stricter tracked-artifact no-G2-regression check for
-  future candidate promotion; add `--max-current-no-citation-regression 0` to
-  prevent citation-dropping regressions and `--require-current-g3-improvement`
-  when the candidate is meant to reduce non-step overlap.
+- `pnpm eval:candidate -- --case <case-id> --steps <steps-path> --post-v1-promotion-gate`
+  is available as the combined future candidate promotion check. It compares
+  with the current generated artifact, requires fixed-baseline G2 improvement,
+  allows no current G2 or no-citation regression, and requires current G3
+  improvement.
 - `pnpm g4:review-pack -- --missing-human-review --overwrite` is available to
   regenerate worksheets for real generated cases that still lack human G4.
 
@@ -395,3 +395,22 @@ Validation result for the Phase 7 current no-citation candidate gate slice:
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS.
 - Additional candidate-gate validation: `pnpm vitest run server/eval-candidate.test.ts` PASS, 22 tests. Existing case 03 prompt candidate with `--current-generated --max-current-g2-regression 0 --max-current-no-citation-regression 0 --require-current-g3-improvement --require-g2-improvement` fails as expected with `current_g2_regression` while reporting no no-citation regression and G3 improvement from `25.0%` to `0.0%`.
+
+Validation result for the Phase 7 post-v1 promotion gate preset slice:
+
+- Added `pnpm eval:candidate -- --post-v1-promotion-gate` as the combined
+  strict candidate promotion preset.
+- The preset defaults to comparing against `eval/results/generated/<case-id>/steps.json`
+  when no explicit `--current-steps` is supplied.
+- It requires fixed-baseline G2 improvement, allows no current G2 regression,
+  allows no current no-citation-rate regression, and requires current G3
+  improvement.
+- `pnpm vitest run server/eval-candidate.test.ts`: PASS, 27 tests.
+- Existing case 03 prompt candidate with `--post-v1-promotion-gate` fails as
+  expected with `current_g2_regression` while reporting no no-citation
+  regression and G3 improvement from `25.0%` to `0.0%`.
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 26 test files and 299 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases, baseline warnings=3.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS.

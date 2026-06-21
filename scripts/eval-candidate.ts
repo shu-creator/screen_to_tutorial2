@@ -37,6 +37,7 @@ export type CandidateEvalOptions = {
   maxG2Regression: number;
   maxG3Regression: number;
   requireG2Improvement: boolean;
+  postV1PromotionGate?: boolean;
   maxCurrentG2Regression?: number;
   maxCurrentG3Regression?: number;
   maxCurrentNoCitationRegression?: number;
@@ -135,6 +136,9 @@ function parseArgs(argv: string[]): CliOptions {
       case "--require-current-g3-improvement":
         options.requireCurrentG3Improvement = true;
         break;
+      case "--post-v1-promotion-gate":
+        options.postV1PromotionGate = true;
+        break;
       case "--json":
         options.json = true;
         break;
@@ -200,6 +204,11 @@ Options:
   --max-current-g3-regression N Allowed G3 regression versus current artifact.
   --max-current-no-citation-regression N
                                 Allowed no-citation-rate increase versus current artifact.
+  --post-v1-promotion-gate      Strict post-v1 candidate gate: compare against the current
+                                generated artifact, require fixed-baseline G2 improvement,
+                                allow no current G2/no-citation regression, and require
+                                current G3 improvement. Current G2 and no-citation
+                                tolerances are fixed at 0 while this flag is active.
   --json                        Print JSON.
 
 This command reads a candidate steps.json and compares it with eval/baseline.json.
@@ -265,13 +274,22 @@ export function evaluateCandidate(
   const baselineG3 = input.baseline?.g3?.rate;
   const g2Delta = baselineG2 === undefined ? undefined : g2.accuracy - baselineG2;
   const g3Delta = baselineG3 === undefined ? undefined : g3.rate - baselineG3;
+  const requireG2Improvement = options.requireG2Improvement || Boolean(options.postV1PromotionGate);
+  const requireCurrentG3Improvement = options.requireCurrentG3Improvement || Boolean(options.postV1PromotionGate);
+  const maxCurrentG2Regression = options.postV1PromotionGate
+    ? 0
+    : options.maxCurrentG2Regression;
+  const maxCurrentNoCitationRegression = options.postV1PromotionGate
+    ? 0
+    : options.maxCurrentNoCitationRegression;
   const needsCurrentComparison = Boolean(
     input.currentArtifact ||
+      options.postV1PromotionGate ||
       options.requireCurrentG2Improvement ||
-      options.requireCurrentG3Improvement ||
-      options.maxCurrentG2Regression !== undefined ||
+      requireCurrentG3Improvement ||
+      maxCurrentG2Regression !== undefined ||
       options.maxCurrentG3Regression !== undefined ||
-      options.maxCurrentNoCitationRegression !== undefined,
+      maxCurrentNoCitationRegression !== undefined,
   );
   const currentGenerated = input.currentArtifact === undefined
     ? undefined
@@ -309,13 +327,13 @@ export function evaluateCandidate(
   if (g3Delta !== undefined && g3Delta > options.maxG3Regression) {
     invalidReasons.push("g3_regression");
   }
-  if (options.requireG2Improvement && (g2Delta === undefined || g2Delta <= 0)) {
+  if (requireG2Improvement && (g2Delta === undefined || g2Delta <= 0)) {
     invalidReasons.push("g2_not_improved");
   }
   if (
     currentG2Delta !== undefined &&
-    options.maxCurrentG2Regression !== undefined &&
-    currentG2Delta < -options.maxCurrentG2Regression
+    maxCurrentG2Regression !== undefined &&
+    currentG2Delta < -maxCurrentG2Regression
   ) {
     invalidReasons.push("current_g2_regression");
   }
@@ -328,8 +346,8 @@ export function evaluateCandidate(
   }
   if (
     currentNoCitationDelta !== undefined &&
-    options.maxCurrentNoCitationRegression !== undefined &&
-    currentNoCitationDelta > options.maxCurrentNoCitationRegression
+    maxCurrentNoCitationRegression !== undefined &&
+    currentNoCitationDelta > maxCurrentNoCitationRegression
   ) {
     invalidReasons.push("current_no_citation_regression");
   }
@@ -340,7 +358,7 @@ export function evaluateCandidate(
     invalidReasons.push("current_g2_not_improved");
   }
   if (
-    options.requireCurrentG3Improvement &&
+    requireCurrentG3Improvement &&
     (currentG3Delta === undefined || currentG3Delta >= 0)
   ) {
     invalidReasons.push("current_g3_not_improved");
@@ -425,9 +443,13 @@ async function main(): Promise<void> {
   if (!options.caseId) throw new Error("--case is required");
   if (!options.stepsPath) throw new Error("--steps is required");
   validateCaseId(options.caseId);
+  if (options.postV1PromotionGate && !options.currentStepsPath) {
+    options.currentGenerated = true;
+  }
   const currentComparisonRequested = Boolean(
     options.currentStepsPath ||
       options.currentGenerated ||
+      options.postV1PromotionGate ||
       options.requireCurrentG2Improvement ||
       options.requireCurrentG3Improvement ||
       options.maxCurrentG2Regression !== undefined ||

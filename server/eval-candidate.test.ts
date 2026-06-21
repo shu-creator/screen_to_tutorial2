@@ -571,6 +571,137 @@ describe("eval candidate", () => {
     expect(result.invalidReasons).toContain("current_g3_not_improved");
   });
 
+  it("passes the post-v1 promotion gate when fixed baseline and current checks pass", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact(),
+        currentArtifact: artifact({ t_start: 1000, t_end: 2000 }),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0.5 },
+          g3: { rate: 1 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        postV1PromotionGate: true,
+      },
+    );
+
+    expect(result.pass).toBe(true);
+    expect(result.g2Delta).toBe(0.5);
+    expect(result.currentG2Delta).toBe(0);
+    expect(result.currentNoCitationDelta).toBe(0);
+    expect(result.currentG3Delta).toBe(-1);
+    expect(result.invalidReasons).toEqual([]);
+  });
+
+  it("uses the post-v1 promotion gate as a fixed-baseline G2 improvement check", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact(),
+        currentArtifact: artifact({ t_start: 1000, t_end: 2000 }),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 1 },
+          g3: { rate: 1 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        postV1PromotionGate: true,
+      },
+    );
+
+    expect(result.pass).toBe(false);
+    expect(result.g2Delta).toBe(0);
+    expect(result.invalidReasons).toContain("g2_not_improved");
+  });
+
+  it("uses the post-v1 promotion gate as a current G2 regression check", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: unmatchedArtifact(),
+        currentArtifact: artifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        postV1PromotionGate: true,
+      },
+    );
+
+    expect(result.pass).toBe(false);
+    expect(result.currentG2Delta).toBe(-1);
+    expect(result.invalidReasons).toContain("current_g2_regression");
+  });
+
+  it("uses the post-v1 promotion gate as a current no-citation regression check", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: noCitationArtifact(),
+        currentArtifact: artifact({ t_start: 1000, t_end: 2000 }),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0 },
+          g3: { rate: 1 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        postV1PromotionGate: true,
+      },
+    );
+
+    expect(result.pass).toBe(false);
+    expect(result.currentNoCitationDelta).toBe(1);
+    expect(result.invalidReasons).toContain("current_no_citation_regression");
+  });
+
+  it("requires current artifact data for the post-v1 promotion gate", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 0.5 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        postV1PromotionGate: true,
+      },
+    );
+
+    expect(result.pass).toBe(false);
+    expect(result.invalidReasons).toEqual(["missing_current_artifact", "current_g3_not_improved"]);
+  });
+
   it("rejects path-like case ids before resolving dataset paths", () => {
     expect(() => validateCaseId("..")).toThrow("directory reference");
     expect(() => validateCaseId(".")).toThrow("directory reference");

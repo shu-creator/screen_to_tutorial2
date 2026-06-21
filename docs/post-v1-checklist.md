@@ -88,11 +88,7 @@ STEPS_PATH=${STEPS_PATH:?run the generation block first}
 pnpm eval:candidate -- \
   --case real-app-workflow-03-generate-steps \
   --steps "$STEPS_PATH" \
-  --current-generated \
-  --max-current-g2-regression 0 \
-  --max-current-no-citation-regression 0 \
-  --require-current-g3-improvement \
-  --require-g2-improvement
+  --post-v1-promotion-gate
 ```
 
 For diagnostic detail, the general eval runner can also score an arbitrary
@@ -124,10 +120,9 @@ Measured candidate:
   still records the fixed v1 case 03 G2 of `41.7%`. Under the current post-v1
   label normalizer, the tracked case 03 artifact scores G2 `75.0%`, so this
   PASS does not prove improvement over the current tracked artifact. Use
-  `--current-generated` plus `--max-current-g2-regression 0` and
-  `--max-current-no-citation-regression 0` and
-  `--require-current-g3-improvement` for a no-G2-regression /
-  no-citation-regression / G3-improvement promotion check.
+  `--post-v1-promotion-gate` for the combined fixed-baseline G2 improvement,
+  current generated artifact no-G2-regression, no-citation-regression, and
+  G3-improvement promotion check.
 
 Promotion decision:
 
