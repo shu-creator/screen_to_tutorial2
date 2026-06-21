@@ -4,7 +4,9 @@ import path from "path";
 import { describe, expect, it } from "vitest";
 import {
   buildReviewPack,
+  emptySelectionMessage,
   parseArgs,
+  resolveSelectedCases,
   selectMissingHumanReviewCases,
   selectReleaseCandidateCases,
   writeOrPreviewReviewPack,
@@ -19,6 +21,23 @@ describe("g4 review pack helper", () => {
     expect(options.dryRun).toBe(true);
     expect(options.limit).toBe(3);
     expect(options.cases).toEqual([]);
+  });
+
+  it("treats an empty missing-human-review selection as a close-out no-op", () => {
+    const options = parseArgs(["--missing-human-review", "--dry-run"]);
+    const logs: string[] = [];
+
+    expect(emptySelectionMessage(options)).toBe("no real generated cases without human_review G4 found");
+    expect(resolveSelectedCases(options, [], [], (message) => logs.push(message))).toEqual([]);
+    expect(logs).toEqual(["no real generated cases without human_review G4 found"]);
+  });
+
+  it("keeps an empty release-candidate selection as a failure", () => {
+    const options = parseArgs(["--release-candidates", "--dry-run"]);
+
+    expect(() => resolveSelectedCases(options, [], [], () => undefined)).toThrow(
+      "no release candidate cases found from eval/results/export-qa",
+    );
   });
 
   it("previews review packets without writing files in dry-run mode", async () => {

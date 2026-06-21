@@ -224,4 +224,8 @@ pnpm g4:review-pack -- --missing-human-review --overwrite
 ```
 
 Once all pending real cases have human G4 records, this selector is expected to
-find no cases and should be skipped.
+find no cases and exit successfully with:
+
+```text
+no real generated cases without human_review G4 found
+```

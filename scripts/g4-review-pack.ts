@@ -160,6 +160,38 @@ export function parseArgs(argv: string[]): Options {
   return options;
 }
 
+export function emptySelectionMessage(options: Pick<Options, "missingHumanReview">): string | null {
+  if (options.missingHumanReview) {
+    return "no real generated cases without human_review G4 found";
+  }
+  return null;
+}
+
+export function resolveSelectedCases(
+  options: Pick<Options, "releaseCandidates" | "missingHumanReview" | "cases">,
+  releaseCandidateCases: string[],
+  missingHumanReviewCases: string[],
+  log: (message: string) => void = console.log,
+): string[] {
+  if (options.releaseCandidates) {
+    if (releaseCandidateCases.length === 0) {
+      throw new Error("no release candidate cases found from eval/results/export-qa");
+    }
+    return releaseCandidateCases;
+  }
+
+  if (options.missingHumanReview) {
+    if (missingHumanReviewCases.length === 0) {
+      const message = emptySelectionMessage(options);
+      if (message) log(message);
+      return [];
+    }
+    return missingHumanReviewCases;
+  }
+
+  return options.cases;
+}
+
 function requireValue(arg: string, value: string | undefined): string {
   if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value`);
   return value;
@@ -487,16 +519,9 @@ async function main(): Promise<void> {
   const missingHumanReviewCases = options.missingHumanReview
     ? await selectMissingHumanReviewCases(missingHumanReviewLimit)
     : [];
-  const cases = options.releaseCandidates
-    ? releaseCandidateCases
-    : options.missingHumanReview
-      ? missingHumanReviewCases
-      : options.cases;
-  if (options.releaseCandidates && releaseCandidateCases.length === 0) {
-    throw new Error("no release candidate cases found from eval/results/export-qa");
-  }
-  if (options.missingHumanReview && missingHumanReviewCases.length === 0) {
-    throw new Error("no real generated cases without human_review G4 found");
+  const cases = resolveSelectedCases(options, releaseCandidateCases, missingHumanReviewCases);
+  if (cases.length === 0) {
+    return;
   }
   if (options.releaseCandidates && releaseCandidateCases.length < releaseCandidateLimit) {
     console.warn(`warning: selected ${releaseCandidateCases.length}/${releaseCandidateLimit} release candidate cases`);

@@ -557,3 +557,27 @@ Validation result for the Phase 7 pipeline preflight and human G4 slice:
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS; required real-case human_review records are
   present for all five cases.
+
+Phase 7 close-out polish: after cases 01/02/03 were promoted to human_review,
+`pnpm g4:review-pack -- --missing-human-review --dry-run` correctly selected
+zero cases but exited with status 1. Treat an empty missing-human-review
+selection as a successful no-op so the close-out check can verify that no real
+generated cases are waiting for human G4 review. Keep empty
+`--release-candidates` behavior unchanged because that selector is used to find
+new review work, not to prove closure.
+
+Validation result for the Phase 7 G4 close-out no-op slice:
+
+- `pnpm g4:review-pack -- --missing-human-review --dry-run`: PASS and prints
+  `no real generated cases without human_review G4 found`.
+- `pnpm g4:review-pack -- --release-candidates --dry-run`: still exits 1 when
+  no release candidates are available.
+- Independent review found no critical findings. Adopted the major test finding
+  by covering the empty release-candidate failure path directly.
+- `pnpm vitest run server/g4-review-pack.test.ts`: PASS, 13 tests.
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 27 test files and 312 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases.
+- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS; required real-case human_review records are
+  present for all five cases.
