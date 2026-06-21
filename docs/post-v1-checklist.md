@@ -47,8 +47,8 @@ After actual human review, dry-run each record first:
 
 ```bash
 pnpm g4:record -- \
-  --case real-app-workflow-03-generate-steps \
-  --reviewer "iwsh23" \
+  --case <case-id> \
+  --reviewer "<reviewer>" \
   --reviewed-at YYYY-MM-DD \
   --confirm-human-review \
   --dry-run \
@@ -232,7 +232,7 @@ Promotion handoff for `project_40_steps.json`:
      `data/storage/projects/40/videos/pYfEMLFuo0B_C89M0iUVm.mp4`
    - human-review worksheet:
      `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/human-review-packet.md`
-     (`sha256:5ffd8bcc250970eb8d7ba03e9f4a6126c785cbc04b31950b4c5d1e2bb92f0771`)
+     (`sha256:bc16f24599b4c952a04a3f6f75a7cf9d468b01ee90874bc43eee35d4b9798aa5`)
 
    These paths are local-only and gitignored. If local `outputs/` or `data/`
    is cleared while DB project `40` still exists, regenerate the export files
@@ -246,8 +246,18 @@ Promotion handoff for `project_40_steps.json`:
    ```
 
    The export command does not regenerate `human-review-packet.md`. If the
-   worksheet is lost before review, recreate it from the candidate steps,
-   export summary, artifact paths, and hashes before human review proceeds.
+   worksheet is lost before review, regenerate it from the candidate steps and
+   export summary with:
+
+   ```bash
+   pnpm post-v1:prompt-check -- \
+     --review-packet \
+     --case real-app-workflow-03-generate-steps \
+     --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/project_40_steps.json \
+     --export-summary outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/export/project_40_export_summary.json \
+     --out outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/human-review-packet.md \
+     --overwrite
+   ```
 
    If DB project `40` is cleared before review, export-only regeneration is not
    possible. Re-run the prompt check with
@@ -275,14 +285,15 @@ Promotion handoff for `project_40_steps.json`:
 3. Record a replacement G4 review against the tracked generated artifact.
    Always dry-run first:
 
-   Replace `YYYY-MM-DD` with the actual review date before running both the
-   dry-run and live write. Update the edit counts and `--notes` to reflect the
-   actual findings from step 2 before issuing the live write.
+   Replace `<reviewer>` and `YYYY-MM-DD` with the actual reviewer identity and
+   review date before running both the dry-run and live write. Update the edit
+   counts and `--notes` to reflect the actual findings from step 2 before
+   issuing the live write.
 
    ```bash
    pnpm g4:record -- \
      --case real-app-workflow-03-generate-steps \
-     --reviewer "iwsh23" \
+     --reviewer "<reviewer>" \
      --reviewed-at YYYY-MM-DD \
      --confirm-human-review \
      --dry-run \

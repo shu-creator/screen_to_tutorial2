@@ -341,7 +341,7 @@ Completed or started changes:
   under Still open.
 - Added the local-only project 40 human review worksheet at
   `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/human-review-packet.md`
-  (`sha256:5ffd8bcc250970eb8d7ba03e9f4a6126c785cbc04b31950b4c5d1e2bb92f0771`).
+  (`sha256:bc16f24599b4c952a04a3f6f75a7cf9d468b01ee90874bc43eee35d4b9798aa5`).
 
 Still open:
 
@@ -710,11 +710,12 @@ Validation result for the Phase 7 approved prompt measurement slice:
   `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/human-review-packet.md`
   with review target, artifact hashes, machine QA, step review table, human
   review checklist, G4 count worksheet, and promotion command templates.
-  Worksheet hash computed with
-  `shasum -a 256 outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/human-review-packet.md`:
-  `5ffd8bcc250970eb8d7ba03e9f4a6126c785cbc04b31950b4c5d1e2bb92f0771`.
+- Added `pnpm post-v1:prompt-check -- --review-packet ...` so that worksheet
+  can be regenerated deterministically from the candidate steps and export
+  summary. Rebuilt the project 40 worksheet with that command; reported
+  worksheet hash: `bc16f24599b4c952a04a3f6f75a7cf9d468b01ee90874bc43eee35d4b9798aa5`.
 - `pnpm check`: PASS
-- `pnpm test`: PASS, 28 test files and 316 tests passed, 1 skipped.
+- `pnpm test`: PASS, 28 test files and 319 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases.
 - `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS; required real-case human_review records are
