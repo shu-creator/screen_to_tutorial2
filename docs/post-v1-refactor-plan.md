@@ -309,13 +309,27 @@ Changes started:
 - Added `pnpm eval:candidate` to score a candidate `steps.json` against `eval/baseline.json` without replacing tracked generated artifacts.
 - Polished project step cards with clearer review metadata for timing range, confidence, audio mode, narration, and edit/delete controls.
 - Hardened evidence frame extraction near the end of videos and normalized cited UI labels with outer quotes / dynamic count suffixes, then measured `real-app-workflow-03-generate-steps` as a local authoring-v2 candidate: G2 `71.4%`, G3 `0.0%`, fallback reasons `0`.
+- Rechecked the tracked generated artifacts with the post-v1 label normalizer:
+  current branch quality gate is G2 `82.8%`, G3 `7.0%`, fallback reasons `0`.
+- Kept the case 03 candidate local for now because it improves G3 (`25.0%` to
+  `0.0%`) but scores lower G2 than the current tracked case 03 artifact under
+  the same normalizer (`71.4%` vs `75.0%`).
 
 Still open:
 
 - Actual `human_review` G4 records for cases 01/02/03 require human review and explicit `pnpm g4:record -- --confirm-human-review`.
 - Artifact sync status UI remains queued until the Phase 6 artifact-first route is merged.
-- Persisted eval artifacts still reflect `authoring-v2-grounded-1`; the improved case 03 candidate has not been copied into `eval/results/generated/*` or `eval/baseline.json`.
-- `pnpm eval:candidate -- --require-g2-improvement` now provides the local gate for accepting a regenerated low-G2 artifact.
+- Persisted eval artifacts have not been regenerated from
+  `authoring-v2-grounded-2`; the improved case 03 candidate has not been copied
+  into `eval/results/generated/*` or `eval/baseline.json`.
+- `eval:candidate -- --require-g2-improvement` compares against
+  `eval/baseline.json`, which still records the fixed v1 case 03 G2 `41.7%`;
+  it is not a substitute for comparing a candidate against the current tracked
+  artifact score of G2 `75.0%` under the post-v1 normalizer.
+- `pnpm eval:candidate -- --require-g2-improvement` now provides the
+  fixed-baseline comparison gate; accepting a regenerated low-G2 artifact still
+  requires comparing it with the current tracked artifact and reviewing the
+  G2/G3 tradeoff.
 
 Validation result for the Phase 7 starter slice:
 

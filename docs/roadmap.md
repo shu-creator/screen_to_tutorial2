@@ -36,9 +36,9 @@
 - `needs_review` の理由を `review_reasons` として `steps.json` に保存するようにした。`warnings` は人間向け文面として維持し、`review_reasons` は `fallback:chunk_authoring_failed` / `fallback:unassigned_segment` / `fallback:legacy_step_analysis_failed` / `verification:unverified_ui_label` / `verification:low_confidence` などの理由コードとして扱う。
 - APIと `scripts/model-rematch.ts` のsummaryで `review_reasons` を追えるようにした。UIの要レビューバッジとPPTXスピーカーノートは、配布・レビュー時に読めるよう人間向け `warnings` の表示を維持する。
 - 既存artifactとの後方互換のため、v1/v2読み込み時に `review_reasons: []` を補完する。
-- `pnpm eval:quality-gate` を追加し、実録画5ケースのG2退行、平均G3上限/退行、`fallback:*` review reason混入を機械判定できるようにした。現状はローカルの `eval/results/generated/<case-id>/steps.json` が存在する前提で、G2平均 `69.4%`、G3平均 `7.0%`、fallback reason `0` でPASS。
+- `pnpm eval:quality-gate` を追加し、実録画5ケースのG2退行、平均G3上限/退行、`fallback:*` review reason混入を機械判定できるようにした。v1固定点ではローカルの `eval/results/generated/<case-id>/steps.json` が存在する前提で、G2平均 `69.4%`、G3平均 `7.0%`、fallback reason `0` でPASS。post-v1の引用ラベル正規化後は同じartifactでG2平均 `82.8%`、G3平均 `7.0%`、fallback reason `0`。
 - `scripts/model-rematch.ts` に `--timeout-seconds` を追加し、pipeline/eval command timeoutをログとsummaryに残せるようにした。520/429/insufficient_quota/all-fallbackに加えて `command_timeout` もinvalid signalとして拾う。
-- 現時点のSprint 2機械gateはPASS。ただし、品質そのものは低いケース（例: `real-app-workflow-03-generate-steps` のG2 `41.7%` / G3 `25.0%`）が残るため、生成品質改善は継続対象。
+- Sprint 2機械gateはv1固定点でPASS。ただし、v1時点では品質そのものが低いケース（例: `real-app-workflow-03-generate-steps` のG2 `41.7%` / G3 `25.0%`）が残っていたため、生成品質改善はpost-v1継続対象。post-v1の引用ラベル正規化後も同ケースはG3 `25.0%` が残る。
 
 ## Sprint 3 進捗（2026-06-20）
 

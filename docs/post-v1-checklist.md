@@ -8,7 +8,9 @@ work that should improve the product after v1 without weakening release gates.
 
 - Branch for Phase 7 follow-up: `codex/post-v1-refactor`
 - Fixed baseline tag: `v1.0.0`
-- Current quality baseline: G2 `69.4%`, G3 `7.0%`, fallback reasons `0`
+- Fixed v1 quality baseline: G2 `69.4%`, G3 `7.0%`, fallback reasons `0`
+- Current post-v1 quality gate on tracked artifacts in this branch: G2
+  `82.8%`, G3 `7.0%`, fallback reasons `0`
 - Required release audit remains `pnpm v1:release-audit`
 - Human G4 records already exist for release-required cases 04 and 05.
 - Cases 01, 02, and 03 still have `review_type: "ai_estimate"` records only.
@@ -60,16 +62,23 @@ tightens two low-G2 failure modes:
 - do not quote or include `cited_ui_labels` unless the label is present in the
   source segment OCR.
 
-The persisted eval artifacts still record the older prompt version until cases
-are regenerated. Measure prompt impact with low-G2 cases first:
+The persisted eval artifacts have not been regenerated from the current prompt.
+Measure prompt impact with low-G2 cases first:
 
 ```bash
+RUN_ID=$(date +%Y%m%dT%H%M)
 pnpm pipeline:generate -- \
   --video eval/dataset/real-app-workflow-03-generate-steps/video.mp4 \
-  --outdir outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps \
+  --outdir "outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-${RUN_ID}" \
   --use-audio false \
   --asr-provider none
+
+STEPS_PATH=$(echo "outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-${RUN_ID}"/project_*_steps.json)
+[[ -f "$STEPS_PATH" ]] || { echo "Error: steps file not found: $STEPS_PATH"; exit 1; }
 ```
+
+`project_*_steps.json` includes the database project ID assigned during that
+run, for example `project_39_steps.json`.
 
 Then evaluate the candidate without copying it over the tracked generated
 artifact:
@@ -77,7 +86,7 @@ artifact:
 ```bash
 pnpm eval:candidate -- \
   --case real-app-workflow-03-generate-steps \
-  --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps/steps.json \
+  --steps "$STEPS_PATH" \
   --require-g2-improvement
 ```
 
@@ -87,7 +96,7 @@ artifact:
 ```bash
 pnpm eval -- \
   --case real-app-workflow-03-generate-steps \
-  --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps/steps.json
+  --steps "$STEPS_PATH"
 ```
 
 Do not update `eval/results/generated/*` or `eval/baseline.json` unless the new
@@ -103,14 +112,27 @@ Measured candidate:
   (baseline `25.0%`, delta `-25.0%`), fallback reasons `0`, `needs_review`
   steps `0`.
 - The tracked generated artifact and `eval/baseline.json` were not updated.
+- Note: `--require-g2-improvement` compares against `eval/baseline.json`, which
+  still records the fixed v1 case 03 G2 of `41.7%`. Under the current post-v1
+  label normalizer, the tracked case 03 artifact scores G2 `75.0%`, so this
+  PASS does not prove improvement over the current tracked artifact.
 
-## Low-G2 Case Order
+Promotion decision:
 
-| Priority | Case | Current G2 | Current G3 | Focus |
-| --- | --- | ---: | ---: | --- |
-| 1 | `real-app-workflow-03-generate-steps` | `41.7%` | `25.0%` | missing generate/confirmation intervals, merged actions, weak citations |
-| 2 | `real-app-workflow-04-export-video` | `55.6%` | `0.0%` | export/video controls and exact cited labels |
-| 3 | `real-app-workflow-01` | `72.2%` | `10.0%` | split merged project/file-select actions |
+- Do not promote this candidate yet. Under the current post-v1 label
+  normalizer, the tracked case 03 artifact scores G2 `75.0%` and G3 `25.0%`;
+  the local candidate scores G2 `71.4%` and G3 `0.0%`.
+- The candidate improves timing/overlap but lowers G2 versus the current
+  tracked artifact, so replacing `eval/results/generated/*` or
+  `eval/baseline.json` still needs explicit product/human review.
+
+## Low-G2/G3 Case Order
+
+| Priority | Case | Tracked G2 (post-v1 norm) | Tracked G3 (post-v1 norm) | v1 baseline G2 | Focus |
+| --- | --- | ---: | ---: | ---: | --- |
+| 1 | `real-app-workflow-03-generate-steps` | `75.0%` | `25.0%` | `41.7%` | reduce overlap/G3 without giving back G2 gains |
+| 2 | `real-app-workflow-04-export-video` | `77.8%` | `0.0%` | `55.6%` | export/video controls and exact cited labels |
+| 3 | `real-app-workflow-01` | `83.3%` | `10.0%` | `72.2%` | split merged project/file-select actions |
 
 ## UI Polish Queue
 
