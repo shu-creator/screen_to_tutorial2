@@ -27,7 +27,9 @@ contract as the UI route implementation, while still restoring the original DB
 and artifact state after verification.
 The eighth slice lifted the edit-smoke adapter checks into `pnpm v1:smoke` so
 release smoke summaries now fail unless `adapter.artifactUpdated` and
-`adapter.dbUpdated` are both verified.
+`adapter.dbUpdated` are both verified. The same slice also made
+`pnpm v1:release-audit` re-read `artifacts.edit_smoke_summary` and reject stale
+edit-smoke artifacts that lack the nested adapter checks.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.

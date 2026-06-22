@@ -52,6 +52,14 @@ type V1SmokeSummary = {
   checks?: Array<{ name?: string; pass?: boolean; detail?: string }>;
 };
 
+type EditSmokeSummary = {
+  project_id?: number | null;
+  pass?: boolean;
+  restored_after_check?: boolean;
+  restore_error?: string | null;
+  checks?: Array<{ name?: string; pass?: boolean }>;
+};
+
 const REQUIRED_V1_SMOKE_CHECKS = [
   "setup.check",
   "pipeline.generate",
@@ -67,6 +75,11 @@ const REQUIRED_V1_SMOKE_CHECKS = [
   "edit.summary",
   "edit.adapter.artifactUpdated",
   "edit.adapter.dbUpdated",
+];
+
+const REQUIRED_EDIT_SMOKE_CHECKS = [
+  "adapter.artifactUpdated",
+  "adapter.dbUpdated",
 ];
 
 export type ExportQaSummary = {
@@ -255,6 +268,30 @@ export async function checkV1Smoke(
     if (!(await fileExists(resolveRepoPath(artifactPath)))) missingArtifacts.push(artifactPath);
   }
   const reasons: string[] = [];
+  if (requiredArtifacts.edit_smoke_summary && !missingArtifacts.includes(requiredArtifacts.edit_smoke_summary)) {
+    const editSummaryPath = resolveRepoPath(requiredArtifacts.edit_smoke_summary);
+    const editSummaryResult = await safeReadJson<EditSmokeSummary>(editSummaryPath);
+    if (!editSummaryResult.value) {
+      reasons.push(`could not parse edit_smoke_summary: ${editSummaryResult.error ?? "unknown error"}`);
+    } else {
+      const editSummary = editSummaryResult.value;
+      if (editSummary.project_id !== summary.project_id) {
+        reasons.push(`edit_smoke_summary project_id=${editSummary.project_id ?? "missing"} does not match summary project_id=${summary.project_id ?? "missing"}`);
+      }
+      if (editSummary.pass !== true) reasons.push("edit_smoke_summary pass is not true");
+      if (editSummary.restored_after_check !== true) reasons.push("edit_smoke_summary restored_after_check is not true");
+      if (editSummary.restore_error !== null) reasons.push(`edit_smoke_summary restore_error=${editSummary.restore_error ?? "missing"}`);
+      const editCheckNames = new Set((editSummary.checks ?? []).map((check) => check.name));
+      const missingEditChecks = REQUIRED_EDIT_SMOKE_CHECKS.filter((name) => !editCheckNames.has(name));
+      const failedEditChecks = (editSummary.checks ?? []).filter((check) => (
+        check.name !== undefined &&
+        REQUIRED_EDIT_SMOKE_CHECKS.includes(check.name) &&
+        check.pass !== true
+      ));
+      if (missingEditChecks.length > 0) reasons.push(`edit_smoke_summary missing required checks: ${missingEditChecks.join(", ")}`);
+      if (failedEditChecks.length > 0) reasons.push(`edit_smoke_summary failed checks: ${failedEditChecks.map((check) => check.name).join(", ")}`);
+    }
+  }
   if (summary.pass !== true) reasons.push("summary pass is not true");
   if (failedChecks.length > 0) reasons.push(`failed checks: ${failedChecks.map((check) => check.name ?? "unnamed").join(", ")}`);
   if (missingRequiredChecks.length > 0) reasons.push(`missing required checks: ${missingRequiredChecks.join(", ")}`);
