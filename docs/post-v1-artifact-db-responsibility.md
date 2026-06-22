@@ -4,11 +4,17 @@
 
 This is the Phase 5 design memo for the post-v1 refactor. It records the current read/write responsibilities and the source-of-truth decision before any implementation work.
 
+Phase 6 branch references were updated after the Phase 7 close-out to avoid
+continuing the stale pre-Phase-7 migration branch.
+
 Decision: keep the v1 responsibility split on `codex/post-v1-refactor`.
 
 - v1 remains artifact-first for generated step evidence and export/rendering metadata.
 - DB `steps` remains the compatibility layer for the current UI list/edit routes and legacy renderable IDs.
-- `steps.json` single-source migration is deferred to a separate branch, recommended as `codex/post-v1-steps-source`.
+- `steps.json` single-source migration is deferred to a separate branch:
+  `codex/post-v1-steps-source-v2`.
+  `codex/post-v1-steps-source` predates Phase 7 and must not be merged
+  wholesale; see `docs/post-v1-steps-source-migration.md`.
 
 ## Current Data Responsibilities
 

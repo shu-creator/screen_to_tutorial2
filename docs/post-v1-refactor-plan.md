@@ -278,11 +278,22 @@ Validation result:
 
 ### Phase 6: `steps.json` Single Source
 
-Status: deferred.
+Status: branch opened; kickoff documentation added; no implementation code yet.
 
-Recommended separate branch: `codex/post-v1-steps-source`.
+Separate branch: `codex/post-v1-steps-source-v2`.
 
-Opening criteria:
+Implementation memo:
+
+- `docs/post-v1-steps-source-migration.md`
+
+Branch note:
+
+- `codex/post-v1-steps-source` already exists, but it predates the Phase 7
+  prompt/G4/review-packet work. Do not merge it wholesale because it would roll
+  back current Phase 7 files. Treat its `bcc7268` implementation commit as a
+  patch source only.
+
+Implementation targets:
 
 - Keep existing DB-only projects loadable through migration or explicit compatibility fallback.
 - Move UI list/read/edit paths to one artifact-derived contract.
