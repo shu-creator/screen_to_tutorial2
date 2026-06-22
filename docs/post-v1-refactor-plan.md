@@ -278,17 +278,19 @@ Validation result:
 
 ### Phase 6: `steps.json` Single Source
 
-Status on `codex/post-v1-steps-source-v2`: route adoption and verification
-slices are implemented for the artifact-derived `stepSource` contract. UI
-list/edit routes, edit smoke, and render/export step loading are
-artifact-primary with DB compatibility bridge/mirror behavior where documented.
-Full DB bridge removal remains later work.
+Status on `codex/post-v1-steps-source-v2`: completed for the artifact-primary
+compatibility target. Route adoption and verification slices are implemented
+for the artifact-derived `stepSource` contract. UI list/edit routes, edit
+smoke, and render/export step loading are artifact-primary with DB
+compatibility bridge/mirror behavior where documented. Full DB bridge removal
+remains later work.
 
 Separate branch: `codex/post-v1-steps-source-v2`.
 
 Implementation memo:
 
 - `docs/post-v1-steps-source-migration.md`
+- `docs/post-v1-steps-source-completion-audit.md`
 
 Branch note:
 
@@ -303,6 +305,57 @@ Implementation targets:
 - Move UI list/read/edit paths to one artifact-derived contract.
 - Define whether `legacy_step_db_id` remains as a bridge or is removed after all DB-ID-dependent routes move.
 - Add tests for tRPC/UI edit, delete, reorder, regenerate, audio generation, slide export, video export, and edit smoke under the new source-of-truth contract.
+
+Completed scope:
+
+- Added the `stepSource` adapter as the artifact-derived boundary for step
+  reads, writes, render state, and edit smoke.
+- Moved `step.listByProject`, `step.artifactInfo`, `step.update`,
+  `step.delete`, `step.reorder`, and `step.regenerate` to the adapter while
+  keeping DB rows as the compatibility ID bridge/mirror.
+- Moved slide generation, video generation, project export expected-step
+  counting, and edit smoke onto the shared source contract.
+- Kept render/export DB fallback explicit for missing or malformed artifacts,
+  while edit routes reject malformed artifacts before DB writes.
+- Rejected update/delete/reorder/regenerate when a valid artifact has an
+  incomplete or mismatched `legacy_step_db_id` bridge.
+- Removed write-path `sort_order` fallback for artifact steps missing
+  `legacy_step_db_id`; update/regenerate now require a real legacy bridge match
+  before artifact or DB writes.
+- Strengthened `pnpm v1:release-audit` with `phase6.source_contract` checks for
+  adapter call sites, unmatched edit-branch DB writes, and missing-legacy-ID
+  `sort_order` fallback reintroduction.
+- Added route/unit/release-audit tests for DB-only compatibility promotion,
+  invalid-artifact strictness, partial bridge rejection, adapter edit behavior,
+  and source-contract guardrails.
+
+Validation result for the Phase 6 close-out slice on
+`codex/post-v1-steps-source-v2` at commit `c7e7391`:
+
+- `pnpm check`: PASS
+- `pnpm test`: PASS, 31 test files and 400 tests passed, 1 skipped.
+- `pnpm eval:audit`: PASS, 5/5 real recording cases.
+- `pnpm eval:quality-gate`: PASS, G2=87.8%, G3=2.0%, fallback=0 for all real cases.
+- `pnpm v1:release-audit`: PASS; `phase6.source_contract` PASS and all five
+  real cases have `human_review` G4 records.
+- Additional Phase 6 edit smoke:
+  `PROJECT_ID=$(node -p "require('./outputs/v1-smoke-default-check/v1_smoke_summary.json').project_id") && pnpm edit:smoke -- --project-id "$PROJECT_ID" --outdir outputs/edit-smoke`
+  PASS for project `41`, with adapter artifact/DB mirror checks passing and
+  original state restored.
+- Additional G4 close-out check:
+  `pnpm g4:review-pack -- --missing-human-review --dry-run` PASS with
+  `no real generated cases without human_review G4 found`.
+- Independent follow-up review found no remaining implementation fallback in
+  update, regenerate, delete, or reorder write paths. Its audit-strength
+  finding was fixed by replacing exact-string fallback detection with an
+  AST-based guard and adding equivalent-syntax tests.
+
+Remaining boundary:
+
+- The Phase 6 branch is ready for integration/review as an artifact-primary
+  compatibility branch. A fully DB-free source contract is still a separate
+  later branch because it must remove `legacy_step_db_id` and DB-ID-dependent
+  routes together.
 
 ### Phase 7: Release Follow-up
 
