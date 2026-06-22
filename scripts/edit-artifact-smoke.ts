@@ -89,8 +89,8 @@ async function selectStep(projectId: number, requestedStepId?: number) {
 }
 
 function findArtifactStep(artifact: StepsArtifact, stepId: number, sortOrder: number) {
-  return artifact.steps.find((step) => step.legacy_step_db_id === stepId)
-    ?? artifact.steps.find((step) => step.legacy_step_db_id === undefined && step.sort_order === sortOrder);
+  void sortOrder;
+  return artifact.steps.find((step) => step.legacy_step_db_id === stepId);
 }
 
 function check(name: string, expected: unknown, actual: unknown): SmokeCheck {

@@ -48,6 +48,10 @@ no `steps.json` exists.
 The thirteenth slice strengthened `pnpm v1:release-audit` so the Phase 6 source
 contract fails if unmatched artifact edit branches reintroduce DB writes in
 `stepSource`.
+The fourteenth slice removed the remaining write-path `sort_order` fallback for
+artifact steps missing `legacy_step_db_id`: update and regenerate now require a
+real legacy bridge match before artifact or DB writes, and release audit rejects
+reintroducing that missing-legacy-ID sort-order fallback.
 The close-out audit is recorded in
 `docs/post-v1-steps-source-completion-audit.md`.
 The older branch `codex/post-v1-steps-source` already exists, but it is based

@@ -590,6 +590,42 @@ describe("v1 release audit", () => {
     expect(result.detail).toContain("!matched contains db.updateStep()");
   });
 
+  it("fails when missing legacy ids can be matched by sort_order for writes", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir, {
+      "server/stepSource.ts": [
+        "async function update() {",
+        "  const matchesTarget = step.legacy_step_db_id === stepId ||",
+        "    (step.legacy_step_db_id === undefined && step.sort_order === sortOrder);",
+        "  return matchesTarget;",
+        "}",
+      ].join("\n"),
+    });
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("sort_order write fallback for missing legacy_step_db_id");
+  });
+
+  it("fails when missing legacy id sort_order fallbacks use equivalent syntax", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir, {
+      "server/stepSource.ts": [
+        "async function update() {",
+        "  const matchesTarget = step['legacy_step_db_id'] == null && step['sort_order'] == sortOrder;",
+        "  const matchesAgain = typeof step.legacy_step_db_id === 'undefined' && step.sort_order === fallbackOrder;",
+        "  return matchesTarget || matchesAgain;",
+        "}",
+      ].join("\n"),
+    });
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("sort_order write fallback for missing legacy_step_db_id");
+  });
+
   it("does not count imports or comments as Phase 6 source-contract calls", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
     await writeSourceContractFixture(tempDir, {

@@ -536,6 +536,29 @@ describe("step router artifact-first read routes", () => {
     });
   });
 
+  it("rejects updates when the artifact step only matches by sort_order", async () => {
+    const artifact = makeArtifact();
+    await saveStepsArtifact(50, {
+      ...artifact,
+      steps: artifact.steps.map((step) => ({
+        ...step,
+        legacy_step_db_id: undefined,
+      })),
+    });
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      projectId: 50,
+      id: 501,
+      title: "Sort order fallback rejected",
+    })).rejects.toThrow("steps artifact内に見つかりません");
+
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+    const restoredArtifact = await loadStepsArtifact(50);
+    expect(restoredArtifact?.steps[0]).toMatchObject({ title: "Artifact title" });
+    expect(restoredArtifact?.steps[0]).not.toHaveProperty("legacy_step_db_id");
+  });
+
   it("rejects updates as missing when neither DB nor artifact contains the step", async () => {
     dbMocks.getStepById.mockResolvedValue(undefined);
     const artifact = makeArtifact();
@@ -1168,6 +1191,30 @@ describe("step router artifact-first read routes", () => {
         }),
       ],
     });
+  });
+
+  it("rejects regenerate before frame analysis when the artifact step only matches by sort_order", async () => {
+    const artifact = makeArtifact();
+    await saveStepsArtifact(50, {
+      ...artifact,
+      steps: artifact.steps.map((step) => ({
+        ...step,
+        legacy_step_db_id: undefined,
+      })),
+    });
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).rejects.toThrow("steps artifact内に見つかりません");
+
+    expect(stepGeneratorMocks.analyzeFrameForStepRegeneration).not.toHaveBeenCalled();
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+    const restoredArtifact = await loadStepsArtifact(50);
+    expect(restoredArtifact?.steps[0]).toMatchObject({ title: "Artifact title" });
+    expect(restoredArtifact?.steps[0]).not.toHaveProperty("legacy_step_db_id");
   });
 
   it("rejects regenerate before frame analysis when no artifact can be created", async () => {

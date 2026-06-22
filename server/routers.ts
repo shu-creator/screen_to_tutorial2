@@ -465,7 +465,7 @@ export const appRouter = router({
           throw new Error("steps artifactを作成できないため、ステップを再生成できません");
         }
         if (
-          !artifactContainsStepTarget(state.artifact, input.stepId, step?.sortOrder)
+          !artifactContainsStepTarget(state.artifact, input.stepId)
         ) {
           throw new Error("ステップがsteps artifact内に見つかりませんでした");
         }

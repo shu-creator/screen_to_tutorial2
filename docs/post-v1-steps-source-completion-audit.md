@@ -17,7 +17,7 @@ release gates, and what remains out of scope for the later DB-free branch.
 | UI reads are artifact-derived while legacy projects stay loadable. | `step.listByProject` and `step.artifactInfo` use `stepSource`. Route/load tests cover existing artifact reads, DB-only compatibility artifact creation, invalid artifact read leniency, and empty compatibility metadata. | Met with DB compatibility fallback retained. |
 | Export/render paths use the same source contract. | Slide generation, video generation, and `scripts/export-project.ts` use `loadProjectStepRenderState`; `phase6.source_contract` fails if these entrypoints drop the adapter. | Met. |
 | Edit routes reject malformed artifacts before DB writes. | Route tests cover update/delete/reorder/regenerate invalid-artifact rejection; render/export still keep the documented invalid-artifact DB fallback. | Met. |
-| Incomplete `legacy_step_db_id` mappings do not silently fall back to DB writes. | Route tests cover update/delete/reorder/regenerate mismatch rejection. `phase6.source_contract` fails if unmatched edit branches reintroduce DB step writes. | Met. |
+| Incomplete `legacy_step_db_id` mappings do not silently fall back to DB writes. | Route tests cover update/delete/reorder/regenerate mismatch rejection, including artifacts that would otherwise match only by `sort_order`. `phase6.source_contract` fails if unmatched edit branches reintroduce DB step writes or if write paths reintroduce a missing-legacy-ID `sort_order` fallback. | Met. |
 | Existing DB-only projects are still compatible. | Route tests cover DB-only list, update, delete, reorder, and regenerate promotion to compatibility `steps.json`. | Met for covered route shapes. |
 | Edit smoke verifies the artifact-primary adapter. | `pnpm edit:smoke` edits through `updateProjectStepArtifactFirst`, checks `adapter.artifactUpdated` and `adapter.dbUpdated`, verifies DB/artifact sync, restores original values, and is required by `pnpm v1:release-audit` through nested smoke checks. | Met for one selected project step. |
 | v1 release audit remains green. | Slice-boundary validation runs `pnpm check`, `pnpm test`, `pnpm eval:audit`, `pnpm eval:quality-gate`, `pnpm v1:release-audit`, plus edit smoke and G4 review-pack dry-run. | Met at each completed Phase 6 slice. |
@@ -47,4 +47,3 @@ branch. It should be one of:
 - merge or otherwise integrate the Phase 6 branch after review; or
 - start a separate DB-free branch that removes the `legacy_step_db_id` bridge
   and DB-dependent route addressing in one coordinated design.
-

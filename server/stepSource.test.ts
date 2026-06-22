@@ -182,7 +182,7 @@ describe("step source artifact helpers", () => {
   });
 
   it("patches artifact fields used by UI edit", () => {
-    const result = patchArtifactStepForUpdate(makeArtifact(), 202, 1, {
+    const result = patchArtifactStepForUpdate(makeArtifact(), 202, {
       title: "保存済み",
       operation: "保存して閉じる",
       description: "保存後に閉じる",
@@ -211,7 +211,7 @@ describe("step source artifact helpers", () => {
     });
   });
 
-  it("falls back to sort_order only when legacy db id is absent", () => {
+  it("rejects patching by sort_order when legacy db id is absent", () => {
     const artifact = makeArtifact();
     const withoutLegacyId = {
       ...artifact,
@@ -222,16 +222,16 @@ describe("step source artifact helpers", () => {
       )),
     };
 
-    const result = patchArtifactStepForUpdate(withoutLegacyId, 999, 1, {
-      title: "sort order match",
+    const result = patchArtifactStepForUpdate(withoutLegacyId, 999, {
+      title: "must not write by sort order",
     });
 
-    expect(result.matched).toBe(true);
-    expect(result.artifact.steps.find((step) => step.sort_order === 1)?.title).toBe("sort order match");
+    expect(result.matched).toBe(false);
+    expect(result.artifact.steps.find((step) => step.sort_order === 1)?.title).not.toBe("must not write by sort order");
   });
 
   it("rejects invalid timing edits before saving", () => {
-    expect(() => patchArtifactStepForUpdate(makeArtifact(), 202, 1, {
+    expect(() => patchArtifactStepForUpdate(makeArtifact(), 202, {
       tStart: 4000,
       tEnd: 3000,
     })).toThrow("t_end");

@@ -129,10 +129,12 @@ It does not fully prove:
 Route/unit/release-audit tests now cover the main Phase 6 source-contract cases
 that the smoke intentionally does not exercise: DB-only project promotion,
 invalid-artifact edit strictness, incomplete `legacy_step_db_id` mapping
-rejection for edit/delete/reorder/regenerate, and release-audit detection if
-unmatched artifact edit branches reintroduce DB writes. The remaining gaps are
-concurrent edits, broad real-project migration sampling, and the later DB-free
-route design that removes legacy DB IDs entirely.
+rejection for edit/delete/reorder/regenerate, rejection of write paths that
+would otherwise match missing legacy IDs by `sort_order`, and release-audit
+detection if unmatched artifact edit branches or missing-legacy-ID sort-order
+fallbacks reintroduce DB writes. The remaining gaps are concurrent edits, broad
+real-project migration sampling, and the later DB-free route design that removes
+legacy DB IDs entirely.
 
 ## Decision
 
@@ -152,8 +154,9 @@ The separate Phase 6 branch has expanded tests around these behaviors:
 - Existing DB-only projects still open through compatibility fallback or
   promotion to compatibility artifacts where the route permits it.
 - Incomplete `legacy_step_db_id` mappings reject edit/delete/reorder/regenerate
-  without DB writes, and `pnpm v1:release-audit` guards against reintroducing
-  unmatched-branch DB fallbacks.
+  without DB writes, including would-be `sort_order` write fallbacks, and
+  `pnpm v1:release-audit` guards against reintroducing unmatched-branch DB
+  fallbacks.
 - Edit, delete, reorder, regenerate, audio generation, slide export, video
   export, and edit smoke all use the documented artifact-primary source
   contract.

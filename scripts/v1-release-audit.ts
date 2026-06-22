@@ -460,6 +460,120 @@ function collectForbiddenUnmatchedFallbacks(source: string, fileName: string): s
   return forbidden;
 }
 
+function propertyName(node: ts.Node): string | undefined {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  if (
+    ts.isElementAccessExpression(node) &&
+    ts.isStringLiteralLike(node.argumentExpression)
+  ) {
+    return node.argumentExpression.text;
+  }
+  return undefined;
+}
+
+function expressionReferencesProperty(node: ts.Node, target: string): boolean {
+  let found = false;
+  const visit = (current: ts.Node): void => {
+    if (found) return;
+    if (propertyName(current) === target) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function expressionIsUndefinedLike(node: ts.Node): boolean {
+  return (
+    (ts.isIdentifier(node) && node.text === "undefined") ||
+    node.kind === ts.SyntaxKind.NullKeyword
+  );
+}
+
+function isMissingLegacyIdCheck(node: ts.Node): boolean {
+  if (ts.isTypeOfExpression(node)) {
+    return expressionReferencesProperty(node.expression, "legacy_step_db_id");
+  }
+  if (!ts.isBinaryExpression(node)) return false;
+  if (
+    node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+    node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken
+  ) {
+    return (
+      (expressionReferencesProperty(node.left, "legacy_step_db_id") && expressionIsUndefinedLike(node.right)) ||
+      (expressionReferencesProperty(node.right, "legacy_step_db_id") && expressionIsUndefinedLike(node.left)) ||
+      (ts.isTypeOfExpression(node.left) &&
+        expressionReferencesProperty(node.left.expression, "legacy_step_db_id") &&
+        ts.isStringLiteralLike(node.right) &&
+        node.right.text === "undefined") ||
+      (ts.isTypeOfExpression(node.right) &&
+        expressionReferencesProperty(node.right.expression, "legacy_step_db_id") &&
+        ts.isStringLiteralLike(node.left) &&
+        node.left.text === "undefined")
+    );
+  }
+  return false;
+}
+
+function expressionContainsMissingLegacyIdCheck(node: ts.Node): boolean {
+  let found = false;
+  const visit = (current: ts.Node): void => {
+    if (found) return;
+    if (isMissingLegacyIdCheck(current)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function expressionContainsSortOrderComparison(node: ts.Node): boolean {
+  let found = false;
+  const visit = (current: ts.Node): void => {
+    if (found) return;
+    if (
+      ts.isBinaryExpression(current) &&
+      [
+        ts.SyntaxKind.EqualsEqualsEqualsToken,
+        ts.SyntaxKind.EqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsToken,
+      ].includes(current.operatorToken.kind) &&
+      (expressionReferencesProperty(current.left, "sort_order") ||
+        expressionReferencesProperty(current.right, "sort_order"))
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function collectForbiddenSortOrderWriteFallbacks(source: string, fileName: string): string[] {
+  if (fileName !== "server/stepSource.ts") return [];
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const forbidden: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+      expressionContainsMissingLegacyIdCheck(node) &&
+      expressionContainsSortOrderComparison(node)
+    ) {
+      forbidden.push(`${fileName} contains sort_order write fallback for missing legacy_step_db_id: ${node.getText(sourceFile)}`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return Array.from(new Set(forbidden));
+}
+
 export async function checkPhase6SourceContract(root: string = repoRoot): Promise<ReleaseCheck> {
   const missing: string[] = [];
   const unreadable: string[] = [];
@@ -478,6 +592,7 @@ export async function checkPhase6SourceContract(root: string = repoRoot): Promis
       if (!calledIdentifiers.has(call)) missing.push(`${requirement.file} missing call ${call}()`);
     }
     forbidden.push(...collectForbiddenUnmatchedFallbacks(source, requirement.file));
+    forbidden.push(...collectForbiddenSortOrderWriteFallbacks(source, requirement.file));
   }
 
   if (unreadable.length > 0 || missing.length > 0 || forbidden.length > 0) {

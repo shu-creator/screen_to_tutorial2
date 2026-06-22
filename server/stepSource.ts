@@ -135,14 +135,12 @@ export function buildStepListFromDbRows(steps: Step[]): StepListItem[] {
 export function patchArtifactStepForUpdate(
   artifact: StepsArtifact,
   stepId: number,
-  sortOrder: number | undefined,
   data: ArtifactStepUpdate,
 ): { artifact: StepsArtifact; matched: boolean } {
   let matched = false;
   const steps = artifact.steps.map((step) => {
     const matchesLegacyId = step.legacy_step_db_id === stepId;
-    const matchesSortOrder = step.legacy_step_db_id === undefined && step.sort_order === sortOrder;
-    if (!matchesLegacyId && !matchesSortOrder) {
+    if (!matchesLegacyId) {
       return step;
     }
 
@@ -180,12 +178,8 @@ export function patchArtifactStepForUpdate(
 export function artifactContainsStepTarget(
   artifact: StepsArtifact,
   stepId: number,
-  sortOrder: number | undefined,
 ): boolean {
-  return artifact.steps.some((step) =>
-    step.legacy_step_db_id === stepId ||
-    (step.legacy_step_db_id === undefined && step.sort_order === sortOrder)
-  );
+  return artifact.steps.some((step) => step.legacy_step_db_id === stepId);
 }
 
 export function deleteArtifactStepByLegacyId(
@@ -405,7 +399,6 @@ export async function updateProjectStepArtifactFirst(
   const patchResult = patchArtifactStepForUpdate(
     state.artifact,
     input.stepId,
-    existingStep?.sortOrder,
     input.data,
   );
   if (!patchResult.matched) {
@@ -555,9 +548,7 @@ export async function regenerateProjectStepArtifactFirst(
 
   let matched = false;
   const steps = state.artifact.steps.map((step) => {
-    const matchesTarget = step.legacy_step_db_id === input.stepId ||
-      (step.legacy_step_db_id === undefined && step.sort_order === existingStep?.sortOrder);
-    if (!matchesTarget) {
+    if (step.legacy_step_db_id !== input.stepId) {
       return step;
     }
 
