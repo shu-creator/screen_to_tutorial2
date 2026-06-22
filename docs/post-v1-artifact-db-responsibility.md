@@ -126,7 +126,13 @@ It does not fully prove:
 - migration safety for older projects with DB-only steps;
 - a fully DB-free UI list that no longer depends on legacy DB IDs.
 
-Those gaps are acceptable for v1 compatibility, but they are required test targets before DB-free migration.
+Route/unit/release-audit tests now cover the main Phase 6 source-contract cases
+that the smoke intentionally does not exercise: DB-only project promotion,
+invalid-artifact edit strictness, incomplete `legacy_step_db_id` mapping
+rejection for edit/delete/reorder/regenerate, and release-audit detection if
+unmatched artifact edit branches reintroduce DB writes. The remaining gaps are
+concurrent edits, broad real-project migration sampling, and the later DB-free
+route design that removes legacy DB IDs entirely.
 
 ## Decision
 
@@ -145,6 +151,9 @@ The separate Phase 6 branch has expanded tests around these behaviors:
 - UI list reads through the single artifact-derived adapter.
 - Existing DB-only projects still open through compatibility fallback or
   promotion to compatibility artifacts where the route permits it.
+- Incomplete `legacy_step_db_id` mappings reject edit/delete/reorder/regenerate
+  without DB writes, and `pnpm v1:release-audit` guards against reintroducing
+  unmatched-branch DB fallbacks.
 - Edit, delete, reorder, regenerate, audio generation, slide export, video
   export, and edit smoke all use the documented artifact-primary source
   contract.
