@@ -325,8 +325,8 @@ Promotion record for `project_40_steps.json`:
 
 Open:
 
-- Artifact sync status remains queued as a later UI-polish item; Phase 6 route
-  integration is complete, but no new sync-status UI has been added.
+- No Phase 7 UI-polish item is currently open in this checklist. Future polish
+  should be tracked as a new slice with its own verification.
 
 Done:
 
@@ -344,6 +344,9 @@ Done:
 - Integrated the Phase 6 artifact-first route contract into
   `codex/post-v1-refactor`; edit/delete/reorder routes now share the
   artifact-derived adapter contract guarded by release audit.
+- Added a step sync status notice to the Steps tab so reviewers can see whether
+  the page is reading artifact-primary data, DB compatibility data, or an
+  invalid-artifact DB fallback.
 
 ## Gate Before Closing Phase 7
 

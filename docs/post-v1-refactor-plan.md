@@ -814,3 +814,26 @@ Validation result for the Phase 7 step-number label normalization slice:
   `元動画`.
 - `pnpm eval:quality-gate`: PASS, G2 `90.6%`, G3 `2.0%`, fallback=0 for all
   real cases.
+
+Validation result for the Phase 7 artifact sync status UI slice:
+
+- Added `syncStatus` to `step.artifactInfo` so the project detail page can
+  distinguish artifact-primary reads, DB compatibility reads, no-step state,
+  and invalid-artifact DB fallback.
+- Added a compact Steps tab status notice showing the active source contract and
+  whether artifact steps have confirmed DB compatibility IDs.
+- Updated `docs/post-v1-checklist.md` so artifact sync status is no longer an
+  open UI-polish item.
+- `pnpm check`: PASS.
+- `pnpm vitest run server/stepSource.router.test.ts`: PASS, 56 tests.
+- Full phase gate after review fixes: `pnpm check`, `pnpm test`,
+  `pnpm eval:audit`, `pnpm eval:quality-gate`, and `pnpm v1:release-audit`
+  all PASS. Full test suite: 31 files, 404 passed, 1 skipped.
+- Additional checks: `pnpm edit:smoke` PASS for project `41`;
+  `pnpm g4:review-pack -- --missing-human-review --dry-run` PASS with no
+  remaining real generated cases missing human G4.
+- Headless Chromium project detail check:
+  `http://localhost:3000/projects/41` Steps tab shows `ステップ同期`,
+  `Artifact主`, and `DB互換ID確認済み`.
+- Responsive check: the sync status remained visible at desktop, `390px`, and
+  `320px` viewports.

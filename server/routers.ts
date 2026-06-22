@@ -335,6 +335,12 @@ export const appRouter = router({
     artifactInfo: protectedProcedure
       .input(z.object({ projectId: z.number() }))
       .query(async ({ ctx, input }) => {
+        const compatibilityStatus = {
+          source: "db_steps" as const,
+          artifactPrimary: false,
+          dbMirror: true,
+          message: "DB互換ステップを表示中",
+        };
         const empty: Record<number, {
           needsReview: boolean;
           reviewReasons: string[];
@@ -353,12 +359,32 @@ export const appRouter = router({
               projectId: input.projectId,
               message: error.message,
             });
-            return { overview: null, reviewByStepId: empty };
+            return {
+              overview: null,
+              reviewByStepId: empty,
+              syncStatus: {
+                source: "invalid_artifact" as const,
+                artifactPrimary: false,
+                dbMirror: true,
+                message: "不正なsteps.jsonを無視してDB互換ステップを表示中",
+              },
+            };
           }
           throw error;
         }
         if (!state.artifact || state.source === "db_steps" || state.artifact.config.prompt_version === "legacy-adapter-v1") {
-          return { overview: null, reviewByStepId: empty };
+          return {
+            overview: null,
+            reviewByStepId: empty,
+            syncStatus: state.source === "none"
+              ? {
+                  source: "none" as const,
+                  artifactPrimary: false,
+                  dbMirror: false,
+                  message: "ステップはまだ生成されていません",
+                }
+              : compatibilityStatus,
+          };
         }
         const reviewByStepId = { ...empty };
         for (const step of state.artifact.steps) {
@@ -374,7 +400,29 @@ export const appRouter = router({
             };
           }
         }
-        return { overview: state.artifact.overview, reviewByStepId };
+        const dbSteps = await db.getStepsByProjectId(input.projectId, ctx.user.id);
+        const dbStepIds = new Set(dbSteps.map((step) => step.id));
+        const legacyStepIds = state.artifact.steps
+          .map((step) => step.legacy_step_db_id)
+          .filter((id): id is number => typeof id === "number");
+        const uniqueLegacyStepIds = new Set(legacyStepIds);
+        const dbMirrorAvailable =
+          state.artifact.steps.length > 0 &&
+          legacyStepIds.length === state.artifact.steps.length &&
+          uniqueLegacyStepIds.size === legacyStepIds.length &&
+          legacyStepIds.every((id) => dbStepIds.has(id));
+        return {
+          overview: state.artifact.overview,
+          reviewByStepId,
+          syncStatus: {
+            source: "steps_artifact" as const,
+            artifactPrimary: true,
+            dbMirror: dbMirrorAvailable,
+            message: dbMirrorAvailable
+              ? "steps.jsonを主データとして表示中"
+              : "steps.jsonを表示中（DB互換IDの確認が必要）",
+          },
+        };
       }),
 
     update: protectedProcedure

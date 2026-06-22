@@ -108,6 +108,42 @@ function formatAudioMode(mode: string): string {
   return labels[mode] ?? mode;
 }
 
+type ArtifactSyncStatus = {
+  source: string;
+  artifactPrimary: boolean;
+  dbMirror: boolean;
+  message: string;
+};
+
+function formatArtifactSyncStatus(status: ArtifactSyncStatus): { label: string; detail: string; variant: "default" | "secondary" | "destructive" | "outline" } {
+  if (status.source === "invalid_artifact") {
+    return {
+      label: "DB互換",
+      detail: status.message,
+      variant: "destructive",
+    };
+  }
+  if (status.artifactPrimary) {
+    return {
+      label: "Artifact主",
+      detail: status.dbMirror ? "DB互換ID確認済み" : status.message,
+      variant: status.dbMirror ? "default" : "secondary",
+    };
+  }
+  if (status.source === "none") {
+    return {
+      label: "未生成",
+      detail: status.message,
+      variant: "outline",
+    };
+  }
+  return {
+    label: "DB互換",
+    detail: status.message,
+    variant: "secondary",
+  };
+}
+
 function SortableStepCard({
   step,
   index,
@@ -585,6 +621,9 @@ export default function ProjectDetail() {
   });
   const reviewSteps = (steps ?? []).filter((step) => artifactInfo?.reviewByStepId?.[step.id]?.needsReview);
   const reviewStepCount = reviewSteps.length;
+  const artifactSyncStatus = artifactInfo?.syncStatus
+    ? formatArtifactSyncStatus(artifactInfo.syncStatus)
+    : null;
   const focusNextReviewStep = () => {
     const nextStep = reviewSteps[0];
     if (!nextStep) return;
@@ -1057,6 +1096,15 @@ export default function ProjectDetail() {
               </div>
             ) : steps && steps.length > 0 ? (
               <>
+              {artifactSyncStatus && (
+                <Alert className="border-primary/20">
+                  <AlertTitle className="flex flex-wrap items-center gap-2">
+                    <span>ステップ同期</span>
+                    <Badge variant={artifactSyncStatus.variant}>{artifactSyncStatus.label}</Badge>
+                  </AlertTitle>
+                  <AlertDescription>{artifactSyncStatus.detail}</AlertDescription>
+                </Alert>
+              )}
               {artifactInfo?.overview && (
                 <Card className="border-primary/30">
                   <CardHeader>

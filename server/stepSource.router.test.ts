@@ -296,6 +296,12 @@ describe("step router artifact-first read routes", () => {
       preconditions: ["ログイン済み"],
       completion_criteria: "保存できる",
     });
+    expect(artifactInfo.syncStatus).toEqual({
+      source: "steps_artifact",
+      artifactPrimary: true,
+      dbMirror: true,
+      message: "steps.jsonを主データとして表示中",
+    });
     expect(artifactInfo.reviewByStepId[501]).toEqual({
       needsReview: true,
       reviewReasons: ["verification:low_confidence"],
@@ -304,6 +310,52 @@ describe("step router artifact-first read routes", () => {
       tStart: 0,
       tEnd: 1000,
       audioMode: "silent",
+    });
+  });
+
+  it("marks artifact sync as needing DB bridge review when legacy ids are incomplete", async () => {
+    const artifact = makeArtifact();
+    await saveStepsArtifact(50, {
+      ...artifact,
+      steps: artifact.steps.map((step) => ({
+        ...step,
+        legacy_step_db_id: undefined,
+      })),
+    });
+    const caller = createCaller();
+
+    const artifactInfo = await caller.step.artifactInfo({ projectId: 50 });
+
+    expect(artifactInfo.syncStatus).toEqual({
+      source: "steps_artifact",
+      artifactPrimary: true,
+      dbMirror: false,
+      message: "steps.jsonを表示中（DB互換IDの確認が必要）",
+    });
+  });
+
+  it("marks artifact sync as needing DB bridge review when legacy ids are duplicated", async () => {
+    const artifact = makeArtifact();
+    await saveStepsArtifact(50, {
+      ...artifact,
+      steps: [
+        artifact.steps[0],
+        {
+          ...artifact.steps[0],
+          id: "artifact-step-duplicate",
+          sort_order: 1,
+        },
+      ],
+    });
+    const caller = createCaller();
+
+    const artifactInfo = await caller.step.artifactInfo({ projectId: 50 });
+
+    expect(artifactInfo.syncStatus).toEqual({
+      source: "steps_artifact",
+      artifactPrimary: true,
+      dbMirror: false,
+      message: "steps.jsonを表示中（DB互換IDの確認が必要）",
     });
   });
 
@@ -326,6 +378,12 @@ describe("step router artifact-first read routes", () => {
     await expect(caller.step.artifactInfo({ projectId: 50 })).resolves.toEqual({
       overview: null,
       reviewByStepId: {},
+      syncStatus: {
+        source: "db_steps",
+        artifactPrimary: false,
+        dbMirror: true,
+        message: "DB互換ステップを表示中",
+      },
     });
   });
 
@@ -337,6 +395,12 @@ describe("step router artifact-first read routes", () => {
       await expect(caller.step.artifactInfo({ projectId: 50 })).resolves.toEqual({
         overview: null,
         reviewByStepId: {},
+        syncStatus: {
+          source: "db_steps",
+          artifactPrimary: false,
+          dbMirror: true,
+          message: "DB互換ステップを表示中",
+        },
       });
       await expect(loadStepsArtifact(50)).resolves.toBeNull();
     } finally {
@@ -357,6 +421,12 @@ describe("step router artifact-first read routes", () => {
     await expect(caller.step.artifactInfo({ projectId: 50 })).resolves.toEqual({
       overview: null,
       reviewByStepId: {},
+      syncStatus: {
+        source: "invalid_artifact",
+        artifactPrimary: false,
+        dbMirror: true,
+        message: "不正なsteps.jsonを無視してDB互換ステップを表示中",
+      },
     });
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe("{ not valid json");
   });
