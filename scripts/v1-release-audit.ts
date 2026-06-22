@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 import fs from "fs/promises";
 import path from "path";
+import ts from "typescript";
 import { pathToFileURL } from "url";
 import { auditEvalReadiness, readCaseMetas, validateG4Record, type CaseMeta, type G4Record } from "./eval-audit";
 import { runQualityGate, type QualityGateResult } from "./eval-quality-gate";
@@ -363,6 +364,86 @@ function pct(value: number | undefined): string {
   return value === undefined ? "-" : `${(value * 100).toFixed(1)}%`;
 }
 
+type SourceContractRequirement = {
+  file: string;
+  calls: string[];
+};
+
+const PHASE6_SOURCE_CONTRACT_REQUIREMENTS: SourceContractRequirement[] = [
+  {
+    file: "server/routers.ts",
+    calls: [
+      "listProjectStepsArtifactFirst",
+      "loadOrCreateStepsArtifactForProject",
+      "updateProjectStepArtifactFirst",
+      "deleteProjectStepArtifactFirst",
+      "regenerateProjectStepArtifactFirst",
+      "reorderProjectStepsArtifactFirst",
+    ],
+  },
+  {
+    file: "server/slideGenerator.ts",
+    calls: ["loadProjectStepRenderState"],
+  },
+  {
+    file: "server/videoGenerator.ts",
+    calls: ["loadProjectStepRenderState"],
+  },
+  {
+    file: "scripts/export-project.ts",
+    calls: ["loadProjectStepRenderState"],
+  },
+  {
+    file: "scripts/edit-artifact-smoke.ts",
+    calls: ["updateProjectStepArtifactFirst"],
+  },
+];
+
+function collectCalledIdentifiers(source: string, fileName: string): Set<string> {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const calls = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const expression = node.expression;
+      if (ts.isIdentifier(expression)) {
+        calls.add(expression.text);
+      } else if (ts.isPropertyAccessExpression(expression)) {
+        calls.add(expression.name.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return calls;
+}
+
+export async function checkPhase6SourceContract(root: string = repoRoot): Promise<ReleaseCheck> {
+  const missing: string[] = [];
+  const unreadable: string[] = [];
+  for (const requirement of PHASE6_SOURCE_CONTRACT_REQUIREMENTS) {
+    const filePath = path.join(root, requirement.file);
+    let source: string;
+    try {
+      source = await fs.readFile(filePath, "utf8");
+    } catch (error) {
+      unreadable.push(`${requirement.file}: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
+    const calledIdentifiers = collectCalledIdentifiers(source, requirement.file);
+    for (const call of requirement.calls) {
+      if (!calledIdentifiers.has(call)) missing.push(`${requirement.file} missing call ${call}()`);
+    }
+  }
+
+  if (unreadable.length > 0 || missing.length > 0) {
+    return fail("phase6.source_contract", `unreadable=${unreadable.join("; ") || "-"}; missing=${missing.join("; ") || "-"}`);
+  }
+  return pass(
+    "phase6.source_contract",
+    "routers, render/export paths, and edit smoke retain the stepSource artifact-primary contract",
+  );
+}
+
 async function checkHumanG4(): Promise<ReleaseCheck> {
   const recordsDir = path.join(repoRoot, "eval", "g4", "records");
   const entries = await fs.readdir(recordsDir, { withFileTypes: true }).catch(() => []);
@@ -451,6 +532,7 @@ export function buildReleaseCheckTasks(options: AuditOptions): ReleaseCheckTask[
     { name: "model.default", run: checkModelDefault },
     { name: "eval.readiness", run: checkEvalReadiness },
     { name: "eval.quality_gate", run: checkQualityGate },
+    { name: "phase6.source_contract", run: checkPhase6SourceContract },
     { name: "smoke.current_environment", run: () => checkV1Smoke(options.v1SmokeSummary, "smoke.current_environment", false, "fail") },
     { name: "export.qa", run: checkExportQa },
     { name: "g4.human_review", run: checkHumanG4 },
@@ -494,6 +576,8 @@ export function nextActionForCheck(check: ReleaseCheck): string | undefined {
       return "Run `pnpm eval:quality-gate` and fix any reported G2/G3/fallback regression before release.";
     case "eval.readiness":
       return "Run `pnpm eval:audit` and restore the required 5 real cases, generated steps, and G4 record placeholders.";
+    case "phase6.source_contract":
+      return "Restore Phase 6 source routing so step UI/edit routes, render/export paths, and edit smoke use the `stepSource` artifact-primary adapter contract.";
     case "model.default":
       return "Keep `.env.example` aligned with the v1 model decision: `LLM_MODEL=gpt-5.4`.";
     case "release.docs":

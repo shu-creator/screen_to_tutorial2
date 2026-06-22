@@ -12,6 +12,7 @@ import {
 } from "../scripts/v1-fresh-env-smoke";
 import {
   assessHumanG4,
+  checkPhase6SourceContract,
   assessQualityGate,
   assessQualityGateError,
   buildReleaseCheckTasks,
@@ -94,6 +95,31 @@ function editSmokeSummary(overrides: Record<string, unknown> = {}) {
     ],
     ...overrides,
   };
+}
+
+async function writeSourceContractFixture(root: string, overrides: Record<string, string> = {}) {
+  const files: Record<string, string> = {
+    "server/routers.ts": [
+      "async function routes() {",
+      "  await listProjectStepsArtifactFirst(projectId, userId);",
+      "  await loadOrCreateStepsArtifactForProject(projectId, userId);",
+      "  await updateProjectStepArtifactFirst(input, userId);",
+      "  await deleteProjectStepArtifactFirst(input, userId);",
+      "  await regenerateProjectStepArtifactFirst(input, userId);",
+      "  await reorderProjectStepsArtifactFirst(input, userId);",
+      "}",
+    ].join("\n"),
+    "server/slideGenerator.ts": "async function render() { await loadProjectStepRenderState(projectId); }",
+    "server/videoGenerator.ts": "async function render() { await loadProjectStepRenderState(projectId); }",
+    "scripts/export-project.ts": "async function inspect() { await loadProjectStepRenderState(projectId); }",
+    "scripts/edit-artifact-smoke.ts": "async function smoke() { await updateProjectStepArtifactFirst(input); }",
+    ...overrides,
+  };
+  for (const [relativePath, source] of Object.entries(files)) {
+    const filePath = path.join(root, relativePath);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, source);
+  }
 }
 
 describe("v1 release audit", () => {
@@ -323,6 +349,7 @@ describe("v1 release audit", () => {
       "model.default",
       "eval.readiness",
       "eval.quality_gate",
+      "phase6.source_contract",
       "smoke.current_environment",
       "export.qa",
       "g4.human_review",
@@ -371,6 +398,7 @@ describe("v1 release audit", () => {
       "export.qa",
       "eval.quality_gate",
       "eval.readiness",
+      "phase6.source_contract",
       "model.default",
       "release.docs",
     ]) {
@@ -472,6 +500,55 @@ describe("v1 release audit", () => {
       status: "fail",
       detail: "runQualityGate threw: missing baseline.json",
     });
+  });
+
+  it("passes when Phase 6 source-contract entrypoints still use the step adapter", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir);
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result).toEqual({
+      name: "phase6.source_contract",
+      status: "pass",
+      detail: "routers, render/export paths, and edit smoke retain the stepSource artifact-primary contract",
+    });
+  });
+
+  it("fails when a Phase 6 source-contract entrypoint drops the adapter", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir, {
+      "server/routers.ts": [
+        "async function routes() {",
+        "  await listProjectStepsArtifactFirst(projectId, userId);",
+        "  await loadOrCreateStepsArtifactForProject(projectId, userId);",
+        "  await updateProjectStepArtifactFirst(input, userId);",
+        "  await deleteProjectStepArtifactFirst(input, userId);",
+        "  await reorderProjectStepsArtifactFirst(input, userId);",
+        "}",
+      ].join("\n"),
+    });
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("server/routers.ts missing call regenerateProjectStepArtifactFirst()");
+  });
+
+  it("does not count imports or comments as Phase 6 source-contract calls", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir, {
+      "scripts/edit-artifact-smoke.ts": [
+        "import { updateProjectStepArtifactFirst } from '../server/stepSource';",
+        "// updateProjectStepArtifactFirst(input) should be used by the smoke.",
+        "async function smoke() { return true; }",
+      ].join("\n"),
+    });
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("scripts/edit-artifact-smoke.ts missing call updateProjectStepArtifactFirst()");
   });
 
   it("formats quality-gate errors consistently", () => {

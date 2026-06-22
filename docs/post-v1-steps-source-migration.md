@@ -32,6 +32,10 @@ release smoke summaries now fail unless `adapter.artifactUpdated` and
 edit-smoke artifacts that lack the nested adapter checks.
 The ninth slice reconciled Phase 6 close-out docs with the implemented
 artifact-primary route status. It did not change runtime behavior.
+The tenth slice added a `phase6.source_contract` check to
+`pnpm v1:release-audit` so router, render/export, and edit-smoke paths fail the
+release audit if they stop using the `stepSource` artifact-primary adapter
+contract.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.
