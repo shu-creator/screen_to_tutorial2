@@ -9,15 +9,16 @@ work that should improve the product after v1 without weakening release gates.
 - Branch for Phase 7 follow-up: `codex/post-v1-refactor`
 - Fixed baseline tag: `v1.0.0`
 - Fixed v1 quality baseline: G2 `69.4%`, G3 `7.0%`, fallback reasons `0`
-- Current post-v1 quality gate on tracked artifacts in this branch: G2
-  `82.8%`, G3 `7.0%`, fallback reasons `0`
+- Current post-v1 quality gate on persisted local eval artifacts in this branch
+  after case 03 promotion: G2 `87.8%`, G3 `2.0%`, fallback reasons `0`
 - Required release audit remains `pnpm v1:release-audit`
 - Human G4 records exist for all five real recording cases.
-- Cases 01, 02, and 03 were reviewed by `iwsh23` on `2026-06-21` with
+- Cases 01 and 02 were reviewed by `iwsh23` on `2026-06-21`; promoted case 03
+  was reviewed by `iwsh23` on `2026-06-22`. All three have
   `total_manual_edits: 0` and no blocking issues.
-- A fresh case 03 `authoring-v2-grounded-3` candidate has been measured locally
-  and passed `--post-v1-promotion-gate`; tracked generated artifacts have not
-  been replaced.
+- The case 03 `authoring-v2-grounded-3` candidate passed
+  `--post-v1-promotion-gate`, was promoted into the persisted generated
+  artifact, and has a refreshed `human_review` G4 record.
 
 ## Human G4 For Cases 01/02/03
 
@@ -72,8 +73,8 @@ tightens three low-G2 failure modes:
   `ステップがありません`, or `ステップの生成を開始しました` in
   `cited_ui_labels` unless that text is the explicit confirmation target.
 
-The persisted eval artifacts have not been replaced with current-prompt output.
-Use this workflow to re-run low-G2 prompt impact checks:
+Case 03 has been promoted to current-prompt output. Use this workflow to re-run
+future prompt impact checks before replacing any persisted eval artifact:
 
 ```bash
 pnpm post-v1:prompt-check -- --run-id "$(date +%Y%m%dT%H%M)"
@@ -139,7 +140,7 @@ pnpm eval:candidate -- \
 ```
 
 The output prints the candidate `prompt version` and, when comparing against the
-tracked generated artifact, `current artifact prompt version`. Confirm these
+persisted generated artifact, `current artifact prompt version`. Confirm these
 before promoting a candidate. The earlier `project_39_steps.json` candidate was
 from `authoring-v2-grounded-2` and is retained below as a stale-prompt example;
 the current `project_40_steps.json` candidate is from `authoring-v2-grounded-3`.
@@ -176,22 +177,24 @@ Earlier measured candidate:
 - Result vs fixed baseline: G2 `71.4%` (baseline `41.7%`, delta `+29.8%`),
   G3 `0.0%` (baseline `25.0%`, delta `-25.0%`), fallback reasons `0`,
   `needs_review` steps `0`.
-- The tracked generated artifact and `eval/baseline.json` were not updated.
+- The persisted generated artifact and `eval/baseline.json` were not updated.
 - Note: `--require-g2-improvement` compares against `eval/baseline.json`, which
   still records the fixed v1 case 03 G2 of `41.7%`. Under the current post-v1
-  label normalizer, the tracked case 03 artifact scores G2 `75.0%`, so this
-  PASS does not prove improvement over the current tracked artifact. Use
+  label normalizer at the time of this measurement, the persisted case 03 artifact
+  scored G2 `75.0%` (since promoted to `100.0%`), so this PASS did not prove
+  improvement over that persisted artifact. Use
   `--post-v1-promotion-gate` for the combined fixed-baseline G2 improvement,
   current generated artifact no-G2-regression, no-citation-regression, and
   G3-improvement promotion check.
 
 Promotion decision:
 
-- Do not promote the `project_39_steps.json` candidate. Under the current post-v1 label
-  normalizer, the tracked case 03 artifact scores G2 `75.0%` and G3 `25.0%`;
-  the local candidate scores G2 `71.4%` and G3 `0.0%`.
-- The candidate improves timing/overlap but lowers G2 versus the current
-  tracked artifact, so replacing `eval/results/generated/*` or
+- Do not promote the `project_39_steps.json` candidate. Under the post-v1 label
+  normalizer at the time of this measurement, the persisted case 03 artifact
+  scored G2 `75.0%` and G3 `25.0%` (since promoted to `100.0%` / `0.0%`);
+  the local candidate scored G2 `71.4%` and G3 `0.0%`.
+- The candidate improves timing/overlap but lowered G2 versus the then-current
+  persisted artifact, so replacing `eval/results/generated/*` or
   `eval/baseline.json` still needs explicit product/human review.
 
 Current-prompt measured candidate:
@@ -206,21 +209,22 @@ Current-prompt measured candidate:
 - Result vs fixed baseline: G2 `100.0%` (baseline `41.7%`, delta `+58.3%`),
   G3 `0.0%` (baseline `25.0%`, delta `-25.0%`), fallback reasons `0`,
   `needs_review` steps `0`.
-- Result vs current tracked artifact: G2 `100.0%` (current `75.0%`, delta
-  `+25.0%`), G2 no-citation `0.0%` (no regression), G3 `0.0%` (current
-  `25.0%`, delta `-25.0%`), unmatched cited labels `none`.
+- Result vs then-current persisted artifact before promotion: G2 `100.0%`
+  (previous `75.0%`, delta `+25.0%`), G2 no-citation `0.0%` (no regression),
+  G3 `0.0%` (previous `25.0%`, delta `-25.0%`), unmatched cited labels `none`.
 
 Current-prompt promotion decision:
 
-- The tracked generated artifact and `eval/baseline.json` were not updated.
-  Promotion would change the artifact covered by the existing case 03
-  `human_review` G4 record, so replacement still requires an explicit promotion
-  decision and refreshed human review evidence for the promoted artifact.
-- Reviewable export artifacts for project `40` have been generated locally. The
-  machine QA summary is suitable for handoff, but it does not replace human
-  review of the candidate steps, PPTX, and MP4.
+- The persisted generated artifact was updated from `project_40_steps.json`
+  after explicit human approval on `2026-06-22`.
+- `eval/baseline.json` remains fixed to the v1 baseline.
+- The replacement case 03 `human_review` G4 record points to the promoted
+  persisted artifact SHA
+  `88208bb96925978ba14f63d1749def4f01a23073650f78d63b2a1561edc40d8a`.
+- Project 40 export artifacts remain local-only review evidence; they are not
+  tracked release artifacts.
 
-Promotion handoff for `project_40_steps.json`:
+Promotion record for `project_40_steps.json`:
 
 1. Inspect machine QA results and locate generated artifacts:
 
@@ -270,11 +274,10 @@ Promotion handoff for `project_40_steps.json`:
    stream present, still-image fallback count `0`. The only recorded video
    warning is that no usable font was available, so the intro card was skipped.
 
-2. Human-review the candidate steps and generated export artifacts, including
-   whether the silent-mode audio track and skipped intro card are acceptable for
-   the promoted artifact. If accepted, copy the candidate into the tracked
-   generated artifact path first, so the replacement G4 record can point to a
-   committed artifact that fresh checkouts can hash-check:
+2. Human review was accepted on `2026-06-22` with reviewer `iwsh23`, all edit
+   counts `0`, and no blocking issues. The candidate was copied into the
+   persisted generated artifact path so the replacement G4 record points to the
+   local artifact that the audit hashes in this checkout:
 
    ```bash
    cp \
@@ -282,29 +285,24 @@ Promotion handoff for `project_40_steps.json`:
      eval/results/generated/real-app-workflow-03-generate-steps/steps.json
    ```
 
-3. Record a replacement G4 review against the tracked generated artifact.
-   Always dry-run first:
-
-   Replace `<reviewer>` and `YYYY-MM-DD` with the actual reviewer identity and
-   review date before running both the dry-run and live write. Update the edit
-   counts and `--notes` to reflect the actual findings from step 2 before
-   issuing the live write.
+3. A replacement G4 review was recorded against the persisted generated artifact.
+   The dry-run was inspected first:
 
    ```bash
    pnpm g4:record -- \
      --case real-app-workflow-03-generate-steps \
-     --reviewer "<reviewer>" \
-     --reviewed-at YYYY-MM-DD \
+     --reviewer "iwsh23" \
+     --reviewed-at 2026-06-22 \
      --confirm-human-review \
      --dry-run \
      --title_edits 0 --description_edits 0 --narration_edits 0 --timing_edits 0 \
      --citation_edits 0 --step_structure_edits 0 --export_artifact_edits 0 --other_edits 0 \
-     --notes "Human reviewed promoted authoring-v2-grounded-3 candidate and export artifacts."
+     --notes "Human reviewed promoted authoring-v2-grounded-3 candidate and project 40 export artifacts; no fixes needed."
    ```
 
-4. Only after inspecting the dry-run JSON and confirming the human review,
-   rerun without `--dry-run` and with `--overwrite`. Then rerun the full phase
-   gate set before committing the promotion:
+4. After inspecting the dry-run JSON, the same command was rerun without
+   `--dry-run` and with `--overwrite`. The full phase gate set was required to
+   pass before committing the promotion, and all gates passed:
 
    ```bash
    pnpm check
@@ -314,13 +312,13 @@ Promotion handoff for `project_40_steps.json`:
    pnpm v1:release-audit
    ```
 
-## Low-G2/G3 Case Order
+## Remaining Low-G2/G3 Case Order
 
 | Priority | Case | Tracked G2 (post-v1 norm) | Tracked G3 (post-v1 norm) | v1 baseline G2 | Focus |
 | --- | --- | ---: | ---: | ---: | --- |
-| 1 | `real-app-workflow-03-generate-steps` | `75.0%` | `25.0%` | `41.7%` | reduce overlap/G3 without giving back G2 gains |
-| 2 | `real-app-workflow-04-export-video` | `77.8%` | `0.0%` | `55.6%` | export/video controls and exact cited labels |
-| 3 | `real-app-workflow-01` | `83.3%` | `10.0%` | `72.2%` | split merged project/file-select actions |
+| 1 | `real-app-workflow-04-export-video` | `77.8%` | `0.0%` | `55.6%` | export/video controls and exact cited labels |
+| 2 | `real-app-workflow-01` | `83.3%` | `10.0%` | `72.2%` | split merged project/file-select actions |
+| resolved | `real-app-workflow-03-generate-steps` | `100.0%` | `0.0%` | `41.7%` | promoted on `2026-06-22`; future candidates must not regress G2 |
 
 ## UI Polish Queue
 

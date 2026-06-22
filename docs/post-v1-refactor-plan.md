@@ -291,10 +291,10 @@ Opening criteria:
 
 ### Phase 7: Release Follow-up
 
-Status: mostly complete on `codex/post-v1-refactor`. The explicit-approval
-`authoring-v2-grounded-3` regeneration measurement has been run locally and
-passed the machine promotion gate; tracked artifact promotion remains a separate
-human-review decision.
+Status: completed for the in-scope `codex/post-v1-refactor` Phase 7 follow-up.
+The explicit-approval `authoring-v2-grounded-3` case 03 candidate was promoted
+after human approval on `2026-06-22`; Phase 6 artifact-source migration remains
+deferred to a separate branch.
 
 Output:
 
@@ -311,17 +311,17 @@ Completed or started changes:
   all edit counts `0`, and no blocking issues.
 - Added `docs/post-v1-checklist.md` with the human G4 workflow, low-G2 case order, prompt-regeneration path, UI polish queue, and close-out gates.
 - Updated the authoring prompt to `authoring-v2-grounded-3` so future generation keeps distinct user intents separate, avoids OCR-unsupported UI label citations, and excludes state/result-only labels from `cited_ui_labels`.
-- Added `pnpm eval:candidate` to score a candidate `steps.json` against `eval/baseline.json` without replacing tracked generated artifacts.
+- Added `pnpm eval:candidate` to score a candidate `steps.json` against `eval/baseline.json` without replacing persisted generated artifacts.
 - Polished project step cards with clearer review metadata for timing range, confidence, audio mode, narration, and edit/delete controls.
 - Kept project step edit forms open after individual blur-save updates, so
   human reviewers can make several corrections before closing a card.
 - Suppressed no-op blur saves and reset cleared timing fields to the current
   artifact value to keep persistent edit forms visually aligned with saved state.
 - Hardened evidence frame extraction near the end of videos and normalized cited UI labels with outer quotes / dynamic count suffixes, then measured `real-app-workflow-03-generate-steps` as a local `authoring-v2-grounded-2` candidate: G2 `71.4%`, G3 `0.0%`, fallback reasons `0`.
-- Rechecked the tracked generated artifacts with the post-v1 label normalizer:
+- Rechecked the persisted generated artifacts with the post-v1 label normalizer:
   current branch quality gate is G2 `82.8%`, G3 `7.0%`, fallback reasons `0`.
 - Kept the earlier case 03 candidate local because it improves G3 (`25.0%` to
-  `0.0%`) but scores lower G2 than the current tracked case 03 artifact under
+  `0.0%`) but scores lower G2 than the then-current persisted case 03 artifact under
   the same normalizer (`71.4%` vs `75.0%`).
 - Added a no-write `pnpm pipeline:generate -- --preflight` path so low-G2
   current-prompt measurement can be planned before DB/storage/output writes.
@@ -336,30 +336,23 @@ Completed or started changes:
   no fallback reasons, and prompt version `authoring-v2-grounded-3`.
 - Generated reviewable project 40 exports for the measured candidate at
   `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/export/project_40_export_summary.json`.
-  The PPTX content check passed and the MP4 has no still-image fallback; human
-  review of these local-only artifacts has not yet occurred and remains listed
-  under Still open.
+  The PPTX content check passed and the MP4 has no still-image fallback.
 - Added the local-only project 40 human review worksheet at
   `outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/human-review-packet.md`
   (`sha256:bc16f24599b4c952a04a3f6f75a7cf9d468b01ee90874bc43eee35d4b9798aa5`).
+- After explicit human approval from `iwsh23` on `2026-06-22`, promoted
+  `project_40_steps.json` into
+  `eval/results/generated/real-app-workflow-03-generate-steps/steps.json`.
+- Replaced the case 03 `human_review` G4 record after dry-run confirmation; all
+  edit counts are `0`, there are no blocking issues, and
+  `source_artifact_sha256` is
+  `88208bb96925978ba14f63d1749def4f01a23073650f78d63b2a1561edc40d8a`.
 
-Still open:
+Deferred outside this branch:
 
 - Artifact sync status UI remains queued until the Phase 6 artifact-first route is merged.
-- The measured `authoring-v2-grounded-3` case 03 candidate
-  (`project_40_steps.json`) has not been copied into
-  `eval/results/generated/*` or `eval/baseline.json`.
-- Promoting `project_40_steps.json` would change the artifact covered by the
-  existing case 03 `human_review` G4 record, so artifact replacement requires an
-  explicit promotion decision plus refreshed human review evidence for the
-  promoted artifact.
-- `docs/post-v1-checklist.md` contains the promotion handoff for
-  `project_40_steps.json`: review the generated project 40 export summary,
-  human-review worksheet, PPTX, and MP4; human-review the candidate steps and
-  export artifacts; copy the accepted candidate into `eval/results/generated/*`,
-  record a replacement G4 review against the tracked artifact with
-  `pnpm g4:record -- --dry-run` before `--overwrite`, then run the full phase
-  gate set before committing.
+- Phase 6 `steps.json` single-source migration remains deferred to a separate
+  branch as designed.
 
 Operational guardrail for future measurement reruns:
 
@@ -374,11 +367,11 @@ Current candidate guardrails:
 
 - `eval:candidate -- --require-g2-improvement` compares against
   `eval/baseline.json`, which still records the fixed v1 case 03 G2 `41.7%`;
-  it is not a substitute for comparing a candidate against the current tracked
-  artifact score of G2 `75.0%` under the post-v1 normalizer.
+  it is not a substitute for comparing a candidate against the current persisted
+  artifact score of G2 `100.0%` under the post-v1 normalizer.
 - `pnpm eval:candidate -- --require-g2-improvement` now provides the
   fixed-baseline comparison gate; accepting a regenerated low-G2 artifact still
-  requires comparing it with the current tracked artifact and reviewing the
+  requires comparing it with the current persisted artifact and reviewing the
   G2/G3 tradeoff.
 - `pnpm eval:candidate -- --case <case-id> --steps <steps-path> --post-v1-promotion-gate`
   is available as the combined future candidate promotion check. It compares
@@ -686,17 +679,15 @@ Validation result for the Phase 7 approved prompt measurement slice:
   `authoring-v2-grounded-3`.
 - `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/project_40_steps.json --post-v1-promotion-gate --details`:
   PASS.
-- Candidate metrics: G2 `100.0%` versus fixed baseline `41.7%` and current
-  tracked artifact `75.0%`; G2 no-citation `0.0%` with no current regression;
+- Candidate metrics: G2 `100.0%` versus fixed baseline `41.7%` and the
+  then-current persisted artifact `75.0%`; G2 no-citation `0.0%` with no current regression;
   unmatched cited labels `none`; G3 `0.0%` versus fixed baseline/current
   `25.0%`; fallback reasons `0`; `needs_review` steps `0`.
-- The tracked generated artifact and `eval/baseline.json` were not updated.
-  Promotion would require an explicit replacement decision and refreshed human
-  review evidence because the existing case 03 `human_review` G4 record covers
-  the current tracked artifact.
+- The persisted generated artifact was updated after explicit human approval on
+  `2026-06-22`; `eval/baseline.json` remains fixed to the v1 baseline.
 - Added the promotion handoff to `docs/post-v1-checklist.md`, including the
   project 40 export command, human-review requirement, accepted-candidate copy
-  step, tracked-artifact `g4:record` dry-run-first command, and the full phase
+  step, persisted-artifact `g4:record` dry-run-first command, and the full phase
   gate set required before committing promotion.
 - Generated project 40 export artifacts with `pnpm project:export -- --project-id 40 --audio-mode silent --outdir outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-approved-20260621T220758/export`.
   The summary is
@@ -714,9 +705,17 @@ Validation result for the Phase 7 approved prompt measurement slice:
   can be regenerated deterministically from the candidate steps and export
   summary. Rebuilt the project 40 worksheet with that command; reported
   worksheet hash: `bc16f24599b4c952a04a3f6f75a7cf9d468b01ee90874bc43eee35d4b9798aa5`.
+- Promoted `project_40_steps.json` into
+  `eval/results/generated/real-app-workflow-03-generate-steps/steps.json` and
+  replaced the case 03 G4 record with reviewer `iwsh23`, reviewed_at
+  `2026-06-22`, all edit counts `0`, and no blocking issues.
+- SHA verification:
+  `shasum -a 256 eval/results/generated/real-app-workflow-03-generate-steps/steps.json`
+  reported
+  `88208bb96925978ba14f63d1749def4f01a23073650f78d63b2a1561edc40d8a`.
 - `pnpm check`: PASS
 - `pnpm test`: PASS, 28 test files and 319 tests passed, 1 skipped.
 - `pnpm eval:audit`: PASS, 5/5 real recording cases.
-- `pnpm eval:quality-gate`: PASS, G2=82.8%, G3=7.0%, fallback=0 for all real cases.
+- `pnpm eval:quality-gate`: PASS, G2=87.8%, G3=2.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS; required real-case human_review records are
   present for all five cases.

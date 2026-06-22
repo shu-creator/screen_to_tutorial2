@@ -3,9 +3,9 @@
   "case_id": "real-app-workflow-03-generate-steps",
   "review_type": "human_review",
   "reviewer": "iwsh23",
-  "reviewed_at": "2026-06-21",
+  "reviewed_at": "2026-06-22",
   "source_artifact": "eval/results/generated/real-app-workflow-03-generate-steps/steps.json",
-  "source_artifact_sha256": "8ffe2f89544bc47c8ca585af46c5b9e911980c0f1ad801fd3ad33b42063ec8cb",
+  "source_artifact_sha256": "88208bb96925978ba14f63d1749def4f01a23073650f78d63b2a1561edc40d8a",
   "exported_artifacts": [],
   "counts": {
     "title_edits": 0,
@@ -19,5 +19,5 @@
   },
   "total_manual_edits": 0,
   "blocking_issues": [],
-  "notes": "Human reviewer confirmed the review packet, steps, and export artifacts; no fixes needed."
+  "notes": "Human reviewed promoted authoring-v2-grounded-3 candidate and project 40 export artifacts; no fixes needed."
 }
