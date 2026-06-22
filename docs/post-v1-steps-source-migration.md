@@ -5,11 +5,11 @@
 Phase 6 branch: `codex/post-v1-steps-source-v2`
 
 This branch starts from the completed `codex/post-v1-refactor` Phase 7 close-out
-state. This kickoff document is the first Phase 6 artifact on the branch; there
-is no implementation code yet. The older branch `codex/post-v1-steps-source`
-already exists, but it is based before the Phase 7 prompt, G4, review-packet,
-and quality-gate follow-up commits. Treat it as a patch source only, not as the
-branch to continue.
+state. The first implementation slice added the artifact-first `stepSource`
+adapter boundary and focused tests; router/client behavior has not moved yet.
+The older branch `codex/post-v1-steps-source` already exists, but it is based
+before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
+commits. Treat it as a patch source only, not as the branch to continue.
 
 Old branch audit:
 
@@ -72,9 +72,11 @@ Porting rule:
 ## Implementation Order
 
 1. Add or port a `stepSource` adapter that returns UI-ready steps from
-   `steps.json` plus a DB compatibility bridge.
-2. Cover adapter behavior for artifact-present, artifact-missing, partial bridge,
-   edit, delete, reorder, and review-state clearing cases.
+   `steps.json` plus a DB compatibility bridge. Status: completed for the
+   adapter boundary; router adoption remains pending.
+2. Cover adapter behavior for artifact-present, artifact-missing, invalid
+   artifact, partial bridge, edit, delete, reorder, and review-state clearing
+   cases. Status: completed for focused unit tests.
 3. Move `step.listByProject` and `step.artifactInfo` toward the adapter without
    changing the client contract in the same commit.
 4. Move `step.update` to patch artifact data as the primary write and mirror DB

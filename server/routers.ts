@@ -467,6 +467,9 @@ export const appRouter = router({
             .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
           if (filtered.length !== sortedRemaining.length) {
+            // Phase 6 migration note: the stepSource delete adapter returns
+            // matched=false for this partial bridge case. Reconcile whether the
+            // route should keep this legacy silent no-op before adopting it.
             return artifact;
           }
 
@@ -583,6 +586,9 @@ export const appRouter = router({
             return { ...artifact, steps: reordered };
           }
 
+          // Phase 6 migration note: the stepSource reorder adapter rejects
+          // missing or duplicate IDs explicitly via matched=false. Reconcile
+          // this legacy silent no-op before adopting it in the router.
           return artifact;
         });
         return { success: true };
