@@ -6,7 +6,9 @@ Phase 6 branch: `codex/post-v1-steps-source-v2`
 
 This branch starts from the completed `codex/post-v1-refactor` Phase 7 close-out
 state. The first implementation slice added the artifact-first `stepSource`
-adapter boundary and focused tests; router/client behavior has not moved yet.
+adapter boundary and focused tests. The second slice moved `step.listByProject`
+and `step.artifactInfo` reads to the adapter; write routes still use the legacy
+dual-write path.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.
@@ -78,7 +80,8 @@ Porting rule:
    artifact, partial bridge, edit, delete, reorder, and review-state clearing
    cases. Status: completed for focused unit tests.
 3. Move `step.listByProject` and `step.artifactInfo` toward the adapter without
-   changing the client contract in the same commit.
+   changing the client contract in the same commit. Status: completed for read
+   routes.
 4. Move `step.update` to patch artifact data as the primary write and mirror DB
    text fields only for compatibility. This slice must also define the
    consistency strategy for DB write failure after artifact save.

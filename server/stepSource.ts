@@ -1,4 +1,5 @@
 import type { Frame, Project, Step } from "../drizzle/schema";
+import { createLogger } from "./_core/logger";
 import * as db from "./db";
 import {
   buildLegacyRenderableStepsFromArtifact,
@@ -9,6 +10,8 @@ import {
   type StepAudioMode,
   type StepsArtifact,
 } from "./stepsArtifact";
+
+const logger = createLogger("StepSource");
 
 export type StepListItem = LegacyRenderableStep;
 
@@ -39,6 +42,24 @@ export function buildStepListFromArtifact(
   frames: Frame[],
 ): StepListItem[] {
   return buildLegacyRenderableStepsFromArtifact(projectId, artifact, frames);
+}
+
+export function buildStepListFromDbRows(steps: Step[]): StepListItem[] {
+  return steps
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((step) => ({
+      id: step.id,
+      projectId: step.projectId,
+      frameId: step.frameId,
+      sortOrder: step.sortOrder,
+      title: step.title,
+      operation: step.operation,
+      description: step.description,
+      narration: step.narration ?? "",
+      audioUrl: step.audioUrl ?? null,
+      audioKey: step.audioKey ?? null,
+    }));
 }
 
 export function patchArtifactStepForUpdate(
@@ -183,7 +204,14 @@ export async function loadOrCreateStepsArtifactForProject(
   }
 
   const artifact = buildStepsArtifactFromDb(project, frames, dbSteps);
-  await saveStepsArtifact(projectId, artifact);
+  try {
+    await saveStepsArtifact(projectId, artifact);
+  } catch (error) {
+    logger.warn("Failed to persist compatibility artifact; continuing with in-memory state", {
+      projectId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
   return {
     project,
     frames,

@@ -163,6 +163,23 @@ describe("step source loading", () => {
     });
   });
 
+  it("continues with an in-memory compatibility artifact when persistence fails", async () => {
+    const writeSpy = vi.spyOn(fs, "writeFile").mockRejectedValueOnce(new Error("storage full"));
+
+    try {
+      const state = await loadOrCreateStepsArtifactForProject(50, 1);
+
+      expect(state.source).toBe("db_steps");
+      expect(state.artifact?.steps[0]).toMatchObject({
+        legacy_step_db_id: 501,
+        title: "DB title",
+      });
+      await expect(loadStepsArtifact(50)).resolves.toBeNull();
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
   it("does not overwrite an invalid artifact with a DB fallback", async () => {
     const filePath = await writeMalformedArtifact(50);
 

@@ -11,7 +11,8 @@ import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
 import { getAvailableVoices, type TTSVoice } from "./_core/tts";
 import { storagePut } from "./storage";
-import { StepAudioModeSchema, invalidateStepsArtifact, loadStepsArtifact, patchStepArtifact } from "./stepsArtifact";
+import { StepAudioModeSchema, invalidateStepsArtifact, patchStepArtifact } from "./stepsArtifact";
+import { buildStepListFromDbRows, listProjectStepsArtifactFirst, loadOrCreateStepsArtifactForProject } from "./stepSource";
 import { invalidateEvidenceArtifact } from "./evidence/artifactStore";
 
 const logger = createLogger("Router");
@@ -302,18 +303,28 @@ export const appRouter = router({
     listByProject: protectedProcedure
       .input(z.object({ projectId: z.number() }))
       .query(async ({ ctx, input }) => {
-        // セキュリティ: ユーザーIDによる所有者チェック
-        return db.getStepsByProjectId(input.projectId, ctx.user.id);
+        try {
+          return await listProjectStepsArtifactFirst(input.projectId, ctx.user.id);
+        } catch (error) {
+          if (error instanceof Error && error.message.includes("不正")) {
+            logger.warn("Invalid steps artifact ignored for step list read", {
+              projectId: input.projectId,
+              message: error.message,
+            });
+            const dbSteps = await db.getStepsByProjectId(input.projectId, ctx.user.id);
+            return buildStepListFromDbRows(dbSteps);
+          }
+          if (error instanceof Error && error.message.includes("プロジェクト")) {
+            return [];
+          }
+          throw error;
+        }
       }),
 
     // Phase 2: steps.json v2 のメタ情報（overview / 機械検証結果）をUIへ提供
     artifactInfo: protectedProcedure
       .input(z.object({ projectId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const project = await db.getProjectById(input.projectId, ctx.user.id);
-        if (!project) {
-          throw new Error("プロジェクトが見つかりません");
-        }
         const empty: Record<number, {
           needsReview: boolean;
           reviewReasons: string[];
@@ -323,12 +334,24 @@ export const appRouter = router({
           tEnd: number;
           audioMode: string;
         }> = {};
-        const artifact = await loadStepsArtifact(input.projectId).catch(() => null);
-        if (!artifact) {
+        let state;
+        try {
+          state = await loadOrCreateStepsArtifactForProject(input.projectId, ctx.user.id);
+        } catch (error) {
+          if (error instanceof Error && error.message.includes("不正")) {
+            logger.warn("Invalid steps artifact ignored for artifactInfo read", {
+              projectId: input.projectId,
+              message: error.message,
+            });
+            return { overview: null, reviewByStepId: empty };
+          }
+          throw error;
+        }
+        if (!state.artifact || state.source === "db_steps" || state.artifact.config.prompt_version === "legacy-adapter-v1") {
           return { overview: null, reviewByStepId: empty };
         }
         const reviewByStepId = { ...empty };
-        for (const step of artifact.steps) {
+        for (const step of state.artifact.steps) {
           if (step.legacy_step_db_id) {
             reviewByStepId[step.legacy_step_db_id] = {
               needsReview: step.needs_review,
@@ -341,7 +364,7 @@ export const appRouter = router({
             };
           }
         }
-        return { overview: artifact.overview, reviewByStepId };
+        return { overview: state.artifact.overview, reviewByStepId };
       }),
 
     update: protectedProcedure

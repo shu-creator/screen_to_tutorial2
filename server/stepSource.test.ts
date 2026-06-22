@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Frame } from "../drizzle/schema";
 import type { StepsArtifact } from "./stepsArtifact";
 import {
+  buildStepListFromDbRows,
   buildStepListFromArtifact,
   deleteArtifactStepByLegacyId,
   patchArtifactStepForUpdate,
@@ -122,6 +123,46 @@ function makeArtifact(): StepsArtifact {
 }
 
 describe("step source artifact helpers", () => {
+  it("normalizes DB rows to UI-compatible step rows", () => {
+    const rows = buildStepListFromDbRows([
+      {
+        id: 301,
+        projectId: 10,
+        frameId: 100,
+        title: "DB",
+        operation: "DB op",
+        description: "DB desc",
+        narration: null,
+        audioUrl: null,
+        audioKey: null,
+        sortOrder: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 300,
+        projectId: 10,
+        frameId: 101,
+        title: "First",
+        operation: "First op",
+        description: "First desc",
+        narration: "Narration",
+        audioUrl: "/audio.mp3",
+        audioKey: "audio.mp3",
+        sortOrder: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    expect(rows.map((row) => row.id)).toEqual([300, 301]);
+    expect(rows[1]).toMatchObject({
+      narration: "",
+      audioUrl: null,
+      audioKey: null,
+    });
+  });
+
   it("builds UI-compatible step rows from artifact order", () => {
     const rows = buildStepListFromArtifact(10, makeArtifact(), frames);
 
