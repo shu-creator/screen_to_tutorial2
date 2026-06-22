@@ -2,19 +2,25 @@
 
 ## Status
 
-This is the Phase 5 design memo for the post-v1 refactor. It records the current read/write responsibilities and the source-of-truth decision before any implementation work.
+This document started as the Phase 5 design memo for the post-v1 refactor. It
+now also records the Phase 6 branch status so the historical Phase 5 decision
+and the current artifact-primary implementation are not confused.
 
 Phase 6 branch references were updated after the Phase 7 close-out to avoid
 continuing the stale pre-Phase-7 migration branch.
 
-Decision: keep the v1 responsibility split on `codex/post-v1-refactor`.
+Decision on `codex/post-v1-refactor`: keep the v1 responsibility split.
 
 - v1 remains artifact-first for generated step evidence and export/rendering metadata.
-- DB `steps` remains the compatibility layer for the current UI list/edit routes and legacy renderable IDs.
 - `steps.json` single-source migration is deferred to a separate branch:
   `codex/post-v1-steps-source-v2`.
   `codex/post-v1-steps-source` predates Phase 7 and must not be merged
   wholesale; see `docs/post-v1-steps-source-migration.md`.
+
+Status on `codex/post-v1-steps-source-v2`: UI list/edit routes, edit smoke, and
+render/export step loading use the `stepSource` artifact-derived adapter. DB
+`steps` remains the compatibility ID bridge and mirror, not the primary source
+for current Phase 6 UI edits.
 
 ## Current Data Responsibilities
 
@@ -30,7 +36,8 @@ Decision: keep the v1 responsibility split on `codex/post-v1-refactor`.
 - `audio_mode`, `audio_url`, `audio_key`
 - `legacy_step_db_id` as the bridge back to DB rows
 
-DB `steps` remains the UI and compatibility record. It carries the stable database ID plus the legacy fields needed by existing routes:
+DB `steps` remains the compatibility record. It carries the stable database ID
+plus the legacy fields needed by existing projects and DB-ID-dependent routes:
 
 - `projectId`
 - `frameId`
@@ -113,25 +120,31 @@ It does not fully prove:
 - behavior when `legacy_step_db_id` mapping is incomplete;
 - concurrent edits;
 - migration safety for older projects with DB-only steps;
-- a UI list that reads directly from `steps.json`.
+- a fully DB-free UI list that no longer depends on legacy DB IDs.
 
-Those gaps are acceptable for v1 compatibility, but they are required test targets before single-source migration.
+Those gaps are acceptable for v1 compatibility, but they are required test targets before DB-free migration.
 
 ## Decision
 
-Use the v1-maintaining option for this branch:
+Use the v1-maintaining option for `codex/post-v1-refactor` and the
+artifact-primary compatibility option for `codex/post-v1-steps-source-v2`:
 
 - Keep artifact-first generation/export/rendering.
-- Keep DB compatibility and dual-write UI edits.
+- Keep DB compatibility and artifact-primary UI edits with DB mirror writes.
 - Do not remove `stepsArtifact`, DB sync, export fallback, or edit-smoke compatibility paths in Phase 5.
-- Treat `steps.json` single-source migration as Phase 6 work on a separate branch.
+- Treat DB bridge removal as later work after Phase 6 route adoption.
 
-## Phase 6 Opening Criteria
+## Phase 6 Criteria Status
 
-Before implementing single-source migration, create a separate branch and expand tests around these behaviors:
+The separate Phase 6 branch has expanded tests around these behaviors:
 
-- UI list reads from `steps.json` or a single artifact-derived adapter.
-- Existing DB-only projects still open through migration or explicit compatibility fallback.
-- Edit, delete, reorder, regenerate, audio generation, slide export, video export, and edit smoke all use the same source-of-truth contract.
-- `legacy_step_db_id` is either preserved as a compatibility bridge or removed only after all DB-ID-dependent routes are migrated.
-- `pnpm check`, `pnpm test`, `pnpm eval:audit`, `pnpm eval:quality-gate`, `pnpm v1:release-audit`, and an explicit edit smoke all pass.
+- UI list reads through the single artifact-derived adapter.
+- Existing DB-only projects still open through compatibility fallback or
+  promotion to compatibility artifacts where the route permits it.
+- Edit, delete, reorder, regenerate, audio generation, slide export, video
+  export, and edit smoke all use the documented artifact-primary source
+  contract.
+- `legacy_step_db_id` is preserved as the compatibility bridge.
+- `pnpm check`, `pnpm test`, `pnpm eval:audit`, `pnpm eval:quality-gate`,
+  `pnpm v1:release-audit`, and an explicit edit smoke pass at each completed
+  Phase 6 slice boundary.

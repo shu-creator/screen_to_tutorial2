@@ -254,7 +254,7 @@ Output:
 
 Decision:
 
-- Keep the v1 split on this branch: artifact-first generation/export/rendering plus DB compatibility for current UI list/edit routes.
+- Keep the v1 split on the parent branch: artifact-first generation/export/rendering plus DB compatibility for the then-current UI list/edit routes.
 - Do not implement `steps.json` single-source migration on `codex/post-v1-refactor`.
 - Move single-source migration to a separate Phase 6 branch after expanding edit/delete/reorder/regenerate/export compatibility tests.
 
@@ -278,7 +278,11 @@ Validation result:
 
 ### Phase 6: `steps.json` Single Source
 
-Status: branch opened; kickoff documentation added; no implementation code yet.
+Status on `codex/post-v1-steps-source-v2`: route adoption and verification
+slices are implemented for the artifact-derived `stepSource` contract. UI
+list/edit routes, edit smoke, and render/export step loading are
+artifact-primary with DB compatibility bridge/mirror behavior where documented.
+Full DB bridge removal remains later work.
 
 Separate branch: `codex/post-v1-steps-source-v2`.
 
@@ -304,8 +308,10 @@ Implementation targets:
 
 Status: completed for the in-scope `codex/post-v1-refactor` Phase 7 follow-up.
 The explicit-approval `authoring-v2-grounded-3` case 03 candidate was promoted
-after human approval on `2026-06-22`; Phase 6 artifact-source migration remains
-deferred to a separate branch.
+after human approval on `2026-06-22`. On the parent branch, Phase 6
+artifact-source migration was deferred to a separate branch; on
+`codex/post-v1-steps-source-v2`, the route adoption and verification slices are
+now implemented.
 
 Output:
 
@@ -359,11 +365,19 @@ Completed or started changes:
   `source_artifact_sha256` is
   `88208bb96925978ba14f63d1749def4f01a23073650f78d63b2a1561edc40d8a`.
 
-Deferred outside this branch:
+Deferred from the parent `codex/post-v1-refactor` branch:
 
-- Artifact sync status UI remains queued until the Phase 6 artifact-first route is merged.
-- Phase 6 `steps.json` single-source migration remains deferred to a separate
-  branch as designed.
+- Artifact sync status UI remains a later UI-polish item; Phase 6 route work
+  updates the source contract but does not add new sync-status UI.
+- Phase 6 `steps.json` source migration moved to the separate
+  `codex/post-v1-steps-source-v2` branch as designed.
+
+Current Phase 6 branch status:
+
+- UI list/edit routes, edit smoke, and render/export step loading now use the
+  artifact-derived `stepSource` adapter.
+- DB `steps` remains as the compatibility ID bridge and mirror; full DB bridge
+  removal remains later work.
 
 Operational guardrail for future measurement reruns:
 

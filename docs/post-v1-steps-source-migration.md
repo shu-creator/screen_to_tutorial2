@@ -30,6 +30,8 @@ release smoke summaries now fail unless `adapter.artifactUpdated` and
 `adapter.dbUpdated` are both verified. The same slice also made
 `pnpm v1:release-audit` re-read `artifacts.edit_smoke_summary` and reject stale
 edit-smoke artifacts that lack the nested adapter checks.
+The ninth slice reconciled Phase 6 close-out docs with the implemented
+artifact-primary route status. It did not change runtime behavior.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.
@@ -96,7 +98,8 @@ Porting rule:
 
 1. Add or port a `stepSource` adapter that returns UI-ready steps from
    `steps.json` plus a DB compatibility bridge. Status: completed for the
-   adapter boundary; router adoption remains pending.
+   adapter boundary and router adoption across list, artifact metadata, edit,
+   delete, reorder, regenerate, render, export, and edit-smoke paths.
 2. Cover adapter behavior for artifact-present, artifact-missing, invalid
    artifact, partial bridge, edit, delete, reorder, and review-state clearing
    cases. Status: completed for focused unit tests.
@@ -127,7 +130,30 @@ Porting rule:
 8. When Phase 6 changes prompt or generation behavior, use the no-write
    `pnpm post-v1:prompt-check` plan and
    `pnpm pipeline:generate -- --preflight` path before accepting DB/storage
-   side effects.
+   side effects. Status: not required for the adapter, route, smoke, audit, and
+   docs slices because they did not change authoring prompt behavior.
+
+## Remaining Compatibility Boundaries
+
+Phase 6 makes UI and render/export reads artifact-derived, and makes UI edits
+artifact-primary. It is not a full DB removal.
+
+- DB rows remain as the compatibility ID bridge through `legacy_step_db_id`.
+- Generation still persists DB rows so existing projects keep stable legacy
+  route IDs while `steps.json` is saved.
+- UI edit/delete/reorder/regenerate routes write `steps.json` first and mirror
+  DB rows when possible. Artifact state is the primary commit point.
+- Render/export callers keep the v1 DB fallback for missing or malformed
+  artifacts so legacy projects remain loadable.
+- Edit routes are stricter than render/export routes: invalid `steps.json` is
+  not silently overwritten by text edits.
+- `step.artifactInfo` intentionally returns empty metadata for missing artifacts
+  or DB compatibility artifacts.
+- `pnpm edit:smoke` verifies one project step through the adapter and restores
+  both artifact and DB state. It does not prove concurrency behavior or every
+  old-project migration shape.
+- A fully DB-free source contract requires a later branch that removes the
+  legacy ID bridge and replaces DB-dependent routes in one coordinated change.
 
 ## Required Verification
 
