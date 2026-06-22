@@ -72,9 +72,9 @@ The bridge is `legacy_step_db_id`. Any source-of-truth change must either preser
 | Legacy single-frame generation in `server/stepGenerator.ts` | Also persists DB rows and saves artifact. | This is a fallback path; changing it belongs with fallback-policy work and real-case QA. |
 | `persistStepsToDb` in `server/stepGenerator.ts` | Deletes existing DB steps and recreates them from artifact content. | Step IDs can change; artifact must be saved with the new `legacy_step_db_id` values. |
 | Project retry in `server/routers.ts` | Deletes DB frames/steps and invalidates `steps.json` and `evidence.json`. | Old artifacts can reference deleted frames if invalidation is removed. |
-| `step.update` in `server/routers.ts` | Patches artifact first, then mirrors DB text fields when possible. Artifact-only fields require an artifact, and malformed artifacts reject updates before DB writes. | The artifact save is the primary commit point; a DB mirror failure can leave compatibility rows stale while artifact reads remain current. |
-| `step.delete` in `server/routers.ts` | Deletes from artifact first, then mirrors DB delete/order compaction when possible. | A DB mirror failure can leave compatibility rows stale while artifact reads remain current. |
-| `step.regenerate` in `server/routers.ts` | Analyzes the selected frame, patches matching artifact fields first, then mirrors regenerated text/frame fields to DB when possible. | A DB mirror failure can leave compatibility rows stale while artifact reads remain current. |
+| `step.update` in `server/routers.ts` | Patches artifact first, then mirrors DB text fields when possible. Artifact-only fields require an artifact; malformed artifacts and incomplete `legacy_step_db_id` mappings reject updates before DB writes. | The artifact save is the primary commit point; a DB mirror failure can leave compatibility rows stale while artifact reads remain current. |
+| `step.delete` in `server/routers.ts` | Deletes from artifact first, then mirrors DB delete/order compaction when possible. Incomplete `legacy_step_db_id` mappings reject deletes before DB writes. | A DB mirror failure can leave compatibility rows stale while artifact reads remain current. |
+| `step.regenerate` in `server/routers.ts` | Rejects incomplete `legacy_step_db_id` mappings before frame analysis, otherwise analyzes the selected frame, patches matching artifact fields first, then mirrors regenerated text/frame fields to DB when possible. | A DB mirror failure can leave compatibility rows stale while artifact reads remain current. |
 | `step.reorder` in `server/routers.ts` | Reorders artifact by `legacy_step_db_id` first, then mirrors DB row order when possible. | A DB mirror failure can leave compatibility rows stale while artifact reads remain current. |
 | Audio generation in `server/videoGenerator.ts` | Writes audio references to DB-compatible steps and patches artifact audio fields and warnings. | Export/video paths need both compatibility and artifact warning visibility through v1. |
 | `scripts/edit-artifact-smoke.ts` | Temporarily edits through the artifact-primary step adapter, verifies adapter result plus DB/artifact sync, then restores both by re-read. | This is the current guardrail for the Phase 6 source contract. |
@@ -87,6 +87,9 @@ The current UI edit model is artifact-primary with a compatibility DB mirror:
 - Artifact-only fields (`tStart`, `tEnd`, `audioMode`, `markReviewed`) are saved only to `steps.json`.
 - Artifact-only updates fail when `steps.json` is missing.
 - Updates fail without DB writes when an existing `steps.json` is malformed.
+- Update/delete/regenerate fail without DB writes when an existing artifact has
+  no step matching the requested legacy DB ID; regenerate performs this check
+  before frame analysis.
 - `markReviewed` clears `needs_review`, `review_reasons`, and `warnings` in the artifact.
 - Delete/reorder/regenerate use artifact-first writes keyed by `legacy_step_db_id`, with DB updates retained as compatibility mirrors.
 

@@ -40,6 +40,11 @@ The eleventh slice removed the last invalid-artifact text-edit DB fallback from
 `step.update`: edit routes now reject malformed `steps.json` before writing DB,
 matching delete/reorder/regenerate strictness. Render/export paths still keep
 their explicit invalid-artifact DB fallback.
+The twelfth slice removed edit-route DB fallbacks for valid artifacts whose
+`legacy_step_db_id` mapping does not match the requested step. Update, delete,
+and regenerate now reject before DB writes when the artifact bridge is
+incomplete; DB-only projects are still promoted to compatibility artifacts when
+no `steps.json` exists.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.
@@ -126,7 +131,8 @@ Porting rule:
 5. Add route-level tests for update/delete/reorder/regenerate behavior. Status:
    completed for read routes, `step.update`, `step.delete`, and
    `step.reorder`; `step.regenerate` is completed for artifact-primary route
-   behavior.
+   behavior. Valid artifacts with incomplete legacy-ID mappings now reject
+   edit/delete/regenerate instead of falling back to DB-only writes.
 6. Update `pnpm edit:smoke` expectations only after route tests define the new
    source contract. Status: completed; edit smoke now edits through the
    artifact-primary step adapter, asserts adapter artifact/DB mirror results,
@@ -150,7 +156,8 @@ artifact-primary. It is not a full DB removal.
 - Generation still persists DB rows so existing projects keep stable legacy
   route IDs while `steps.json` is saved.
 - UI edit/delete/reorder/regenerate routes write `steps.json` first and mirror
-  DB rows when possible. Artifact state is the primary commit point.
+  DB rows when possible. Artifact state is the primary commit point, and
+  incomplete artifact-to-DB ID mappings reject before DB writes.
 - Render/export callers keep the v1 DB fallback for missing or malformed
   artifacts so legacy projects remain loadable.
 - Edit routes are stricter than render/export routes: invalid `steps.json`

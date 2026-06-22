@@ -13,6 +13,7 @@ import { getAvailableVoices, type TTSVoice } from "./_core/tts";
 import { storagePut } from "./storage";
 import { StepAudioModeSchema, invalidateStepsArtifact } from "./stepsArtifact";
 import {
+  artifactContainsStepTarget,
   buildStepListFromDbRows,
   deleteProjectStepArtifactFirst,
   InvalidStepsArtifactError,
@@ -460,6 +461,14 @@ export const appRouter = router({
           throw new Error("フレームが見つかりません");
         }
         const state = await loadOrCreateStepsArtifactForProject(projectId, ctx.user.id);
+        if (!state.artifact) {
+          throw new Error("steps artifactを作成できないため、ステップを再生成できません");
+        }
+        if (
+          !artifactContainsStepTarget(state.artifact, input.stepId, step?.sortOrder)
+        ) {
+          throw new Error("ステップがsteps artifact内に見つかりませんでした");
+        }
         const regenerated = await analyzeFrameForStepRegeneration(frame);
         await regenerateProjectStepArtifactFirst({
           projectId,

@@ -177,6 +177,17 @@ export function patchArtifactStepForUpdate(
     : { artifact, matched };
 }
 
+export function artifactContainsStepTarget(
+  artifact: StepsArtifact,
+  stepId: number,
+  sortOrder: number | undefined,
+): boolean {
+  return artifact.steps.some((step) =>
+    step.legacy_step_db_id === stepId ||
+    (step.legacy_step_db_id === undefined && step.sort_order === sortOrder)
+  );
+}
+
 export function deleteArtifactStepByLegacyId(
   artifact: StepsArtifact,
   stepId: number,
@@ -398,14 +409,10 @@ export async function updateProjectStepArtifactFirst(
     input.data,
   );
   if (!patchResult.matched) {
-    if (hasArtifactOnlyFields) {
-      throw new Error("artifactに対象ステップが見つかりませんでした");
+    if (!existingStep) {
+      throw new Error("ステップが見つかりません");
     }
-    if (hasDbFields && existingStep) {
-      await db.updateStep(input.stepId, dbData, userId);
-      return { artifactUpdated: false, dbUpdated: true };
-    }
-    throw new Error("ステップが見つかりません");
+    throw new Error("ステップがsteps artifact内に見つかりませんでした");
   }
 
   await saveStepsArtifact(projectId, patchResult.artifact);
@@ -450,29 +457,10 @@ export async function deleteProjectStepArtifactFirst(
 
   const deleted = deleteArtifactStepByLegacyId(state.artifact, input.stepId);
   if (!deleted.matched) {
-    if (existingStep) {
-      await db.deleteStep(input.stepId, userId);
-      try {
-        const remainingSteps = await db.getStepsByProjectId(projectId, userId);
-        const sortedRemaining = remainingSteps
-          .slice()
-          .sort((a, b) => a.sortOrder - b.sortOrder);
-        if (sortedRemaining.length > 0) {
-          await db.reorderSteps(
-            projectId,
-            sortedRemaining.map((item) => item.id),
-          );
-        }
-      } catch (error) {
-        logger.warn("Failed to compact DB step order after unmatched artifact delete fallback", {
-          projectId,
-          stepId: input.stepId,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-      return { artifactUpdated: false, dbDeleted: true };
+    if (!existingStep) {
+      throw new Error("ステップが見つかりません");
     }
-    throw new Error("artifactに対象ステップが見つかりませんでした");
+    throw new Error("ステップがsteps artifact内に見つかりませんでした");
   }
 
   await saveStepsArtifact(projectId, deleted.artifact);
@@ -567,9 +555,9 @@ export async function regenerateProjectStepArtifactFirst(
 
   let matched = false;
   const steps = state.artifact.steps.map((step) => {
-    const matchesLegacyId = step.legacy_step_db_id === input.stepId;
-    const matchesSortOrder = step.legacy_step_db_id === undefined && step.sort_order === existingStep?.sortOrder;
-    if (!matchesLegacyId && !matchesSortOrder) {
+    const matchesTarget = step.legacy_step_db_id === input.stepId ||
+      (step.legacy_step_db_id === undefined && step.sort_order === existingStep?.sortOrder);
+    if (!matchesTarget) {
       return step;
     }
 
@@ -597,17 +585,7 @@ export async function regenerateProjectStepArtifactFirst(
   });
 
   if (!matched) {
-    if (existingStep) {
-      await db.updateStep(input.stepId, {
-        frameId: input.frame.id,
-        title: input.data.title,
-        operation: input.data.operation,
-        description: input.data.description,
-        narration: input.data.narration,
-      }, userId);
-      return { artifactUpdated: false, dbUpdated: true };
-    }
-    throw new Error("artifactに対象ステップが見つかりませんでした");
+    throw new Error("ステップがsteps artifact内に見つかりませんでした");
   }
 
   await saveStepsArtifact(projectId, { ...state.artifact, steps });

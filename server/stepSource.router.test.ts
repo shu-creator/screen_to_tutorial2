@@ -478,7 +478,7 @@ describe("step router artifact-first read routes", () => {
     expect(dbMocks.updateStep).not.toHaveBeenCalled();
   });
 
-  it("falls back to DB text update when the existing artifact has no matching step", async () => {
+  it("rejects text updates when the existing artifact has no matching step without changing DB", async () => {
     const artifact = makeArtifact();
     await saveStepsArtifact(50, {
       ...artifact,
@@ -492,10 +492,69 @@ describe("step router artifact-first read routes", () => {
     await expect(caller.step.update({
       projectId: 50,
       id: 501,
-      title: "DB only fallback",
-    })).resolves.toEqual({ success: true });
+      title: "Bridge mismatch rejected",
+    })).rejects.toThrow("steps artifact内に見つかりません");
 
-    expect(dbMocks.updateStep).toHaveBeenCalledWith(501, { title: "DB only fallback" }, 1);
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 777,
+          title: "Artifact title",
+        }),
+      ],
+    });
+  });
+
+  it("rejects artifact-only updates when the existing artifact has no matching step", async () => {
+    const artifact = makeArtifact();
+    await saveStepsArtifact(50, {
+      ...artifact,
+      steps: artifact.steps.map((step) => ({
+        ...step,
+        legacy_step_db_id: 777,
+      })),
+    });
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      projectId: 50,
+      id: 501,
+      tStart: 100,
+      tEnd: 900,
+    })).rejects.toThrow("steps artifact内に見つかりません");
+
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 777,
+          t_start: 0,
+          t_end: 1000,
+        }),
+      ],
+    });
+  });
+
+  it("rejects updates as missing when neither DB nor artifact contains the step", async () => {
+    dbMocks.getStepById.mockResolvedValue(undefined);
+    const artifact = makeArtifact();
+    await saveStepsArtifact(50, {
+      ...artifact,
+      steps: artifact.steps.map((step) => ({
+        ...step,
+        legacy_step_db_id: 777,
+      })),
+    });
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      projectId: 50,
+      id: 501,
+      title: "Missing everywhere",
+    })).rejects.toThrow("ステップが見つかりません");
+
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
     await expect(loadStepsArtifact(50)).resolves.toMatchObject({
       steps: [
         expect.objectContaining({
@@ -689,7 +748,7 @@ describe("step router artifact-first read routes", () => {
     expect(dbMocks.reorderSteps).toHaveBeenCalledWith(50, [502]);
   });
 
-  it("falls back to DB delete and compacts DB order when the artifact has no matching step", async () => {
+  it("rejects delete when the artifact has no matching step without changing DB", async () => {
     const artifact = makeTwoStepArtifact();
     await saveStepsArtifact(50, {
       ...artifact,
@@ -701,10 +760,10 @@ describe("step router artifact-first read routes", () => {
     dbMocks.getStepsByProjectId.mockResolvedValue([dbStep2]);
     const caller = createCaller();
 
-    await expect(caller.step.delete({ projectId: 50, id: 501 })).resolves.toEqual({ success: true });
+    await expect(caller.step.delete({ projectId: 50, id: 501 })).rejects.toThrow("steps artifact内に見つかりません");
 
-    expect(dbMocks.deleteStep).toHaveBeenCalledWith(501, 1);
-    expect(dbMocks.reorderSteps).toHaveBeenCalledWith(50, [502]);
+    expect(dbMocks.deleteStep).not.toHaveBeenCalled();
+    expect(dbMocks.reorderSteps).not.toHaveBeenCalled();
     await expect(loadStepsArtifact(50)).resolves.toMatchObject({
       steps: [
         expect.objectContaining({ legacy_step_db_id: 777 }),
@@ -713,7 +772,7 @@ describe("step router artifact-first read routes", () => {
     });
   });
 
-  it("keeps unmatched delete fallback successful when DB order compaction fails", async () => {
+  it("rejects delete with inferred projectId when the artifact has no matching step", async () => {
     const artifact = makeTwoStepArtifact();
     await saveStepsArtifact(50, {
       ...artifact,
@@ -722,14 +781,30 @@ describe("step router artifact-first read routes", () => {
         legacy_step_db_id: step.legacy_step_db_id === 501 ? 777 : step.legacy_step_db_id,
       })),
     });
-    dbMocks.getStepsByProjectId.mockResolvedValue([dbStep2]);
-    dbMocks.reorderSteps.mockRejectedValueOnce(new Error("DB reorder gone"));
     const caller = createCaller();
 
-    await expect(caller.step.delete({ projectId: 50, id: 501 })).resolves.toEqual({ success: true });
+    await expect(caller.step.delete({ id: 501 })).rejects.toThrow("steps artifact内に見つかりません");
 
-    expect(dbMocks.deleteStep).toHaveBeenCalledWith(501, 1);
-    expect(dbMocks.reorderSteps).toHaveBeenCalledWith(50, [502]);
+    expect(dbMocks.deleteStep).not.toHaveBeenCalled();
+    expect(dbMocks.reorderSteps).not.toHaveBeenCalled();
+  });
+
+  it("rejects delete as missing when neither DB nor artifact contains the step", async () => {
+    dbMocks.getStepById.mockResolvedValue(undefined);
+    const artifact = makeTwoStepArtifact();
+    await saveStepsArtifact(50, {
+      ...artifact,
+      steps: artifact.steps.map((step) => ({
+        ...step,
+        legacy_step_db_id: step.legacy_step_db_id === 501 ? 777 : step.legacy_step_db_id,
+      })),
+    });
+    const caller = createCaller();
+
+    await expect(caller.step.delete({ projectId: 50, id: 501 })).rejects.toThrow("ステップが見つかりません");
+
+    expect(dbMocks.deleteStep).not.toHaveBeenCalled();
+    expect(dbMocks.reorderSteps).not.toHaveBeenCalled();
   });
 
   it("rejects deletes for inaccessible projectIds before writing", async () => {
@@ -781,6 +856,26 @@ describe("step router artifact-first read routes", () => {
         title: "Artifact title 2",
       }),
     ]);
+  });
+
+  it("keeps artifact deletion visible when legacy DB reorder fails after delete", async () => {
+    await saveStepsArtifact(50, makeTwoStepArtifact());
+    dbMocks.getStepsByProjectId.mockResolvedValue([dbStep2]);
+    dbMocks.reorderSteps.mockRejectedValueOnce(new Error("DB reorder gone"));
+    const caller = createCaller();
+
+    await expect(caller.step.delete({ projectId: 50, id: 501 })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 502,
+          sort_order: 0,
+        }),
+      ],
+    });
+    expect(dbMocks.deleteStep).toHaveBeenCalledWith(501, 1);
+    expect(dbMocks.reorderSteps).toHaveBeenCalledWith(50, [502]);
   });
 
   it("rejects artifact-first deletes for invalid artifacts without changing DB", async () => {
@@ -1046,7 +1141,7 @@ describe("step router artifact-first read routes", () => {
     }), 1);
   });
 
-  it("falls back to DB regenerate when the existing artifact has no matching step", async () => {
+  it("rejects regenerate when the existing artifact has no matching step without changing DB", async () => {
     const artifact = makeArtifact();
     await saveStepsArtifact(50, {
       ...artifact,
@@ -1061,15 +1156,10 @@ describe("step router artifact-first read routes", () => {
       projectId: 50,
       stepId: 501,
       frameId: 101,
-    })).resolves.toEqual({ success: true });
+    })).rejects.toThrow("steps artifact内に見つかりません");
 
-    expect(dbMocks.updateStep).toHaveBeenCalledWith(501, {
-      frameId: 101,
-      title: "Regenerated title",
-      operation: "Regenerated op",
-      description: "Regenerated desc",
-      narration: "Regenerated narration",
-    }, 1);
+    expect(stepGeneratorMocks.analyzeFrameForStepRegeneration).not.toHaveBeenCalled();
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
     await expect(loadStepsArtifact(50)).resolves.toMatchObject({
       steps: [
         expect.objectContaining({
@@ -1078,6 +1168,20 @@ describe("step router artifact-first read routes", () => {
         }),
       ],
     });
+  });
+
+  it("rejects regenerate before frame analysis when no artifact can be created", async () => {
+    dbMocks.getStepsByProjectId.mockResolvedValue([]);
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).rejects.toThrow("steps artifactを作成できないため");
+
+    expect(stepGeneratorMocks.analyzeFrameForStepRegeneration).not.toHaveBeenCalled();
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
   });
 
   it("does not update DB when regenerated artifact cannot be persisted", async () => {
