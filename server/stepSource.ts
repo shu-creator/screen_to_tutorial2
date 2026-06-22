@@ -26,6 +26,37 @@ export type StepSourceState = {
   source: StepSourceKind;
 };
 
+export type ProjectStepRenderState = {
+  project: Project;
+  frames: Frame[];
+  artifact: StepsArtifact | null;
+  steps: StepListItem[];
+  source: StepSourceKind;
+  warnings: string[];
+  invalidArtifactFallbackUsed: boolean;
+};
+
+export type LoadProjectStepRenderStateOptions = {
+  /**
+   * Render/export paths keep the pre-Phase-6 v1 compatibility behavior:
+   * corrupt artifacts can still render from DB rows, without overwriting the
+   * corrupt artifact. Edit routes should keep the strict default.
+   */
+  invalidArtifactFallback?: boolean;
+};
+
+export class InvalidStepsArtifactError extends Error {
+  readonly projectId: number;
+  readonly reason: string;
+
+  constructor(projectId: number, reason: string, message: string) {
+    super(`steps artifactが不正なためDB fallbackを作成できません: ${message}`);
+    this.name = "InvalidStepsArtifactError";
+    this.projectId = projectId;
+    this.reason = reason;
+  }
+}
+
 export type ArtifactStepUpdate = {
   title?: string;
   operation?: string;
@@ -219,7 +250,7 @@ export async function loadOrCreateStepsArtifactForProject(
   const frames = await db.getFramesByProjectId(projectId, userId);
   const loadResult = await loadStepsArtifactResult(projectId);
   if (loadResult.status === "invalid") {
-    throw new Error(`steps artifactが不正なためDB fallbackを作成できません: ${loadResult.message}`);
+    throw new InvalidStepsArtifactError(projectId, loadResult.reason, loadResult.message);
   }
   if (loadResult.status === "loaded") {
     return {
@@ -269,6 +300,57 @@ export async function listProjectStepsArtifactFirst(
     return [];
   }
   return buildStepListFromArtifact(projectId, state.artifact, state.frames);
+}
+
+export async function loadProjectStepRenderState(
+  projectId: number,
+  userId?: number,
+  options: LoadProjectStepRenderStateOptions = {},
+): Promise<ProjectStepRenderState> {
+  let state: StepSourceState;
+  const warnings: string[] = [];
+  let invalidArtifactFallbackUsed = false;
+  try {
+    state = await loadOrCreateStepsArtifactForProject(projectId, userId);
+  } catch (error) {
+    if (
+      !options.invalidArtifactFallback ||
+      !(error instanceof InvalidStepsArtifactError)
+    ) {
+      throw error;
+    }
+
+    const project = await db.getProjectById(projectId, userId);
+    if (!project) {
+      throw new Error("プロジェクトが見つかりません");
+    }
+    const frames = await db.getFramesByProjectId(projectId, userId);
+    const dbSteps = await db.getStepsByProjectId(projectId, userId);
+    const artifact = dbSteps.length > 0 ? buildStepsArtifactFromDb(project, frames, dbSteps) : null;
+    invalidArtifactFallbackUsed = true;
+    warnings.push(
+      `Invalid steps artifact ignored for render fallback (${error.reason}): ${error.message}`,
+    );
+    state = {
+      project,
+      frames,
+      artifact,
+      dbSteps,
+      source: dbSteps.length > 0 ? "db_steps" : "none",
+    };
+  }
+
+  return {
+    project: state.project,
+    frames: state.frames,
+    artifact: state.artifact,
+    steps: state.artifact
+      ? buildStepListFromArtifact(projectId, state.artifact, state.frames)
+      : buildStepListFromDbRows(state.dbSteps),
+    source: state.source,
+    warnings,
+    invalidArtifactFallbackUsed,
+  };
 }
 
 export async function updateProjectStepArtifactFirst(

@@ -13,7 +13,14 @@ DB text-field mirroring for compatibility. The fourth slice moved
 delete/reorder to artifact-primary writes with legacy DB mirror best-effort.
 The fifth slice moved regenerate to artifact-primary writes by separating frame
 analysis from persistence and mirroring regenerated text/frame fields to DB for
-compatibility.
+compatibility. The sixth slice moved slide generation, audio/video generation,
+and export QA expected-step counting onto the shared `stepSource` render state
+loader so export paths use the same artifact-first source contract as UI edits.
+Render/export callers explicitly keep the pre-existing v1 DB fallback for
+malformed artifacts, while edit routes remain strict and refuse to silently
+overwrite invalid `steps.json`. Audio generation may replace a malformed
+artifact with a DB compatibility artifact before patching generated audio URLs;
+slide/video rendering can use the same fallback without mutating the artifact.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.
@@ -101,9 +108,13 @@ Porting rule:
    `step.reorder`; `step.regenerate` is completed for artifact-primary route
    behavior.
 6. Update `pnpm edit:smoke` expectations only after route tests define the new
-   source contract.
+   source contract. Status: no expectation change required yet; edit smoke
+   remains the DB/artifact compatibility check, while export paths now share the
+   `stepSource` render loader.
 7. Re-run export, eval, and release gates before removing any compatibility
-   fallback.
+   fallback. Status: completed for slide generation, audio generation, video
+   generation, and `project:export` expected-step counting. Render paths use a
+   documented invalid-artifact DB fallback; edit paths do not.
 8. When Phase 6 changes prompt or generation behavior, use the no-write
    `pnpm post-v1:prompt-check` plan and
    `pnpm pipeline:generate -- --preflight` path before accepting DB/storage

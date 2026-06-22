@@ -15,6 +15,7 @@ import { StepAudioModeSchema, invalidateStepsArtifact } from "./stepsArtifact";
 import {
   buildStepListFromDbRows,
   deleteProjectStepArtifactFirst,
+  InvalidStepsArtifactError,
   listProjectStepsArtifactFirst,
   loadOrCreateStepsArtifactForProject,
   regenerateProjectStepArtifactFirst,
@@ -314,7 +315,7 @@ export const appRouter = router({
         try {
           return await listProjectStepsArtifactFirst(input.projectId, ctx.user.id);
         } catch (error) {
-          if (error instanceof Error && error.message.includes("不正")) {
+          if (error instanceof InvalidStepsArtifactError) {
             logger.warn("Invalid steps artifact ignored for step list read", {
               projectId: input.projectId,
               message: error.message,
@@ -346,7 +347,7 @@ export const appRouter = router({
         try {
           state = await loadOrCreateStepsArtifactForProject(input.projectId, ctx.user.id);
         } catch (error) {
-          if (error instanceof Error && error.message.includes("不正")) {
+          if (error instanceof InvalidStepsArtifactError) {
             logger.warn("Invalid steps artifact ignored for artifactInfo read", {
               projectId: input.projectId,
               message: error.message,

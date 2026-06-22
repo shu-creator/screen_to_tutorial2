@@ -22,7 +22,11 @@ const dbMocks = vi.hoisted(() => ({
 
 vi.mock("./db", () => dbMocks);
 
-import { loadOrCreateStepsArtifactForProject } from "./stepSource";
+import {
+  InvalidStepsArtifactError,
+  loadOrCreateStepsArtifactForProject,
+  loadProjectStepRenderState,
+} from "./stepSource";
 import { loadStepsArtifact, saveStepsArtifact } from "./stepsArtifact";
 
 const project: Project = {
@@ -186,5 +190,101 @@ describe("step source loading", () => {
     await expect(loadOrCreateStepsArtifactForProject(50, 1)).rejects.toThrow("不正");
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe("{ not valid json");
     expect(dbMocks.getStepsByProjectId).not.toHaveBeenCalled();
+  });
+
+  it("returns renderable steps from an existing artifact", async () => {
+    await saveStepsArtifact(50, makeArtifact());
+
+    const state = await loadProjectStepRenderState(50, 1);
+
+    expect(state.source).toBe("steps_artifact");
+    expect(state.artifact?.steps[0].title).toBe("Artifact title");
+    expect(state.steps).toEqual([
+      expect.objectContaining({
+        id: 501,
+        projectId: 50,
+        frameId: 100,
+        title: "Artifact title",
+        operation: "Artifact op",
+      }),
+    ]);
+    expect(dbMocks.getStepsByProjectId).not.toHaveBeenCalled();
+  });
+
+  it("returns renderable steps from a promoted DB compatibility artifact", async () => {
+    const state = await loadProjectStepRenderState(50, 1);
+
+    expect(state.source).toBe("db_steps");
+    expect(state.warnings).toEqual([]);
+    expect(state.invalidArtifactFallbackUsed).toBe(false);
+    expect(state.artifact?.config.prompt_version).toBe("legacy-adapter-v1");
+    expect(state.steps).toEqual([
+      expect.objectContaining({
+        id: 501,
+        projectId: 50,
+        frameId: 100,
+        title: "DB title",
+        operation: "DB op",
+      }),
+    ]);
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [expect.objectContaining({ legacy_step_db_id: 501 })],
+    });
+  });
+
+  it("can render from DB rows when an invalid artifact exists without overwriting it", async () => {
+    const filePath = await writeMalformedArtifact(50);
+
+    const state = await loadProjectStepRenderState(50, 1, {
+      invalidArtifactFallback: true,
+    });
+
+    expect(state.source).toBe("db_steps");
+    expect(state.warnings[0]).toContain("Invalid steps artifact ignored");
+    expect(state.invalidArtifactFallbackUsed).toBe(true);
+    expect(state.artifact?.steps[0]).toMatchObject({
+      legacy_step_db_id: 501,
+      title: "DB title",
+    });
+    expect(state.steps).toEqual([
+      expect.objectContaining({
+        id: 501,
+        title: "DB title",
+      }),
+    ]);
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("{ not valid json");
+  });
+
+  it("keeps render state strict for invalid artifacts unless fallback is requested", async () => {
+    await writeMalformedArtifact(50);
+
+    await expect(loadProjectStepRenderState(50, 1)).rejects.toThrow(InvalidStepsArtifactError);
+  });
+
+  it("returns empty render state with a warning when invalid artifact fallback has no DB steps", async () => {
+    await writeMalformedArtifact(50);
+    dbMocks.getStepsByProjectId.mockResolvedValue([]);
+
+    const state = await loadProjectStepRenderState(50, 1, {
+      invalidArtifactFallback: true,
+    });
+
+    expect(state.source).toBe("none");
+    expect(state.artifact).toBeNull();
+    expect(state.steps).toEqual([]);
+    expect(state.warnings[0]).toContain("Invalid steps artifact ignored");
+    expect(state.invalidArtifactFallbackUsed).toBe(true);
+  });
+
+  it("returns an empty render state when no artifact or DB steps exist", async () => {
+    dbMocks.getStepsByProjectId.mockResolvedValue([]);
+
+    const state = await loadProjectStepRenderState(50, 1);
+
+    expect(state.source).toBe("none");
+    expect(state.artifact).toBeNull();
+    expect(state.steps).toEqual([]);
+    expect(state.warnings).toEqual([]);
+    expect(state.invalidArtifactFallbackUsed).toBe(false);
   });
 });
