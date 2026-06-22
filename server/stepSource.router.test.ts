@@ -307,4 +307,229 @@ describe("step router artifact-first read routes", () => {
 
     await expect(caller.step.listByProject({ projectId: 50 })).resolves.toEqual([]);
   });
+
+  it("updates steps.json first and mirrors text fields to the legacy DB row", async () => {
+    await saveStepsArtifact(50, makeArtifact());
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      projectId: 50,
+      id: 501,
+      title: "Edited title",
+      operation: "Edited op",
+      description: "Edited desc",
+      narration: "Edited narration",
+      tStart: 100,
+      tEnd: 900,
+      audioMode: "tts",
+      markReviewed: true,
+    })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 501,
+          title: "Edited title",
+          operation: "Edited op",
+          instruction: "Edited op",
+          description: "Edited desc",
+          expected_result: "Edited desc",
+          narration: "Edited narration",
+          t_start: 100,
+          t_end: 900,
+          audio_mode: "tts",
+          needs_review: false,
+          review_reasons: [],
+          warnings: [],
+        }),
+      ],
+    });
+    expect(dbMocks.updateStep).toHaveBeenCalledWith(501, {
+      title: "Edited title",
+      operation: "Edited op",
+      description: "Edited desc",
+      narration: "Edited narration",
+    }, 1);
+  });
+
+  it("promotes a DB-only project to steps.json when text fields are updated", async () => {
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      projectId: 50,
+      id: 501,
+      title: "Promoted title",
+    })).resolves.toEqual({ success: true });
+
+    expect(dbMocks.updateStep).toHaveBeenCalledWith(501, { title: "Promoted title" }, 1);
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      config: expect.objectContaining({ prompt_version: "legacy-adapter-v1" }),
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 501,
+          title: "Promoted title",
+        }),
+      ],
+    });
+  });
+
+  it("fails DB-only text updates when artifact promotion cannot be persisted", async () => {
+    const writeSpy = vi.spyOn(fs, "writeFile").mockRejectedValue(new Error("storage gone"));
+    const caller = createCaller();
+
+    try {
+      await expect(caller.step.update({
+        projectId: 50,
+        id: 501,
+        title: "Cannot promote",
+      })).rejects.toThrow("storage gone");
+      expect(dbMocks.updateStep).not.toHaveBeenCalled();
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
+  it("updates an artifact step when no legacy DB row exists and projectId scopes ownership", async () => {
+    dbMocks.getStepById.mockResolvedValue(undefined);
+    await saveStepsArtifact(50, makeArtifact());
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      projectId: 50,
+      id: 501,
+      title: "Artifact only",
+      tStart: 100,
+      tEnd: 900,
+    })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 501,
+          title: "Artifact only",
+          operation: "Artifact op",
+          description: "Artifact desc",
+          narration: "Artifact narration",
+          t_start: 100,
+          t_end: 900,
+        }),
+      ],
+    });
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+  });
+
+  it("falls back to DB text update when the existing artifact has no matching step", async () => {
+    const artifact = makeArtifact();
+    await saveStepsArtifact(50, {
+      ...artifact,
+      steps: artifact.steps.map((step) => ({
+        ...step,
+        legacy_step_db_id: 777,
+      })),
+    });
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      projectId: 50,
+      id: 501,
+      title: "DB only fallback",
+    })).resolves.toEqual({ success: true });
+
+    expect(dbMocks.updateStep).toHaveBeenCalledWith(501, { title: "DB only fallback" }, 1);
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 777,
+          title: "Artifact title",
+        }),
+      ],
+    });
+  });
+
+  it("rejects updates for inaccessible projectIds before writing", async () => {
+    dbMocks.getStepById.mockResolvedValue(undefined);
+    dbMocks.getProjectById.mockResolvedValue(undefined);
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      projectId: 50,
+      id: 501,
+      title: "Unauthorized",
+    })).rejects.toThrow("プロジェクトが見つかりません");
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+  });
+
+  it("rejects update requests when the DB step belongs to another project", async () => {
+    dbMocks.getStepById.mockResolvedValue({ ...dbStep, projectId: 99 });
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      projectId: 50,
+      id: 501,
+      title: "Wrong project",
+    })).rejects.toThrow("ステップが見つかりません");
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+  });
+
+  it("keeps artifact updates visible when the legacy DB mirror fails", async () => {
+    await saveStepsArtifact(50, makeArtifact());
+    dbMocks.updateStep.mockRejectedValueOnce(new Error("DB gone"));
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      projectId: 50,
+      id: 501,
+      title: "Artifact wins",
+    })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 501,
+          title: "Artifact wins",
+        }),
+      ],
+    });
+    await expect(caller.step.listByProject({ projectId: 50 })).resolves.toEqual([
+      expect.objectContaining({
+        id: 501,
+        title: "Artifact wins",
+      }),
+    ]);
+  });
+
+  it("rejects invalid artifact timing edits before saving", async () => {
+    await saveStepsArtifact(50, makeArtifact());
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      projectId: 50,
+      id: 501,
+      tStart: 900,
+      tEnd: 100,
+    })).rejects.toThrow("t_end");
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 501,
+          t_start: 0,
+          t_end: 1000,
+        }),
+      ],
+    });
+  });
+
+  it("keeps legacy DB text updates working when an existing artifact is invalid", async () => {
+    const filePath = await writeMalformedArtifact(50);
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      id: 501,
+      title: "DB fallback title",
+    })).resolves.toEqual({ success: true });
+
+    expect(dbMocks.updateStep).toHaveBeenCalledWith(501, { title: "DB fallback title" }, 1);
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("{ not valid json");
+  });
 });

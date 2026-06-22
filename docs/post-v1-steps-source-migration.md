@@ -7,8 +7,10 @@ Phase 6 branch: `codex/post-v1-steps-source-v2`
 This branch starts from the completed `codex/post-v1-refactor` Phase 7 close-out
 state. The first implementation slice added the artifact-first `stepSource`
 adapter boundary and focused tests. The second slice moved `step.listByProject`
-and `step.artifactInfo` reads to the adapter; write routes still use the legacy
-dual-write path.
+and `step.artifactInfo` reads to the adapter. The third slice moved
+`step.update` to the adapter as an artifact-primary write while keeping legacy
+DB text-field mirroring for compatibility; delete/reorder/regenerate still use
+their legacy bridge paths.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.
@@ -84,8 +86,16 @@ Porting rule:
    routes.
 4. Move `step.update` to patch artifact data as the primary write and mirror DB
    text fields only for compatibility. This slice must also define the
-   consistency strategy for DB write failure after artifact save.
-5. Add route-level tests for update/delete/reorder/regenerate behavior.
+   consistency strategy for DB write failure after artifact save. Status:
+   completed for `step.update`; artifact save is the primary commit point and a
+   DB mirror failure is logged without failing the artifact edit. Legacy
+   text-only DB updates remain available when an existing artifact is invalid.
+   DB-only projects are promoted to a compatibility `steps.json` on first
+   update; if that artifact promotion cannot be persisted, the update fails
+   rather than silently writing DB-only state.
+5. Add route-level tests for update/delete/reorder/regenerate behavior. Status:
+   completed for read routes and `step.update`; delete/reorder/regenerate
+   remain pending.
 6. Update `pnpm edit:smoke` expectations only after route tests define the new
    source contract.
 7. Re-run export, eval, and release gates before removing any compatibility

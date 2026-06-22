@@ -12,7 +12,12 @@ import { generateAudioForProject, generateVideo } from "./videoGenerator";
 import { getAvailableVoices, type TTSVoice } from "./_core/tts";
 import { storagePut } from "./storage";
 import { StepAudioModeSchema, invalidateStepsArtifact, patchStepArtifact } from "./stepsArtifact";
-import { buildStepListFromDbRows, listProjectStepsArtifactFirst, loadOrCreateStepsArtifactForProject } from "./stepSource";
+import {
+  buildStepListFromDbRows,
+  listProjectStepsArtifactFirst,
+  loadOrCreateStepsArtifactForProject,
+  updateProjectStepArtifactFirst,
+} from "./stepSource";
 import { invalidateEvidenceArtifact } from "./evidence/artifactStore";
 
 const logger = createLogger("Router");
@@ -370,6 +375,7 @@ export const appRouter = router({
     update: protectedProcedure
       .input(z.object({
         id: z.number(),
+        projectId: z.number().optional(),
         title: z.string().optional(),
         operation: z.string().optional(),
         description: z.string().optional(),
@@ -380,73 +386,8 @@ export const appRouter = router({
         markReviewed: z.literal(true).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        const existingStep = await db.getStepById(id, ctx.user.id);
-        if (!existingStep) {
-          throw new Error("ステップが見つかりません");
-        }
-        // セキュリティ: ユーザーIDによる所有者チェック
-        const dbData = {
-          ...(data.title !== undefined ? { title: data.title } : {}),
-          ...(data.operation !== undefined ? { operation: data.operation } : {}),
-          ...(data.description !== undefined ? { description: data.description } : {}),
-          ...(data.narration !== undefined ? { narration: data.narration } : {}),
-        };
-        const hasArtifactOnlyFields =
-          data.tStart !== undefined ||
-          data.tEnd !== undefined ||
-          data.audioMode !== undefined ||
-          data.markReviewed !== undefined;
-        const hasArtifactSyncFields = Object.keys(dbData).length > 0 || hasArtifactOnlyFields;
-        let artifactPatched = false;
-        if (hasArtifactSyncFields) {
-          artifactPatched = await patchStepArtifact(existingStep.projectId, (artifact) => {
-            let matched = false;
-            const steps = artifact.steps.map((step) => {
-              const matchesLegacyId = step.legacy_step_db_id === id;
-              const matchesSortOrder = step.legacy_step_db_id === undefined && step.sort_order === existingStep.sortOrder;
-              if (!matchesLegacyId && !matchesSortOrder) {
-                return step;
-              }
-              matched = true;
-              const nextTStart = data.tStart ?? step.t_start;
-              const nextTEnd = data.tEnd ?? step.t_end;
-              if ((data.tStart !== undefined || data.tEnd !== undefined) && nextTEnd <= nextTStart) {
-                throw new Error("t_end は t_start より後にしてください");
-              }
-              return {
-                ...step,
-                ...(data.title !== undefined ? { title: data.title } : {}),
-                ...(data.operation !== undefined
-                  ? { operation: data.operation, instruction: data.operation }
-                  : {}),
-                ...(data.description !== undefined
-                  ? { description: data.description, expected_result: data.description }
-                  : {}),
-                ...(data.narration !== undefined ? { narration: data.narration } : {}),
-                t_start: nextTStart,
-                t_end: nextTEnd,
-                ...(data.audioMode !== undefined ? { audio_mode: data.audioMode } : {}),
-                ...(data.markReviewed
-                  ? { needs_review: false, review_reasons: [], warnings: [] }
-                  : {}),
-              };
-            });
-            if (!matched && hasArtifactOnlyFields) {
-              throw new Error("artifactに対象ステップが見つかりませんでした");
-            }
-            if (!matched) {
-              return artifact;
-            }
-            return { ...artifact, steps };
-          });
-        }
-        if (hasArtifactOnlyFields && !artifactPatched) {
-          throw new Error("steps artifactが存在しないため、時刻/音声モード/レビュー状態を保存できません");
-        }
-        if (Object.keys(dbData).length > 0) {
-          await db.updateStep(id, dbData, ctx.user.id);
-        }
+        const { id, projectId, ...data } = input;
+        await updateProjectStepArtifactFirst({ projectId, stepId: id, data }, ctx.user.id);
         return { success: true };
       }),
 

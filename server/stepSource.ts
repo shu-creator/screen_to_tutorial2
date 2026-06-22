@@ -1,4 +1,4 @@
-import type { Frame, Project, Step } from "../drizzle/schema";
+import type { Frame, InsertStep, Project, Step } from "../drizzle/schema";
 import { createLogger } from "./_core/logger";
 import * as db from "./db";
 import {
@@ -35,6 +35,29 @@ export type ArtifactStepUpdate = {
   audioMode?: StepAudioMode;
   markReviewed?: true;
 };
+
+export type UpdateProjectStepResult = {
+  artifactUpdated: boolean;
+  dbUpdated: boolean;
+};
+
+function buildDbStepPatch(data: ArtifactStepUpdate): Partial<InsertStep> {
+  return {
+    ...(data.title !== undefined ? { title: data.title } : {}),
+    ...(data.operation !== undefined ? { operation: data.operation } : {}),
+    ...(data.description !== undefined ? { description: data.description } : {}),
+    ...(data.narration !== undefined ? { narration: data.narration } : {}),
+  };
+}
+
+function hasArtifactOnlyUpdateFields(data: ArtifactStepUpdate): boolean {
+  return (
+    data.tStart !== undefined ||
+    data.tEnd !== undefined ||
+    data.audioMode !== undefined ||
+    data.markReviewed !== undefined
+  );
+}
 
 export function buildStepListFromArtifact(
   projectId: number,
@@ -230,4 +253,92 @@ export async function listProjectStepsArtifactFirst(
     return [];
   }
   return buildStepListFromArtifact(projectId, state.artifact, state.frames);
+}
+
+export async function updateProjectStepArtifactFirst(
+  input: {
+    projectId?: number;
+    stepId: number;
+    data: ArtifactStepUpdate;
+  },
+  userId?: number,
+): Promise<UpdateProjectStepResult> {
+  const existingStep = await db.getStepById(input.stepId, userId);
+  const projectId = input.projectId ?? existingStep?.projectId;
+  if (projectId === undefined) {
+    throw new Error("ステップが見つかりません");
+  }
+  if (existingStep && existingStep.projectId !== projectId) {
+    throw new Error("ステップが見つかりません");
+  }
+
+  const dbData = buildDbStepPatch(input.data);
+  const hasDbFields = Object.keys(dbData).length > 0;
+  const hasArtifactOnlyFields = hasArtifactOnlyUpdateFields(input.data);
+  const hasArtifactFields = hasDbFields || hasArtifactOnlyFields;
+
+  let state: StepSourceState;
+  try {
+    state = await loadOrCreateStepsArtifactForProject(projectId, userId);
+  } catch (error) {
+    if (!hasArtifactOnlyFields && hasDbFields && existingStep) {
+      logger.warn("Invalid steps artifact ignored for legacy DB step update", {
+        projectId,
+        stepId: input.stepId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      await db.updateStep(input.stepId, dbData, userId);
+      return { artifactUpdated: false, dbUpdated: true };
+    }
+    throw error;
+  }
+
+  if (!state.artifact || !hasArtifactFields) {
+    if (hasArtifactOnlyFields) {
+      throw new Error("steps artifactが存在しないため、時刻/音声モード/レビュー状態を保存できません");
+    }
+    if (hasDbFields && existingStep) {
+      await db.updateStep(input.stepId, dbData, userId);
+      return { artifactUpdated: false, dbUpdated: true };
+    }
+    if (!existingStep) {
+      throw new Error("ステップが見つかりません");
+    }
+    return { artifactUpdated: false, dbUpdated: false };
+  }
+
+  const patchResult = patchArtifactStepForUpdate(
+    state.artifact,
+    input.stepId,
+    existingStep?.sortOrder,
+    input.data,
+  );
+  if (!patchResult.matched) {
+    if (hasArtifactOnlyFields) {
+      throw new Error("artifactに対象ステップが見つかりませんでした");
+    }
+    if (hasDbFields && existingStep) {
+      await db.updateStep(input.stepId, dbData, userId);
+      return { artifactUpdated: false, dbUpdated: true };
+    }
+    throw new Error("ステップが見つかりません");
+  }
+
+  await saveStepsArtifact(projectId, patchResult.artifact);
+
+  let dbUpdated = false;
+  if (hasDbFields && existingStep) {
+    try {
+      await db.updateStep(input.stepId, dbData, userId);
+      dbUpdated = true;
+    } catch (error) {
+      logger.warn("Failed to mirror artifact-first step update into DB", {
+        projectId,
+        stepId: input.stepId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { artifactUpdated: true, dbUpdated };
 }

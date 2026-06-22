@@ -648,7 +648,7 @@ export default function ProjectDetail() {
 
   const handleUpdateStep = async (stepId: number, data: StepUpdateData) => {
     try {
-      await updateStepMutation.mutateAsync({ id: stepId, ...data });
+      await updateStepMutation.mutateAsync({ projectId, id: stepId, ...data });
       toast.success("ステップを更新しました");
       refetchSteps();
       refetchArtifactInfo();
