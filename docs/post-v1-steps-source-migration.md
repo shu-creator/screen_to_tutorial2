@@ -21,6 +21,10 @@ malformed artifacts, while edit routes remain strict and refuse to silently
 overwrite invalid `steps.json`. Audio generation may replace a malformed
 artifact with a DB compatibility artifact before patching generated audio URLs;
 slide/video rendering can use the same fallback without mutating the artifact.
+The seventh slice moved `pnpm edit:smoke` from direct DB/artifact writes to the
+artifact-primary step adapter so the smoke now checks the same edit source
+contract as the UI route implementation, while still restoring the original DB
+and artifact state after verification.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.
@@ -108,9 +112,9 @@ Porting rule:
    `step.reorder`; `step.regenerate` is completed for artifact-primary route
    behavior.
 6. Update `pnpm edit:smoke` expectations only after route tests define the new
-   source contract. Status: no expectation change required yet; edit smoke
-   remains the DB/artifact compatibility check, while export paths now share the
-   `stepSource` render loader.
+   source contract. Status: completed; edit smoke now edits through the
+   artifact-primary step adapter, asserts adapter artifact/DB mirror results,
+   verifies DB/artifact sync, and restores original state by re-read.
 7. Re-run export, eval, and release gates before removing any compatibility
    fallback. Status: completed for slide generation, audio generation, video
    generation, and `project:export` expected-step counting. Render paths use a

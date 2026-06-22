@@ -125,7 +125,8 @@ pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true 
 
 ## 5. 評価と出力QA
 
-生成済みprojectで編集内容がDBと `steps.json` artifactに同期されることを確認する:
+生成済みprojectでartifact-primary step adapter経由の編集内容がDBと
+`steps.json` artifactに同期されることを確認する:
 
 ```bash
 pnpm edit:smoke -- --project-id <id> --outdir ./outputs/edit-smoke
@@ -136,7 +137,7 @@ pnpm edit:smoke -- --project-id <id> --outdir ./outputs/edit-smoke
 - `outputs/edit-smoke/project_<id>_edit_smoke_summary.json` が生成される
 - `pass` が `true`
 - `restored_after_check` が `true`、`restore_error` が `null`
-- `checks` でDB stepのタイトル、操作、説明、ナレーションと、artifactのタイトル、操作、説明、ナレーション、`t_start` / `t_end`、ステップ音声モード、レビュー済み状態がすべてpass
+- `checks` でadapter更新結果、DB stepのタイトル、操作、説明、ナレーションと、artifactのタイトル、操作、説明、ナレーション、`t_start` / `t_end`、ステップ音声モード、レビュー済み状態がすべてpass
 
 ローカルに評価用 `video.mp4` と `eval/results/generated/<case-id>/steps.json` がある場合:
 

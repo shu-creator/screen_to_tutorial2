@@ -261,12 +261,12 @@ Decision:
 Current source-of-truth map:
 
 - `steps.json` v2 owns rich generated metadata: overview, timing, representative frames, evidence links, review reasons, warnings, confidence, audio mode, and artifact audio references.
-- DB `steps` owns current UI list compatibility and legacy DB IDs.
+- DB `steps` remains the legacy compatibility index and ID bridge.
 - `legacy_step_db_id` bridges the two layers.
-- Slide generation, video generation, CLI pipeline export, and project export prefer artifact data where possible.
-- UI list/edit routes still depend on DB rows, with artifact metadata layered in through `step.artifactInfo` and `step.update` dual-write behavior.
-- `step.update` dual-write is not atomic across artifact storage and DB; Phase 6 must either collapse edits to one writer or add consistency recovery.
-- Edit smoke verifies DB/artifact storage sync, artifact timing/audio-mode edits, review-state clearing, and restoration by re-read, but it does not exercise the tRPC/UI `step.update` route or every delete/reorder/regenerate/migration edge case.
+- UI list/read/edit/delete/reorder/regenerate routes now use the artifact-first `stepSource` adapter with DB mirror/fallback behavior where documented.
+- Slide generation, video generation, CLI pipeline export, and project export prefer artifact data where possible; project export now shares the `stepSource` render loader for expected-step counting.
+- `step.update` uses artifact save as the primary commit point and mirrors DB text fields for compatibility; DB mirror failure is logged without hiding the artifact update.
+- Edit smoke verifies the artifact-primary step adapter result, DB/artifact storage sync, artifact timing/audio-mode edits, review-state clearing, and restoration by re-read. It still does not exercise every delete/reorder/regenerate/migration edge case.
 
 Validation result:
 

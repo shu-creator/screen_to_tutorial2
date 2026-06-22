@@ -354,7 +354,7 @@ pnpm g4:record -- --case <case-id> --reviewer <name> --reviewed-at YYYY-MM-DD --
 - `v1:fresh-env-smoke -- --preflight-only` の出力: fresh-env本実行前の前提確認（動画、clean worktree、`DATABASE_URL`、workdir）。依存インストールやsummary生成はしない。
 - `v1:fresh-env-smoke` の出力: `./outputs/v1-fresh-env-smoke/v1_smoke_summary.json`（HEADから作った一時チェックアウト、依存インストール、v1通しスモークの証跡）
 - `project:export` の出力: `./outputs/project-export/project_<id>_export_summary.json`（PPTX/MP4のstorage URL、ローカルpath、bytes、PPTX内画像/placeholderの `content_check`、`requested_audio_mode`、warnings、`still_image_fallback_count`）
-- `edit:smoke` の出力: `./outputs/edit-smoke/project_<id>_edit_smoke_summary.json`（DB stepのタイトル/説明/ナレーションと、`steps.json` のタイトル/説明/ナレーション/`t_start`/`t_end`/音声モード/レビュー済み状態の同期確認。実行後に元データへ復元）
+- `edit:smoke` の出力: `./outputs/edit-smoke/project_<id>_edit_smoke_summary.json`（artifact-primary step adapter経由で一時編集し、adapter更新結果、DB stepのタイトル/説明/ナレーション、`steps.json` のタイトル/説明/ナレーション/`t_start`/`t_end`/音声モード/レビュー済み状態の同期を確認。実行後に元データへ復元）
 - 追加オプション: `--cache-dir`, `--threshold`, `--min-interval`, `--max-frames`, `--debug`
 - `eval:export-case` の出力: `eval/results/export-qa/<case-id>/`（PPTX、MP4、`qa-summary.json`。`eval/results/` はgitignore対象）
 - `g4:review-pack` の出力: `outputs/g4-review-packets/<case-id>.md`（人間レビュー用の作業シート。`human_review` G4記録は書かない）
