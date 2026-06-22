@@ -11,8 +11,10 @@ type Options = {
   cases: string[];
   outdir: string;
   overwrite: boolean;
+  dryRun: boolean;
   releaseCandidates: boolean;
-  limit: number;
+  missingHumanReview: boolean;
+  limit: number | null;
 };
 
 type StepsArtifact = {
@@ -98,13 +100,21 @@ export type ReviewPack = {
   outPath: string;
 };
 
-function parseArgs(argv: string[]): Options {
+type ReviewPackWriteOptions = {
+  overwrite: boolean;
+  dryRun: boolean;
+  log?: (message: string) => void;
+};
+
+export function parseArgs(argv: string[]): Options {
   const options: Options = {
     cases: [],
     outdir: defaultOutdir,
     overwrite: false,
+    dryRun: false,
     releaseCandidates: false,
-    limit: 2,
+    missingHumanReview: false,
+    limit: null,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -120,8 +130,12 @@ function parseArgs(argv: string[]): Options {
       i += 1;
     } else if (arg === "--overwrite") {
       options.overwrite = true;
+    } else if (arg === "--dry-run") {
+      options.dryRun = true;
     } else if (arg === "--release-candidates") {
       options.releaseCandidates = true;
+    } else if (arg === "--missing-human-review") {
+      options.missingHumanReview = true;
     } else if (arg === "--limit") {
       options.limit = parseLimit(requireValue(arg, next));
       i += 1;
@@ -133,13 +147,49 @@ function parseArgs(argv: string[]): Options {
     }
   }
 
-  if (options.cases.length === 0 && !options.releaseCandidates) {
-    throw new Error("--case is required at least once, unless --release-candidates is used");
+  const selectorCount = Number(options.releaseCandidates) + Number(options.missingHumanReview);
+  if (options.cases.length === 0 && selectorCount === 0) {
+    throw new Error("--case is required at least once, unless a selector option is used");
   }
-  if (options.cases.length > 0 && options.releaseCandidates) {
-    throw new Error("--case and --release-candidates cannot be combined");
+  if (options.cases.length > 0 && selectorCount > 0) {
+    throw new Error("--case cannot be combined with selector options");
+  }
+  if (selectorCount > 1) {
+    throw new Error("selector options cannot be combined");
   }
   return options;
+}
+
+export function emptySelectionMessage(options: Pick<Options, "missingHumanReview">): string | null {
+  if (options.missingHumanReview) {
+    return "no real generated cases without human_review G4 found";
+  }
+  return null;
+}
+
+export function resolveSelectedCases(
+  options: Pick<Options, "releaseCandidates" | "missingHumanReview" | "cases">,
+  releaseCandidateCases: string[],
+  missingHumanReviewCases: string[],
+  log: (message: string) => void = console.log,
+): string[] {
+  if (options.releaseCandidates) {
+    if (releaseCandidateCases.length === 0) {
+      throw new Error("no release candidate cases found from eval/results/export-qa");
+    }
+    return releaseCandidateCases;
+  }
+
+  if (options.missingHumanReview) {
+    if (missingHumanReviewCases.length === 0) {
+      const message = emptySelectionMessage(options);
+      if (message) log(message);
+      return [];
+    }
+    return missingHumanReviewCases;
+  }
+
+  return options.cases;
 }
 
 function requireValue(arg: string, value: string | undefined): string {
@@ -155,10 +205,12 @@ function parseLimit(value: string): number {
 
 function printHelp(): void {
   console.log(`Usage:
-  pnpm g4:review-pack -- --case <case-id> [--case <case-id> ...] [--outdir outputs/g4-review-packets] [--overwrite]
-  pnpm g4:review-pack -- --release-candidates [--limit 2] [--outdir outputs/g4-review-packets] [--overwrite]
+  pnpm g4:review-pack -- --case <case-id> [--case <case-id> ...] [--outdir outputs/g4-review-packets] [--dry-run] [--overwrite]
+  pnpm g4:review-pack -- --release-candidates [--limit 2] [--outdir outputs/g4-review-packets] [--dry-run] [--overwrite]
+  pnpm g4:review-pack -- --missing-human-review [--limit N] [--outdir outputs/g4-review-packets] [--dry-run] [--overwrite]
 
 This command creates Markdown worksheets for human G4 review.
+With --dry-run, it prints the selected cases and output paths without writing worksheets.
 It never writes human_review G4 records; use pnpm g4:record after a real human review.
 `);
 }
@@ -295,6 +347,30 @@ export async function selectReleaseCandidateCases(limit = 2, roots?: Partial<Can
   return candidates.sort().slice(0, limit);
 }
 
+export async function selectMissingHumanReviewCases(
+  limit = Number.MAX_SAFE_INTEGER,
+  roots?: { datasetRoot?: string; generatedRoot?: string; recordsDir?: string },
+): Promise<string[]> {
+  const datasetRoot = roots?.datasetRoot ?? path.join(repoRoot, "eval", "dataset");
+  const generatedRoot = roots?.generatedRoot ?? path.join(repoRoot, "eval", "results", "generated");
+  const g4RecordsDir = roots?.recordsDir ?? path.join(repoRoot, "eval", "g4", "records");
+  const realCaseIds = await readRealCaseIds(datasetRoot);
+  const candidates: string[] = [];
+
+  for (const caseId of Array.from(realCaseIds)) {
+    try {
+      validateCaseId(caseId);
+    } catch {
+      continue;
+    }
+    if (!(await fileExists(path.join(generatedRoot, caseId, "steps.json")))) continue;
+    if (await isHumanReviewRecorded(caseId, g4RecordsDir)) continue;
+    candidates.push(caseId);
+  }
+
+  return candidates.sort().slice(0, limit);
+}
+
 export async function buildReviewPack(caseId: string, outdir = defaultOutdir): Promise<ReviewPack> {
   validateCaseId(caseId);
   const outPath = path.join(resolveRepoPath(outdir), `${caseId}.md`);
@@ -415,21 +491,47 @@ export async function writeReviewPack(pack: ReviewPack, overwrite: boolean): Pro
   await fs.writeFile(pack.outPath, pack.markdown);
 }
 
+export async function writeOrPreviewReviewPack(
+  pack: ReviewPack,
+  options: ReviewPackWriteOptions,
+): Promise<"dry-run" | "written"> {
+  const log = options.log ?? console.log;
+  if (options.dryRun) {
+    log(`G4 review packet dry-run: ${pack.caseId} -> ${rel(pack.outPath)}`);
+    return "dry-run";
+  }
+  await writeReviewPack(pack, options.overwrite);
+  log(`G4 review packet written: ${rel(pack.outPath)}`);
+  return "written";
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   assertOutdir(options.outdir);
-  const candidateCases = options.releaseCandidates ? await selectReleaseCandidateCases(options.limit) : [];
-  const cases = options.releaseCandidates ? candidateCases : options.cases;
-  if (options.releaseCandidates && candidateCases.length === 0) {
-    throw new Error("no release candidate cases found from eval/results/export-qa");
+  if (options.dryRun && options.overwrite) {
+    console.warn("warning: --overwrite has no effect with --dry-run");
   }
-  if (options.releaseCandidates && candidateCases.length < options.limit) {
-    console.warn(`warning: selected ${candidateCases.length}/${options.limit} release candidate cases`);
+  const releaseCandidateLimit = options.limit ?? 2;
+  const missingHumanReviewLimit = options.limit ?? Number.MAX_SAFE_INTEGER;
+  const releaseCandidateCases = options.releaseCandidates
+    ? await selectReleaseCandidateCases(releaseCandidateLimit)
+    : [];
+  const missingHumanReviewCases = options.missingHumanReview
+    ? await selectMissingHumanReviewCases(missingHumanReviewLimit)
+    : [];
+  const cases = resolveSelectedCases(options, releaseCandidateCases, missingHumanReviewCases);
+  if (cases.length === 0) {
+    return;
+  }
+  if (options.releaseCandidates && releaseCandidateCases.length < releaseCandidateLimit) {
+    console.warn(`warning: selected ${releaseCandidateCases.length}/${releaseCandidateLimit} release candidate cases`);
+  }
+  if (options.missingHumanReview && options.limit !== null && missingHumanReviewCases.length < options.limit) {
+    console.warn(`warning: selected ${missingHumanReviewCases.length}/${options.limit} missing-human-review cases`);
   }
   for (const caseId of cases) {
     const pack = await buildReviewPack(caseId, options.outdir);
-    await writeReviewPack(pack, options.overwrite);
-    console.log(`G4 review packet written: ${rel(pack.outPath)}`);
+    await writeOrPreviewReviewPack(pack, options);
   }
 }
 

@@ -3,9 +3,12 @@
 ステータス: 実装済み（2026-06-12）。実装メモ:
 - `server/authoring/`（digest / author / verification）として実装。LLM呼び出しはチャンク数回のみ
 - 機械検証・フォールバック・チャンク執筆・暫定overview引き継ぎ・retry時のartifact無効化まで実装済み
-- LLM部分はモック（vi.mock）でテスト（24件）。**実LLMでの出力品質確認とG1/G2/G3の実測は実データ待ち**
-  （APIキー設定後に `pnpm pipeline:generate` → `pnpm eval` で実施。受け入れ基準の品質項目は未消化）
-- confidence式の係数較正（実G2との相関確認）も実データ待ち
+- LLM部分はモック（vi.mock）でテストし、v1.0.0時点では実録画5ケースの `pnpm eval:quality-gate` がPASS
+- confidence式の係数較正（実G2との相関確認）はpost-v1の改善対象
+
+## Historical Notes
+
+- 2026-06-12時点では、実LLMでの出力品質確認、G1/G2/G3の実測、confidence式の係数較正は実データ待ちだった。
 
 規模: L（PR 2本に分割推奨）
 依存: Phase 1（evidence.json が入力契約）

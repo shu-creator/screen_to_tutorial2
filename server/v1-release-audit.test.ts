@@ -12,6 +12,7 @@ import {
 } from "../scripts/v1-fresh-env-smoke";
 import {
   assessHumanG4,
+  checkPhase6SourceContract,
   assessQualityGate,
   assessQualityGateError,
   buildReleaseCheckTasks,
@@ -63,6 +64,79 @@ function qualityGateResult(overrides: Partial<QualityGateResult> = {}): QualityG
   };
 }
 
+function requiredSmokeChecks() {
+  return [
+    "setup.check",
+    "pipeline.generate",
+    "steps.version",
+    "steps.count",
+    "steps.fallback_reasons",
+    "project.export",
+    "export.slide.bytes",
+    "export.slide.content_check",
+    "export.video.bytes",
+    "export.video.still_image_fallback_count",
+    "edit.smoke",
+    "edit.summary",
+    "edit.adapter.artifactUpdated",
+    "edit.adapter.dbUpdated",
+  ].map((name) => ({ name, pass: true }));
+}
+
+function editSmokeSummary(overrides: Record<string, unknown> = {}) {
+  return {
+    project_id: 1,
+    pass: true,
+    restored_after_check: true,
+    restore_error: null,
+    checks: [
+      { name: "adapter.artifactUpdated", pass: true },
+      { name: "adapter.dbUpdated", pass: true },
+    ],
+    ...overrides,
+  };
+}
+
+async function writeSourceContractFixture(root: string, overrides: Record<string, string> = {}) {
+  const files: Record<string, string> = {
+    "server/routers.ts": [
+      "async function routes() {",
+      "  await listProjectStepsArtifactFirst(projectId, userId);",
+      "  await loadOrCreateStepsArtifactForProject(projectId, userId);",
+      "  await updateProjectStepArtifactFirst(input, userId);",
+      "  await deleteProjectStepArtifactFirst(input, userId);",
+      "  await regenerateProjectStepArtifactFirst(input, userId);",
+      "  await reorderProjectStepsArtifactFirst(input, userId);",
+      "}",
+    ].join("\n"),
+    "server/slideGenerator.ts": "async function render() { await loadProjectStepRenderState(projectId); }",
+    "server/videoGenerator.ts": "async function render() { await loadProjectStepRenderState(projectId); }",
+    "scripts/export-project.ts": "async function inspect() { await loadProjectStepRenderState(projectId); }",
+    "scripts/edit-artifact-smoke.ts": "async function smoke() { await updateProjectStepArtifactFirst(input); }",
+    "server/stepSource.ts": [
+      "function artifactContainsStepTarget() { return true; }",
+      "async function update() {",
+      "  if (!patchResult.matched) { throw new Error('missing'); }",
+      "}",
+      "async function remove() {",
+      "  if (!deleted.matched) { throw new Error('missing'); }",
+      "}",
+      "async function reorder() {",
+      "  if (!reordered.matched) { throw new Error('missing'); }",
+      "}",
+      "async function regenerate() {",
+      "  if (!matched) { throw new Error('missing'); }",
+      "}",
+    ].join("\n"),
+    ...overrides,
+  };
+  for (const [relativePath, source] of Object.entries(files)) {
+    const filePath = path.join(root, relativePath);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, source);
+  }
+}
+
 describe("v1 release audit", () => {
   it("--allow-incomplete does not suppress fail checks", () => {
     const incompleteOnly = {
@@ -90,7 +164,7 @@ describe("v1 release audit", () => {
       pass: true,
       project_id: 1,
       metrics: { step_count: 1, fallback_reason_count: 0 },
-      checks: [{ name: "setup.check", pass: true }],
+      checks: requiredSmokeChecks(),
     }));
 
     const result = await checkV1Smoke(summaryPath, "smoke.test", false);
@@ -117,6 +191,87 @@ describe("v1 release audit", () => {
     expect(result.detail).toContain("missing summary");
   });
 
+  it("fails stale smoke evidence without the Phase 6 adapter checks", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    const stepsPath = path.join(tempDir, "steps.json");
+    const exportPath = path.join(tempDir, "export.json");
+    const editPath = path.join(tempDir, "edit.json");
+    const summaryPath = path.join(tempDir, "v1_smoke_summary.json");
+    await fs.writeFile(stepsPath, "{}");
+    await fs.writeFile(exportPath, "{}");
+    await fs.writeFile(editPath, JSON.stringify(editSmokeSummary()));
+    await fs.writeFile(summaryPath, JSON.stringify({
+      pass: true,
+      project_id: 1,
+      artifacts: {
+        steps: stepsPath,
+        export_summary: exportPath,
+        edit_smoke_summary: editPath,
+      },
+      metrics: { step_count: 1, fallback_reason_count: 0 },
+      checks: requiredSmokeChecks().filter((check) => !check.name.startsWith("edit.adapter.")),
+    }));
+
+    const result = await checkV1Smoke(summaryPath, "smoke.test", false);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("missing required checks: edit.adapter.artifactUpdated, edit.adapter.dbUpdated");
+  });
+
+  it("fails stale edit-smoke artifacts without nested adapter checks", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    const stepsPath = path.join(tempDir, "steps.json");
+    const exportPath = path.join(tempDir, "export.json");
+    const editPath = path.join(tempDir, "edit.json");
+    const summaryPath = path.join(tempDir, "v1_smoke_summary.json");
+    await fs.writeFile(stepsPath, "{}");
+    await fs.writeFile(exportPath, "{}");
+    await fs.writeFile(editPath, JSON.stringify(editSmokeSummary({ checks: [] })));
+    await fs.writeFile(summaryPath, JSON.stringify({
+      pass: true,
+      project_id: 1,
+      artifacts: {
+        steps: stepsPath,
+        export_summary: exportPath,
+        edit_smoke_summary: editPath,
+      },
+      metrics: { step_count: 1, fallback_reason_count: 0 },
+      checks: requiredSmokeChecks(),
+    }));
+
+    const result = await checkV1Smoke(summaryPath, "smoke.test", false);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("edit_smoke_summary missing required checks: adapter.artifactUpdated, adapter.dbUpdated");
+  });
+
+  it("fails edit-smoke artifacts from a different project", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    const stepsPath = path.join(tempDir, "steps.json");
+    const exportPath = path.join(tempDir, "export.json");
+    const editPath = path.join(tempDir, "edit.json");
+    const summaryPath = path.join(tempDir, "v1_smoke_summary.json");
+    await fs.writeFile(stepsPath, "{}");
+    await fs.writeFile(exportPath, "{}");
+    await fs.writeFile(editPath, JSON.stringify(editSmokeSummary({ project_id: 999 })));
+    await fs.writeFile(summaryPath, JSON.stringify({
+      pass: true,
+      project_id: 1,
+      artifacts: {
+        steps: stepsPath,
+        export_summary: exportPath,
+        edit_smoke_summary: editPath,
+      },
+      metrics: { step_count: 1, fallback_reason_count: 0 },
+      checks: requiredSmokeChecks(),
+    }));
+
+    const result = await checkV1Smoke(summaryPath, "smoke.test", false);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("edit_smoke_summary project_id=999 does not match summary project_id=1");
+  });
+
   it("requires fresh checkout metadata for fresh-env smoke evidence", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
     const stepsPath = path.join(tempDir, "steps.json");
@@ -125,7 +280,7 @@ describe("v1 release audit", () => {
     const summaryPath = path.join(tempDir, "v1_smoke_summary.json");
     await fs.writeFile(stepsPath, "{}");
     await fs.writeFile(exportPath, "{}");
-    await fs.writeFile(editPath, "{}");
+    await fs.writeFile(editPath, JSON.stringify(editSmokeSummary()));
     await fs.writeFile(summaryPath, JSON.stringify({
       pass: true,
       project_id: 1,
@@ -136,7 +291,7 @@ describe("v1 release audit", () => {
         edit_smoke_summary: editPath,
       },
       metrics: { step_count: 1, fallback_reason_count: 0 },
-      checks: [{ name: "setup.check", pass: true }],
+      checks: requiredSmokeChecks(),
     }));
 
     const result = await checkV1Smoke(summaryPath, "smoke.fresh", true);
@@ -153,7 +308,7 @@ describe("v1 release audit", () => {
     const summaryPath = path.join(tempDir, "v1_smoke_summary.json");
     await fs.writeFile(stepsPath, "{}");
     await fs.writeFile(exportPath, "{}");
-    await fs.writeFile(editPath, "{}");
+    await fs.writeFile(editPath, JSON.stringify(editSmokeSummary()));
     await fs.writeFile(summaryPath, JSON.stringify({
       pass: true,
       project_id: 1,
@@ -164,7 +319,7 @@ describe("v1 release audit", () => {
         edit_smoke_summary: editPath,
       },
       metrics: { step_count: 1, fallback_reason_count: 0 },
-      checks: [{ name: "setup.check", pass: true }],
+      checks: requiredSmokeChecks(),
       environment: {
         kind: "fresh_checkout",
         source_commit: "abc1234def5678",
@@ -209,6 +364,7 @@ describe("v1 release audit", () => {
       "model.default",
       "eval.readiness",
       "eval.quality_gate",
+      "phase6.source_contract",
       "smoke.current_environment",
       "export.qa",
       "g4.human_review",
@@ -257,6 +413,7 @@ describe("v1 release audit", () => {
       "export.qa",
       "eval.quality_gate",
       "eval.readiness",
+      "phase6.source_contract",
       "model.default",
       "release.docs",
     ]) {
@@ -358,6 +515,131 @@ describe("v1 release audit", () => {
       status: "fail",
       detail: "runQualityGate threw: missing baseline.json",
     });
+  });
+
+  it("passes when Phase 6 source-contract entrypoints still use the step adapter", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir);
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result).toEqual({
+      name: "phase6.source_contract",
+      status: "pass",
+      detail: "routers, render/export paths, edit smoke, and unmatched edit branches retain the stepSource artifact-primary contract",
+    });
+  });
+
+  it("fails when a Phase 6 source-contract entrypoint drops the adapter", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir, {
+      "server/routers.ts": [
+        "async function routes() {",
+        "  await listProjectStepsArtifactFirst(projectId, userId);",
+        "  await loadOrCreateStepsArtifactForProject(projectId, userId);",
+        "  await updateProjectStepArtifactFirst(input, userId);",
+        "  await deleteProjectStepArtifactFirst(input, userId);",
+        "  await reorderProjectStepsArtifactFirst(input, userId);",
+        "}",
+      ].join("\n"),
+    });
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("server/routers.ts missing call regenerateProjectStepArtifactFirst()");
+  });
+
+  it("fails when unmatched artifact edit branches reintroduce DB writes", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir, {
+      "server/stepSource.ts": [
+        "function artifactContainsStepTarget() { return true; }",
+        "async function update() {",
+        "  if (!patchResult.matched) {",
+        "    await db.updateStep(stepId, data, userId);",
+        "    await db.createStep(data);",
+        "    return { artifactUpdated: false, dbUpdated: true };",
+        "  }",
+        "}",
+        "async function remove() {",
+        "  if (!deleted.matched) {",
+        "    await db.deleteStep(stepId, userId);",
+        "  }",
+        "}",
+        "async function reorder() {",
+        "  if (!reordered.matched) {",
+        "    await db.reorderSteps(projectId, stepIds);",
+        "  }",
+        "}",
+        "async function regenerate() {",
+        "  if (!matched) {",
+        "    await db.updateStep(stepId, data, userId);",
+        "  }",
+        "}",
+      ].join("\n"),
+    });
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("forbidden=");
+    expect(result.detail).toContain("!patchResult.matched contains db.updateStep(), db.createStep()");
+    expect(result.detail).toContain("!deleted.matched contains db.deleteStep()");
+    expect(result.detail).toContain("!reordered.matched contains db.reorderSteps()");
+    expect(result.detail).toContain("!matched contains db.updateStep()");
+  });
+
+  it("fails when missing legacy ids can be matched by sort_order for writes", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir, {
+      "server/stepSource.ts": [
+        "async function update() {",
+        "  const matchesTarget = step.legacy_step_db_id === stepId ||",
+        "    (step.legacy_step_db_id === undefined && step.sort_order === sortOrder);",
+        "  return matchesTarget;",
+        "}",
+      ].join("\n"),
+    });
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("sort_order write fallback for missing legacy_step_db_id");
+  });
+
+  it("fails when missing legacy id sort_order fallbacks use equivalent syntax", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir, {
+      "server/stepSource.ts": [
+        "async function update() {",
+        "  const matchesTarget = step['legacy_step_db_id'] == null && step['sort_order'] == sortOrder;",
+        "  const matchesAgain = typeof step.legacy_step_db_id === 'undefined' && step.sort_order === fallbackOrder;",
+        "  return matchesTarget || matchesAgain;",
+        "}",
+      ].join("\n"),
+    });
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("sort_order write fallback for missing legacy_step_db_id");
+  });
+
+  it("does not count imports or comments as Phase 6 source-contract calls", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir, {
+      "scripts/edit-artifact-smoke.ts": [
+        "import { updateProjectStepArtifactFirst } from '../server/stepSource';",
+        "// updateProjectStepArtifactFirst(input) should be used by the smoke.",
+        "async function smoke() { return true; }",
+      ].join("\n"),
+    });
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("scripts/edit-artifact-smoke.ts missing call updateProjectStepArtifactFirst()");
   });
 
   it("formats quality-gate errors consistently", () => {

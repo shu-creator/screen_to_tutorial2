@@ -74,7 +74,7 @@ pnpm v1:smoke -- --video ./sample.mp4 --outdir ./outputs/v1-smoke --use-audio fa
 
 - `outputs/v1-smoke/v1_smoke_summary.json` が生成される
 - `pass` が `true`
-- `checks` の `setup.check`、`pipeline.generate`、`steps.version`、`steps.count`、`steps.fallback_reasons`、`project.export`、`export.slide.bytes`、`export.slide.content_check`、`export.video.bytes`、`export.video.still_image_fallback_count`、`edit.smoke`、`edit.summary` がすべてpass
+- `checks` の `setup.check`、`pipeline.generate`、`steps.version`、`steps.count`、`steps.fallback_reasons`、`project.export`、`export.slide.bytes`、`export.slide.content_check`、`export.video.bytes`、`export.video.still_image_fallback_count`、`edit.smoke`、`edit.summary`、`edit.adapter.artifactUpdated`、`edit.adapter.dbUpdated` がすべてpass
 - `artifacts.steps`、`artifacts.export_summary`、`artifacts.edit_smoke_summary` が存在する
 
 依存インストールを伴うfresh checkout検証の前に、承認不要の前提確認だけを実行する:
@@ -88,8 +88,14 @@ preflightは入力動画、tracked worktreeのclean状態、`DATABASE_URL`、指
 個別に生成だけを確認する場合:
 
 ```bash
+pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio false --asr-provider none --ocr-provider llm --preflight
 pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio false --asr-provider none --ocr-provider llm
 ```
+
+`pipeline:generate --preflight` はoutdir作成、DB project作成、source video
+storage、evidence処理、`steps.json` 出力の前に終了する書き込みなし確認である。
+既存の `--dry-run` はno-writeではなく、outdir作成、CLI user/project作成と
+source video storage後に処理だけをスキップする。
 
 完了条件:
 
@@ -119,7 +125,8 @@ pnpm pipeline:generate --video ./sample.mp4 --outdir ./outputs --use-audio true 
 
 ## 5. 評価と出力QA
 
-生成済みprojectで編集内容がDBと `steps.json` artifactに同期されることを確認する:
+生成済みprojectでartifact-primary step adapter経由の編集内容がDBと
+`steps.json` artifactに同期されることを確認する:
 
 ```bash
 pnpm edit:smoke -- --project-id <id> --outdir ./outputs/edit-smoke
@@ -130,7 +137,7 @@ pnpm edit:smoke -- --project-id <id> --outdir ./outputs/edit-smoke
 - `outputs/edit-smoke/project_<id>_edit_smoke_summary.json` が生成される
 - `pass` が `true`
 - `restored_after_check` が `true`、`restore_error` が `null`
-- `checks` でDB stepのタイトル、操作、説明、ナレーションと、artifactのタイトル、操作、説明、ナレーション、`t_start` / `t_end`、ステップ音声モード、レビュー済み状態がすべてpass
+- `checks` でadapter更新結果、DB stepのタイトル、操作、説明、ナレーションと、artifactのタイトル、操作、説明、ナレーション、`t_start` / `t_end`、ステップ音声モード、レビュー済み状態がすべてpass
 
 ローカルに評価用 `video.mp4` と `eval/results/generated/<case-id>/steps.json` がある場合:
 

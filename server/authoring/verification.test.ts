@@ -40,6 +40,18 @@ describe("verifyCitedLabels", () => {
     expect(result.verified).toEqual(["ＯＫ"]);
   });
 
+  it("cited_ui_labels の外側引用符を照合時に吸収する", () => {
+    const result = verifyCitedLabels(["「保存」"], [segment(["保存"])]);
+    expect(result.verified).toEqual(["「保存」"]);
+    expect(result.unverified).toEqual([]);
+  });
+
+  it("末尾の動的件数サフィックスを照合時に吸収する", () => {
+    const result = verifyCitedLabels(["ステップ (0)"], [segment(["ステップ"])]);
+    expect(result.verified).toEqual(["ステップ (0)"]);
+    expect(result.unverified).toEqual([]);
+  });
+
   it("ocr_focus も照合対象に含める", () => {
     const result = verifyCitedLabels(["設定"], [segment([], ["設定"])]);
     expect(result.verified).toEqual(["設定"]);
@@ -125,5 +137,7 @@ describe("computeCalibratedConfidence / needsReview", () => {
 
   it("normalizeLabel は eval/metrics.ts と同一規則", () => {
     expect(normalizeLabel("Ｏ Ｋ")).toBe("ok");
+    expect(normalizeLabel("「保存」")).toBe("保存");
+    expect(normalizeLabel("ステップ (12)")).toBe("ステップ");
   });
 });

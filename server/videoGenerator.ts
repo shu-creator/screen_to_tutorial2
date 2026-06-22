@@ -10,13 +10,11 @@ import { generateSpeechForLongText, type TTSVoice } from "./_core/tts";
 import { ENV } from "./_core/env";
 import { createTempFilePath, createTempDir, safeTempFileDelete, safeTempDirDelete } from "./tempFileManager";
 import {
-  buildLegacyRenderableStepsFromArtifact,
-  buildStepsArtifactFromDb,
-  loadStepsArtifact,
   patchStepArtifact,
   saveStepsArtifact,
   type StepArtifact,
 } from "./stepsArtifact";
+import { loadProjectStepRenderState } from "./stepSource";
 import { loadEvidenceArtifact } from "./evidence/artifactStore";
 import { getVideoDurationMs } from "./evidence/timeline";
 import {
@@ -31,50 +29,6 @@ import {
 } from "./videoClips";
 
 const execFileAsync = promisify(execFile);
-
-type RenderableStep = {
-  id: number;
-  frameId: number;
-  sortOrder: number;
-  title: string;
-  operation: string;
-  description: string;
-  narration: string | null;
-  audioUrl: string | null;
-  audioKey: string | null;
-};
-
-async function loadRenderableStepsForProject(
-  projectId: number,
-): Promise<{
-  steps: RenderableStep[];
-  frames: Awaited<ReturnType<typeof db.getFramesByProjectId>>;
-}> {
-  const frames = await db.getFramesByProjectId(projectId);
-  const dbSteps = await db.getStepsByProjectId(projectId);
-  const project = await db.getProjectById(projectId);
-
-  let steps: RenderableStep[] = dbSteps.map((step) => ({
-    id: step.id,
-    frameId: step.frameId,
-    sortOrder: step.sortOrder,
-    title: step.title,
-    operation: step.operation,
-    description: step.description,
-    narration: step.narration ?? "",
-    audioUrl: step.audioUrl ?? null,
-    audioKey: step.audioKey ?? null,
-  }));
-
-  const artifact = await loadStepsArtifact(projectId);
-  if (artifact && artifact.steps.length > 0) {
-    steps = buildLegacyRenderableStepsFromArtifact(projectId, artifact, frames);
-  } else if (project && dbSteps.length > 0) {
-    await saveStepsArtifact(projectId, buildStepsArtifactFromDb(project, frames, dbSteps));
-  }
-
-  return { steps, frames };
-}
 
 /**
  * ffprobeを使用して音声ファイルの長さ（秒）を取得
@@ -155,7 +109,24 @@ export async function generateAudioForProject(
 ): Promise<{ silentFallbackCount: number }> {
   console.log(`[VideoGenerator] Starting audio generation for project ${projectId} with voice: ${voice}`);
 
-  const { steps } = await loadRenderableStepsForProject(projectId);
+  const renderState = await loadProjectStepRenderState(projectId, undefined, {
+    invalidArtifactFallback: true,
+  });
+  const { steps } = renderState;
+  for (const warning of renderState.warnings) {
+    console.warn(`[VideoGenerator] ${warning}`);
+  }
+  if (renderState.source === "db_steps" && renderState.artifact && renderState.invalidArtifactFallbackUsed) {
+    try {
+      await saveStepsArtifact(projectId, renderState.artifact);
+      console.warn("[VideoGenerator] Replaced invalid steps artifact with DB compatibility artifact before audio patch");
+    } catch (error) {
+      console.warn("[VideoGenerator] Failed to persist DB compatibility artifact before audio patch", {
+        projectId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   if (steps.length === 0) {
     throw new Error("ステップが見つかりません");
@@ -305,18 +276,20 @@ export async function generateVideo(
   console.log(`[VideoGenerator] Starting video generation for project ${projectId}`);
   const requestedMode: AudioMode = options.audioMode ?? "auto";
 
-  const project = await db.getProjectById(projectId);
-  if (!project) {
-    throw new Error("プロジェクトが見つかりません");
-  }
-
-  const { steps, frames } = await loadRenderableStepsForProject(projectId);
+  const {
+    project,
+    steps,
+    frames,
+    artifact,
+    warnings: renderWarnings,
+  } = await loadProjectStepRenderState(projectId, undefined, {
+    invalidArtifactFallback: true,
+  });
 
   if (steps.length === 0 || frames.length === 0) {
     throw new Error("ステップまたはフレームが見つかりません");
   }
 
-  const artifact = await loadStepsArtifact(projectId);
   const evidence = await loadEvidenceArtifact(projectId);
   const transcriptPresent = (evidence?.transcript.segments.length ?? 0) > 0;
 
@@ -334,7 +307,7 @@ export async function generateVideo(
     (evidence?.segments ?? []).map((segment) => [segment.segment_id, segment.transition_start]),
   );
 
-  const warnings: string[] = [];
+  const warnings: string[] = [...renderWarnings];
   let stillImageFallbackCount = 0;
 
   // 元録画をローカルに解決（取得できなければ全編静止画モード）

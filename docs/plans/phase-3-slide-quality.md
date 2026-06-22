@@ -6,8 +6,8 @@
 - defaultプリセットのハイライトはクロップ空間で動作するため従来の再計算を維持
   （artifact bboxはフルフレーム座標。座標変換の導入は実データでの効果確認後）
 - 退役済み: `uniquifyTitles`（テスト以外から未参照の死にコード）
-- **退役保留（実データの評価値待ち）**: `anonymizeOnScreenStepNumbers` /
-  `applyFinalStepCompletionFix` / `buildDisplayTitleMap` — 退役条件の表を参照
+- **退役保留（post-v1判断）**: `anonymizeOnScreenStepNumbers` /
+  `applyFinalStepCompletionFix` / `buildDisplayTitleMap` — v1では品質gateを守るため維持。退役条件の表を参照
 - cited_ui_labels とハイライトの連動は実データでの効果確認後に判断
 
 規模: M

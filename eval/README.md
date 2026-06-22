@@ -99,3 +99,12 @@ G4の記録フォーマットは [eval/g4/README.md](./g4/README.md) と [eval/g
 - `review_reasons` に `fallback:*` が混入していない
 
 このgateは品質回帰とfallback混入の検出用であり、`ai_estimate` のG4や合成ナレーション派生ケースの制約を解消するものではない。
+
+任意の候補 `steps.json` を現行artifactと比べる場合は
+`pnpm eval:candidate -- --current-generated` を使う。低G3化をpromote条件に
+含める場合は `--require-current-g3-improvement`、G2退行を禁止する場合は
+`--max-current-g2-regression 0`、引用を落として見かけのG2を守る退化を防ぐ
+場合は `--max-current-no-citation-regression 0` を併用する。
+post-v1の候補昇格では `--post-v1-promotion-gate` を使い、固定baseline G2改善、
+現行artifact比のG2/無引用/G3条件、候補 `config.prompt_version` と現行authoring
+prompt versionの一致をまとめて確認する。

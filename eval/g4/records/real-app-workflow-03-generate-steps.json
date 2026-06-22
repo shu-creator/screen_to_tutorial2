@@ -1,27 +1,23 @@
 {
   "version": 1,
   "case_id": "real-app-workflow-03-generate-steps",
-  "review_type": "ai_estimate",
-  "reviewer": "codex-estimate",
-  "reviewed_at": "2026-06-20",
+  "review_type": "human_review",
+  "reviewer": "iwsh23",
+  "reviewed_at": "2026-06-22",
   "source_artifact": "eval/results/generated/real-app-workflow-03-generate-steps/steps.json",
-  "source_artifact_sha256": "8ffe2f89544bc47c8ca585af46c5b9e911980c0f1ad801fd3ad33b42063ec8cb",
+  "source_artifact_sha256": "88208bb96925978ba14f63d1749def4f01a23073650f78d63b2a1561edc40d8a",
   "exported_artifacts": [],
   "counts": {
-    "title_edits": 2,
-    "description_edits": 2,
-    "narration_edits": 2,
-    "timing_edits": 4,
-    "citation_edits": 1,
-    "step_structure_edits": 2,
+    "title_edits": 0,
+    "description_edits": 0,
+    "narration_edits": 0,
+    "timing_edits": 0,
+    "citation_edits": 0,
+    "step_structure_edits": 0,
     "export_artifact_edits": 0,
     "other_edits": 0
   },
-  "total_manual_edits": 13,
-  "blocking_issues": [
-    "Generated artifact skips explicit frame-list confirmation and merges wait intervals around step generation.",
-    "This is an AI-estimated artifact-only G4 record, not a human_review G4 record.",
-    "PPTX/video export QA was not performed."
-  ],
-  "notes": "Compared generated steps against the generate-steps subclip ground truth. Main fixes are restoring missing confirmation/wait intervals and tightening the tab-switch and AI-generation timings."
+  "total_manual_edits": 0,
+  "blocking_issues": [],
+  "notes": "Human reviewed promoted authoring-v2-grounded-3 candidate and project 40 export artifacts; no fixes needed."
 }

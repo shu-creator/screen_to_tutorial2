@@ -2,9 +2,76 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "vitest";
-import { buildReviewPack, selectReleaseCandidateCases, writeReviewPack } from "../scripts/g4-review-pack";
+import {
+  buildReviewPack,
+  emptySelectionMessage,
+  parseArgs,
+  resolveSelectedCases,
+  selectMissingHumanReviewCases,
+  selectReleaseCandidateCases,
+  writeOrPreviewReviewPack,
+  writeReviewPack,
+} from "../scripts/g4-review-pack";
 
 describe("g4 review pack helper", () => {
+  it("parses dry-run review packet selection without requiring case ids", () => {
+    const options = parseArgs(["--missing-human-review", "--dry-run", "--limit", "3"]);
+
+    expect(options.missingHumanReview).toBe(true);
+    expect(options.dryRun).toBe(true);
+    expect(options.limit).toBe(3);
+    expect(options.cases).toEqual([]);
+  });
+
+  it("treats an empty missing-human-review selection as a close-out no-op", () => {
+    const options = parseArgs(["--missing-human-review", "--dry-run"]);
+    const logs: string[] = [];
+
+    expect(emptySelectionMessage(options)).toBe("no real generated cases without human_review G4 found");
+    expect(resolveSelectedCases(options, [], [], (message) => logs.push(message))).toEqual([]);
+    expect(logs).toEqual(["no real generated cases without human_review G4 found"]);
+  });
+
+  it("keeps an empty release-candidate selection as a failure", () => {
+    const options = parseArgs(["--release-candidates", "--dry-run"]);
+
+    expect(() => resolveSelectedCases(options, [], [], () => undefined)).toThrow(
+      "no release candidate cases found from eval/results/export-qa",
+    );
+  });
+
+  it("previews review packets without writing files in dry-run mode", async () => {
+    const outputsOutdir = path.join(process.cwd(), "outputs", "g4-review-pack-dry-run-test");
+    const pack = await buildReviewPack("real-app-workflow-04-export-video", outputsOutdir);
+    const logs: string[] = [];
+
+    try {
+      await fs.rm(outputsOutdir, { recursive: true, force: true });
+      await expect(
+        writeOrPreviewReviewPack(pack, {
+          dryRun: true,
+          overwrite: true,
+          log: (message) => logs.push(message),
+        }),
+      ).resolves.toBe("dry-run");
+      await expect(fs.access(pack.outPath)).rejects.toThrow();
+      expect(logs).toEqual([
+        "G4 review packet dry-run: real-app-workflow-04-export-video -> outputs/g4-review-pack-dry-run-test/real-app-workflow-04-export-video.md",
+      ]);
+
+      await expect(
+        writeOrPreviewReviewPack(pack, {
+          dryRun: false,
+          overwrite: false,
+          log: (message) => logs.push(message),
+        }),
+      ).resolves.toBe("written");
+      await expect(fs.access(pack.outPath)).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(outputsOutdir, { recursive: true, force: true });
+    }
+  });
+
   it("builds a worksheet without creating a human_review record", async () => {
     const caseId = "tmp-review-pack-test";
     const generatedDir = path.join(process.cwd(), "eval", "results", "generated", caseId);
@@ -165,6 +232,49 @@ describe("g4 review pack helper", () => {
 
       await fs.writeFile(g4Path, `${JSON.stringify({ review_type: "human_review" })}\n`);
       await expect(selectReleaseCandidateCases(99, { datasetRoot, exportRoot, recordsDir })).resolves.not.toContain(caseId);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("selects real generated cases without human_review records", async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "g4-review-pack-open-"));
+    const datasetRoot = path.join(tempRoot, "dataset");
+    const generatedRoot = path.join(tempRoot, "generated");
+    const recordsDir = path.join(tempRoot, "records");
+
+    async function writeCase(caseId: string, synthetic: boolean, withGenerated: boolean, reviewType?: string | null): Promise<void> {
+      await fs.mkdir(path.join(datasetRoot, caseId), { recursive: true });
+      await fs.writeFile(path.join(datasetRoot, caseId, "meta.json"), `${JSON.stringify({
+        case_id: caseId,
+        synthetic,
+      })}\n`);
+      if (withGenerated) {
+        await fs.mkdir(path.join(generatedRoot, caseId), { recursive: true });
+        await fs.writeFile(path.join(generatedRoot, caseId, "steps.json"), `${JSON.stringify({ steps: [] })}\n`);
+      }
+      if (reviewType !== undefined) {
+        await fs.mkdir(recordsDir, { recursive: true });
+        await fs.writeFile(path.join(recordsDir, `${caseId}.json`), `${JSON.stringify({ review_type: reviewType })}\n`);
+      }
+    }
+
+    try {
+      await fs.mkdir(recordsDir, { recursive: true });
+      await writeCase("real-open", false, true, "ai_estimate");
+      await writeCase("real-without-record", false, true);
+      await writeCase("real-znull-record", false, true, null);
+      await writeCase("real-missing-generated", false, false, "ai_estimate");
+      await writeCase("real-human", false, true, "human_review");
+      await writeCase("synthetic-open", true, true, "ai_estimate");
+
+      await expect(
+        selectMissingHumanReviewCases(99, { datasetRoot, generatedRoot, recordsDir }),
+      ).resolves.toEqual(["real-open", "real-without-record", "real-znull-record"]);
+
+      await expect(
+        selectMissingHumanReviewCases(1, { datasetRoot, generatedRoot, recordsDir }),
+      ).resolves.toEqual(["real-open"]);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }

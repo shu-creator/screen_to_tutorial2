@@ -94,6 +94,27 @@ beforeEach(() => {
 });
 
 describe("authorSteps", () => {
+  it("低G2対策の操作単位・引用制約をLLM system promptに渡す", async () => {
+    const evidence = makeEvidence([makeSegment("seg-1", 0, 2000)]);
+
+    invokeLLMMock.mockResolvedValueOnce(
+      llmResponse({
+        overview,
+        steps: [validStep(["seg-1"], "保存する")],
+        discarded_segments: [],
+      })
+    );
+
+    await authorSteps(evidence);
+
+    const systemPrompt = invokeLLMMock.mock.calls[0][0].messages[0].content;
+    expect(systemPrompt).toContain("生成開始");
+    expect(systemPrompt).toContain("異なる目的の操作");
+    expect(systemPrompt).toContain("OCR根拠が弱い場合は cited_ui_labels を空配列");
+    expect(systemPrompt).toContain("単なる状態表示・完了表示・空状態メッセージ・トースト文言");
+    expect(systemPrompt).toContain("ステップがありません");
+  });
+
   it("セグメント統合・破棄を受け入れ、検証済みステップを返す", async () => {
     const evidence = makeEvidence([
       makeSegment("seg-1", 0, 2000),

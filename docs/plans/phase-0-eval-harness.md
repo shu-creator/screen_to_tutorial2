@@ -1,14 +1,16 @@
 # Phase 0: 評価基盤 + ベースライン測定
 
-ステータス: 実装済み（2026-06-12）。ただし以下は**実データ待ち**:
-- 現行パイプラインの実ベースライン測定（LLM APIキー未設定のため。`eval/baseline.json` は pending マーカー）
-- 早期実験（bbox+前フレーム注入の効果測定）— 同上
-- 実録画ケースの追加（合成3ケース+実録画1ケースで開始。Sprint 1 readiness は `pnpm eval:audit` で監査）
+ステータス: 実装済み。v1.0.0時点では、実録画5ケース、必須 `scenario_tags`、生成済み `steps.json`、G4記録を `pnpm eval:audit` で監査できる。`eval/baseline.json` は現行マシン・生成artifact前提で再較正済み。
 
 Sprint 1補足（2026-06-20）:
 - `eval/dataset/*/meta.json` に `scenario_tags` を追加し、実録画5本が `silent` / `narrated` / `form_input` / `load_wait` / `modal_or_dropdown` をカバーするか監査できるようにした。
 - G4記録フォーマットを `eval/g4/README.md` と `eval/g4/template.json` に固定した。
-- 現状は実録画が `real-app-workflow-01` の1本のみで、`narrated` タグ、実録画5本、実録画の生成済み `steps.json`、G4記録が未達。完了扱いにしない。
+- 実録画5ケースと各G4記録を用意し、v1.0.0時点の `pnpm eval:audit` はPASS。`real-app-workflow-01` の1本のみだった途中状態はHistorical Notesに移した。
+
+## Historical Notes
+
+- 2026-06-12時点では、現行パイプラインの実ベースライン測定、早期実験、実録画ケース追加は実データ待ちだった。
+- 2026-06-20の途中状態では実録画が `real-app-workflow-01` の1本のみで、`narrated` タグ、実録画5本、実録画の生成済み `steps.json`、G4記録が未達だった。
 
 規模: M
 依存: なし

@@ -97,6 +97,15 @@ export const StepsArtifactSchema = z.object({
 
 export type StepsArtifact = z.infer<typeof StepsArtifactSchema>;
 
+export type StepsArtifactLoadResult =
+  | { status: "loaded"; artifact: StepsArtifact }
+  | { status: "missing"; reason: "not_found" | "invalidated" }
+  | {
+      status: "invalid";
+      reason: "read_error" | "json_parse_error" | "schema_error" | "unknown_version";
+      message: string;
+    };
+
 export interface LegacyRenderableStep {
   id: number;
   projectId: number;
@@ -112,6 +121,15 @@ export interface LegacyRenderableStep {
 
 export function getStepsArtifactStorageKey(projectId: number): string {
   return `projects/${projectId}/artifacts/steps.json`;
+}
+
+function isNotFoundError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
 }
 
 /** v1 artifact を v2 へマイグレーションする（追加フィールドにデフォルトを埋める） */
@@ -132,32 +150,51 @@ function migrateV1ToV2(raw: Record<string, unknown>): unknown {
   };
 }
 
-export async function loadStepsArtifact(projectId: number): Promise<StepsArtifact | null> {
+export async function loadStepsArtifactResult(projectId: number): Promise<StepsArtifactLoadResult> {
   const key = getStepsArtifactStorageKey(projectId);
 
   let raw: Record<string, unknown>;
+  let file: { key: string; url: string };
   try {
-    const file = await storageGet(key);
+    file = await storageGet(key);
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return { status: "missing", reason: "not_found" };
+    }
+    return {
+      status: "invalid",
+      reason: "read_error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  try {
     const buffer = await readBinaryFromSource(file.url);
     raw = JSON.parse(buffer.toString("utf8")) as Record<string, unknown>;
-  } catch {
-    // 未生成（ファイルなし）は正常系
-    return null;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return { status: "invalid", reason: "json_parse_error", message: error.message };
+    }
+    return {
+      status: "invalid",
+      reason: "read_error",
+      message: error instanceof Error ? error.message : String(error),
+    };
   }
 
   const version = typeof raw.version === "string" ? raw.version : "";
 
   if (version === INVALIDATED_VERSION) {
     // retry等で明示的に無効化済み。再生成までartifactなし扱い
-    return null;
+    return { status: "missing", reason: "invalidated" };
   }
 
   try {
     if (version === STEPS_ARTIFACT_VERSION_V1) {
-      return StepsArtifactSchema.parse(migrateV1ToV2(raw));
+      return { status: "loaded", artifact: StepsArtifactSchema.parse(migrateV1ToV2(raw)) };
     }
     if (version === STEPS_ARTIFACT_VERSION) {
-      return StepsArtifactSchema.parse(raw);
+      return { status: "loaded", artifact: StepsArtifactSchema.parse(raw) };
     }
   } catch (error) {
     logger.warn("steps.json のパースに失敗しました", {
@@ -165,14 +202,38 @@ export async function loadStepsArtifact(projectId: number): Promise<StepsArtifac
       version,
       message: error instanceof Error ? error.message : String(error),
     });
-    return null;
+    return {
+      status: "invalid",
+      reason: "schema_error",
+      message: error instanceof Error ? error.message : String(error),
+    };
   }
 
-  // 未知バージョンはデータ問題: サイレントなnullフォールバック（=DBへの
-  // 静かな切替）を避け、明示的にエラーにする
-  throw new Error(
-    `未対応の steps.json バージョンです: ${version}（対応: ${STEPS_ARTIFACT_VERSION_V1}, ${STEPS_ARTIFACT_VERSION}）`,
-  );
+  return {
+    status: "invalid",
+    reason: "unknown_version",
+    message: `未対応の steps.json バージョンです: ${version}（対応: ${STEPS_ARTIFACT_VERSION_V1}, ${STEPS_ARTIFACT_VERSION}）`,
+  };
+}
+
+export async function loadStepsArtifact(projectId: number): Promise<StepsArtifact | null> {
+  const result = await loadStepsArtifactResult(projectId);
+  if (result.status === "loaded") {
+    return result.artifact;
+  }
+  if (result.status === "invalid") {
+    // 未知バージョンはデータ問題: サイレントなnullフォールバック（=DBへの
+    // 静かな切替）を避け、既存挙動どおり明示的にエラーにする。
+    if (result.reason === "unknown_version") {
+      throw new Error(result.message);
+    }
+    logger.warn("steps.json をartifactなし扱いで読み込みます", {
+      projectId,
+      reason: result.reason,
+      message: result.message,
+    });
+  }
+  return null;
 }
 
 /** retry等でフレームが再生成される際に古いステップartifactを無効化する */

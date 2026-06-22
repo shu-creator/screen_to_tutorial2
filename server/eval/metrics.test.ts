@@ -104,6 +104,8 @@ describe("extractQuotedLabels / normalizeLabel", () => {
   it("normalizeLabel は全半角・空白・大文字小文字を吸収する", () => {
     expect(normalizeLabel("ＯＫ")).toBe(normalizeLabel("ok"));
     expect(normalizeLabel("保 存")).toBe(normalizeLabel("保存"));
+    expect(normalizeLabel("「保存」")).toBe("保存");
+    expect(normalizeLabel("ステップ (12)")).toBe("ステップ");
   });
 });
 
@@ -167,6 +169,75 @@ describe("computeG2", () => {
     expect(result.accuracy).toBe(0.5);
     expect(result.totalLabels).toBe(2);
     expect(result.matchedLabels).toBe(1);
+  });
+
+  it("structured cited_ui_labels の外側引用符を照合時に吸収する", () => {
+    const generated = [
+      {
+        t_start: 0,
+        t_end: 1,
+        title: "保存する",
+        cited_ui_labels: ["「保存」"],
+      },
+    ];
+    const result = computeG2(generated, ["保存"]);
+    expect(result.accuracy).toBe(1);
+    expect(result.totalLabels).toBe(1);
+    expect(result.matchedLabels).toBe(1);
+  });
+
+  it("structured cited_ui_labels の動的件数サフィックスを照合時に吸収する", () => {
+    const generated = [
+      {
+        t_start: 0,
+        t_end: 1,
+        title: "ステップを開く",
+        cited_ui_labels: ["ステップ (0)"],
+      },
+    ];
+    const result = computeG2(generated, ["ステップ"]);
+    expect(result.accuracy).toBe(1);
+    expect(result.totalLabels).toBe(1);
+    expect(result.matchedLabels).toBe(1);
+  });
+
+  it("structured cited_ui_labels のステップ番号サフィックスを照合時に吸収する", () => {
+    const generated = [
+      {
+        t_start: 0,
+        t_end: 1,
+        title: "ステップを開く",
+        cited_ui_labels: ["ステップ 1"],
+      },
+    ];
+    const result = computeG2(generated, ["ステップ"]);
+    expect(normalizeLabel("ステップ 1")).toBe("ステップ");
+    expect(result.accuracy).toBe(1);
+    expect(result.totalLabels).toBe(1);
+    expect(result.matchedLabels).toBe(1);
+  });
+
+  it("ステップ番号以外の数値付きラベルはステップに畳まない", () => {
+    expect(normalizeLabel("ステップ 1 を確認")).toBe("ステップ1を確認");
+    expect(normalizeLabel("元動画 1")).toBe("元動画1");
+  });
+
+  it("正規化後に空になる cited_ui_labels は分母から除外する", () => {
+    const generated = [
+      {
+        t_start: 0,
+        t_end: 1,
+        title: "件数だけの表示を無視する",
+        cited_ui_labels: ["(10)"],
+      },
+    ];
+    const result = computeG2(generated, ["(10)"]);
+    expect(normalizeLabel("(10)")).toBe("");
+    expect(result.totalLabels).toBe(0);
+    expect(result.matchedLabels).toBe(0);
+    expect(result.citedStepCount).toBe(0);
+    expect(result.noCitationRate).toBe(1);
+    expect(result.accuracy).toBe(0);
   });
 });
 

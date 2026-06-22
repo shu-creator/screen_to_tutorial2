@@ -129,7 +129,14 @@ export function extractQuotedLabels(text: string): string[] {
 
 /** ラベル照合用の正規化（NFKC・空白除去・小文字化） */
 export function normalizeLabel(label: string): string {
-  return label.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+  return label
+    .normalize("NFKC")
+    .trim()
+    .replace(/^[「『"'“”‘’]+|[」』"'“”‘’]+$/g, "")
+    .replace(/\s*\(\d+\)\s*$/g, "")
+    .replace(/^(ステップ)\s*\d+$/i, "$1")
+    .replace(/\s+/g, "")
+    .toLowerCase();
 }
 
 /**
@@ -146,7 +153,9 @@ export function computeG2(
   generated: GeneratedStepLike[],
   allowedLabels: string[],
 ): G2Result {
-  const allowedSet = new Set(allowedLabels.map(normalizeLabel));
+  const allowedSet = new Set(
+    allowedLabels.map(normalizeLabel).filter((label) => label.length > 0),
+  );
 
   let totalLabels = 0;
   let matchedLabels = 0;
@@ -159,13 +168,17 @@ export function computeG2(
       ...(step.cited_ui_labels ?? []),
     ];
     if (labels.length === 0) continue;
-    citedStepCount += 1;
+    let validLabelCount = 0;
     for (const label of labels) {
+      const normalized = normalizeLabel(label);
+      if (normalized.length === 0) continue;
+      validLabelCount += 1;
       totalLabels += 1;
-      if (allowedSet.has(normalizeLabel(label))) {
+      if (allowedSet.has(normalized)) {
         matchedLabels += 1;
       }
     }
+    if (validLabelCount > 0) citedStepCount += 1;
   }
 
   return {

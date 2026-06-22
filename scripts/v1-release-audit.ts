@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 import fs from "fs/promises";
 import path from "path";
+import ts from "typescript";
 import { pathToFileURL } from "url";
 import { auditEvalReadiness, readCaseMetas, validateG4Record, type CaseMeta, type G4Record } from "./eval-audit";
 import { runQualityGate, type QualityGateResult } from "./eval-quality-gate";
@@ -51,6 +52,36 @@ type V1SmokeSummary = {
   };
   checks?: Array<{ name?: string; pass?: boolean; detail?: string }>;
 };
+
+type EditSmokeSummary = {
+  project_id?: number | null;
+  pass?: boolean;
+  restored_after_check?: boolean;
+  restore_error?: string | null;
+  checks?: Array<{ name?: string; pass?: boolean }>;
+};
+
+const REQUIRED_V1_SMOKE_CHECKS = [
+  "setup.check",
+  "pipeline.generate",
+  "steps.version",
+  "steps.count",
+  "steps.fallback_reasons",
+  "project.export",
+  "export.slide.bytes",
+  "export.slide.content_check",
+  "export.video.bytes",
+  "export.video.still_image_fallback_count",
+  "edit.smoke",
+  "edit.summary",
+  "edit.adapter.artifactUpdated",
+  "edit.adapter.dbUpdated",
+];
+
+const REQUIRED_EDIT_SMOKE_CHECKS = [
+  "adapter.artifactUpdated",
+  "adapter.dbUpdated",
+];
 
 export type ExportQaSummary = {
   case_id?: string;
@@ -222,6 +253,8 @@ export async function checkV1Smoke(
   }
   const summary = parsed.value;
   const failedChecks = (summary.checks ?? []).filter((check) => check.pass !== true);
+  const checkNames = new Set((summary.checks ?? []).map((check) => check.name));
+  const missingRequiredChecks = REQUIRED_V1_SMOKE_CHECKS.filter((name) => !checkNames.has(name));
   const requiredArtifacts = {
     steps: summary.artifacts?.steps,
     export_summary: summary.artifacts?.export_summary,
@@ -236,8 +269,33 @@ export async function checkV1Smoke(
     if (!(await fileExists(resolveRepoPath(artifactPath)))) missingArtifacts.push(artifactPath);
   }
   const reasons: string[] = [];
+  if (requiredArtifacts.edit_smoke_summary && !missingArtifacts.includes(requiredArtifacts.edit_smoke_summary)) {
+    const editSummaryPath = resolveRepoPath(requiredArtifacts.edit_smoke_summary);
+    const editSummaryResult = await safeReadJson<EditSmokeSummary>(editSummaryPath);
+    if (!editSummaryResult.value) {
+      reasons.push(`could not parse edit_smoke_summary: ${editSummaryResult.error ?? "unknown error"}`);
+    } else {
+      const editSummary = editSummaryResult.value;
+      if (editSummary.project_id !== summary.project_id) {
+        reasons.push(`edit_smoke_summary project_id=${editSummary.project_id ?? "missing"} does not match summary project_id=${summary.project_id ?? "missing"}`);
+      }
+      if (editSummary.pass !== true) reasons.push("edit_smoke_summary pass is not true");
+      if (editSummary.restored_after_check !== true) reasons.push("edit_smoke_summary restored_after_check is not true");
+      if (editSummary.restore_error !== null) reasons.push(`edit_smoke_summary restore_error=${editSummary.restore_error ?? "missing"}`);
+      const editCheckNames = new Set((editSummary.checks ?? []).map((check) => check.name));
+      const missingEditChecks = REQUIRED_EDIT_SMOKE_CHECKS.filter((name) => !editCheckNames.has(name));
+      const failedEditChecks = (editSummary.checks ?? []).filter((check) => (
+        check.name !== undefined &&
+        REQUIRED_EDIT_SMOKE_CHECKS.includes(check.name) &&
+        check.pass !== true
+      ));
+      if (missingEditChecks.length > 0) reasons.push(`edit_smoke_summary missing required checks: ${missingEditChecks.join(", ")}`);
+      if (failedEditChecks.length > 0) reasons.push(`edit_smoke_summary failed checks: ${failedEditChecks.map((check) => check.name).join(", ")}`);
+    }
+  }
   if (summary.pass !== true) reasons.push("summary pass is not true");
   if (failedChecks.length > 0) reasons.push(`failed checks: ${failedChecks.map((check) => check.name ?? "unnamed").join(", ")}`);
+  if (missingRequiredChecks.length > 0) reasons.push(`missing required checks: ${missingRequiredChecks.join(", ")}`);
   if ((summary.metrics?.step_count ?? 0) <= 0) reasons.push("step_count is not positive");
   if (summary.metrics?.fallback_reason_count !== 0) reasons.push(`fallback_reason_count=${summary.metrics?.fallback_reason_count ?? "missing"}; expected 0`);
   if (missingArtifactFields.length > 0) reasons.push(`missing artifact fields: ${missingArtifactFields.join(", ")}`);
@@ -304,6 +362,249 @@ export function assessQualityGateError(error: unknown): ReleaseCheck {
 
 function pct(value: number | undefined): string {
   return value === undefined ? "-" : `${(value * 100).toFixed(1)}%`;
+}
+
+type SourceContractRequirement = {
+  file: string;
+  calls: string[];
+};
+
+const PHASE6_SOURCE_CONTRACT_REQUIREMENTS: SourceContractRequirement[] = [
+  {
+    file: "server/routers.ts",
+    calls: [
+      "listProjectStepsArtifactFirst",
+      "loadOrCreateStepsArtifactForProject",
+      "updateProjectStepArtifactFirst",
+      "deleteProjectStepArtifactFirst",
+      "regenerateProjectStepArtifactFirst",
+      "reorderProjectStepsArtifactFirst",
+    ],
+  },
+  {
+    file: "server/slideGenerator.ts",
+    calls: ["loadProjectStepRenderState"],
+  },
+  {
+    file: "server/videoGenerator.ts",
+    calls: ["loadProjectStepRenderState"],
+  },
+  {
+    file: "scripts/export-project.ts",
+    calls: ["loadProjectStepRenderState"],
+  },
+  {
+    file: "scripts/edit-artifact-smoke.ts",
+    calls: ["updateProjectStepArtifactFirst"],
+  },
+  {
+    file: "server/stepSource.ts",
+    calls: [],
+  },
+];
+
+function collectCalledIdentifiers(source: string, fileName: string): Set<string> {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const calls = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const expression = node.expression;
+      if (ts.isIdentifier(expression)) {
+        calls.add(expression.text);
+      } else if (ts.isPropertyAccessExpression(expression)) {
+        calls.add(expression.name.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return calls;
+}
+
+function collectDbStepWriteCalls(node: ts.Node): string[] {
+  const calls: string[] = [];
+  const visit = (current: ts.Node): void => {
+    if (ts.isCallExpression(current) && ts.isPropertyAccessExpression(current.expression)) {
+      const expression = current.expression;
+      if (
+        ts.isIdentifier(expression.expression) &&
+        expression.expression.text === "db" &&
+        ["createStep", "updateStep", "deleteStep", "deleteStepsByProjectId", "reorderSteps"].includes(expression.name.text)
+      ) {
+        calls.push(`db.${expression.name.text}()`);
+      }
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return calls;
+}
+
+function collectForbiddenUnmatchedFallbacks(source: string, fileName: string): string[] {
+  if (fileName !== "server/stepSource.ts") return [];
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const forbidden: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isIfStatement(node)) {
+      const condition = node.expression.getText(sourceFile).replace(/\s+/g, "");
+      if (["!patchResult.matched", "!deleted.matched", "!reordered.matched", "!matched"].includes(condition)) {
+        const dbWrites = collectDbStepWriteCalls(node.thenStatement);
+        if (dbWrites.length > 0) {
+          forbidden.push(`${fileName} ${node.expression.getText(sourceFile)} contains ${Array.from(new Set(dbWrites)).join(", ")}`);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return forbidden;
+}
+
+function propertyName(node: ts.Node): string | undefined {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  if (
+    ts.isElementAccessExpression(node) &&
+    ts.isStringLiteralLike(node.argumentExpression)
+  ) {
+    return node.argumentExpression.text;
+  }
+  return undefined;
+}
+
+function expressionReferencesProperty(node: ts.Node, target: string): boolean {
+  let found = false;
+  const visit = (current: ts.Node): void => {
+    if (found) return;
+    if (propertyName(current) === target) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function expressionIsUndefinedLike(node: ts.Node): boolean {
+  return (
+    (ts.isIdentifier(node) && node.text === "undefined") ||
+    node.kind === ts.SyntaxKind.NullKeyword
+  );
+}
+
+function isMissingLegacyIdCheck(node: ts.Node): boolean {
+  if (ts.isTypeOfExpression(node)) {
+    return expressionReferencesProperty(node.expression, "legacy_step_db_id");
+  }
+  if (!ts.isBinaryExpression(node)) return false;
+  if (
+    node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+    node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken
+  ) {
+    return (
+      (expressionReferencesProperty(node.left, "legacy_step_db_id") && expressionIsUndefinedLike(node.right)) ||
+      (expressionReferencesProperty(node.right, "legacy_step_db_id") && expressionIsUndefinedLike(node.left)) ||
+      (ts.isTypeOfExpression(node.left) &&
+        expressionReferencesProperty(node.left.expression, "legacy_step_db_id") &&
+        ts.isStringLiteralLike(node.right) &&
+        node.right.text === "undefined") ||
+      (ts.isTypeOfExpression(node.right) &&
+        expressionReferencesProperty(node.right.expression, "legacy_step_db_id") &&
+        ts.isStringLiteralLike(node.left) &&
+        node.left.text === "undefined")
+    );
+  }
+  return false;
+}
+
+function expressionContainsMissingLegacyIdCheck(node: ts.Node): boolean {
+  let found = false;
+  const visit = (current: ts.Node): void => {
+    if (found) return;
+    if (isMissingLegacyIdCheck(current)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function expressionContainsSortOrderComparison(node: ts.Node): boolean {
+  let found = false;
+  const visit = (current: ts.Node): void => {
+    if (found) return;
+    if (
+      ts.isBinaryExpression(current) &&
+      [
+        ts.SyntaxKind.EqualsEqualsEqualsToken,
+        ts.SyntaxKind.EqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsToken,
+      ].includes(current.operatorToken.kind) &&
+      (expressionReferencesProperty(current.left, "sort_order") ||
+        expressionReferencesProperty(current.right, "sort_order"))
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function collectForbiddenSortOrderWriteFallbacks(source: string, fileName: string): string[] {
+  if (fileName !== "server/stepSource.ts") return [];
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const forbidden: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+      expressionContainsMissingLegacyIdCheck(node) &&
+      expressionContainsSortOrderComparison(node)
+    ) {
+      forbidden.push(`${fileName} contains sort_order write fallback for missing legacy_step_db_id: ${node.getText(sourceFile)}`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return Array.from(new Set(forbidden));
+}
+
+export async function checkPhase6SourceContract(root: string = repoRoot): Promise<ReleaseCheck> {
+  const missing: string[] = [];
+  const unreadable: string[] = [];
+  const forbidden: string[] = [];
+  for (const requirement of PHASE6_SOURCE_CONTRACT_REQUIREMENTS) {
+    const filePath = path.join(root, requirement.file);
+    let source: string;
+    try {
+      source = await fs.readFile(filePath, "utf8");
+    } catch (error) {
+      unreadable.push(`${requirement.file}: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
+    const calledIdentifiers = collectCalledIdentifiers(source, requirement.file);
+    for (const call of requirement.calls) {
+      if (!calledIdentifiers.has(call)) missing.push(`${requirement.file} missing call ${call}()`);
+    }
+    forbidden.push(...collectForbiddenUnmatchedFallbacks(source, requirement.file));
+    forbidden.push(...collectForbiddenSortOrderWriteFallbacks(source, requirement.file));
+  }
+
+  if (unreadable.length > 0 || missing.length > 0 || forbidden.length > 0) {
+    return fail(
+      "phase6.source_contract",
+      `unreadable=${unreadable.join("; ") || "-"}; missing=${missing.join("; ") || "-"}; forbidden=${forbidden.join("; ") || "-"}`,
+    );
+  }
+  return pass(
+    "phase6.source_contract",
+    "routers, render/export paths, edit smoke, and unmatched edit branches retain the stepSource artifact-primary contract",
+  );
 }
 
 async function checkHumanG4(): Promise<ReleaseCheck> {
@@ -394,6 +695,7 @@ export function buildReleaseCheckTasks(options: AuditOptions): ReleaseCheckTask[
     { name: "model.default", run: checkModelDefault },
     { name: "eval.readiness", run: checkEvalReadiness },
     { name: "eval.quality_gate", run: checkQualityGate },
+    { name: "phase6.source_contract", run: checkPhase6SourceContract },
     { name: "smoke.current_environment", run: () => checkV1Smoke(options.v1SmokeSummary, "smoke.current_environment", false, "fail") },
     { name: "export.qa", run: checkExportQa },
     { name: "g4.human_review", run: checkHumanG4 },
@@ -437,6 +739,8 @@ export function nextActionForCheck(check: ReleaseCheck): string | undefined {
       return "Run `pnpm eval:quality-gate` and fix any reported G2/G3/fallback regression before release.";
     case "eval.readiness":
       return "Run `pnpm eval:audit` and restore the required 5 real cases, generated steps, and G4 record placeholders.";
+    case "phase6.source_contract":
+      return "Restore Phase 6 source routing so step UI/edit routes, render/export paths, and edit smoke use the `stepSource` artifact-primary adapter contract.";
     case "model.default":
       return "Keep `.env.example` aligned with the v1 model decision: `LLM_MODEL=gpt-5.4`.";
     case "release.docs":

@@ -195,16 +195,36 @@ export async function extractEvidence(
     const segmentId = `seg-${i + 1}`;
     const warnings: string[] = [];
 
-    const afterTimeMs = Math.round(segment.afterFrameIndex * frameMs);
+    const rawAfterTimeMs = Math.round(segment.afterFrameIndex * frameMs);
     const afterPath = path.join(options.framesDir, `${segmentId}_after.jpg`);
-    await extractFullFrame(videoPath, afterTimeMs, afterPath);
+    const afterTimeMs = await extractFullFrame(
+      videoPath,
+      rawAfterTimeMs,
+      afterPath,
+      timeline.durationMs
+    );
+    if (afterTimeMs !== rawAfterTimeMs) {
+      warnings.push(
+        `afterFrame timestamp adjusted from ${rawAfterTimeMs}ms to ${afterTimeMs}ms (video duration: ${timeline.durationMs}ms)`
+      );
+    }
 
     let beforePath: string | null = null;
     let beforeTimeMs: number | null = null;
     if (segment.beforeFrameIndex !== null) {
-      beforeTimeMs = Math.round(segment.beforeFrameIndex * frameMs);
+      const rawBeforeTimeMs = Math.round(segment.beforeFrameIndex * frameMs);
       beforePath = path.join(options.framesDir, `${segmentId}_before.jpg`);
-      await extractFullFrame(videoPath, beforeTimeMs, beforePath);
+      beforeTimeMs = await extractFullFrame(
+        videoPath,
+        rawBeforeTimeMs,
+        beforePath,
+        timeline.durationMs
+      );
+      if (beforeTimeMs !== rawBeforeTimeMs) {
+        warnings.push(
+          `beforeFrame timestamp adjusted from ${rawBeforeTimeMs}ms to ${beforeTimeMs}ms (video duration: ${timeline.durationMs}ms)`
+        );
+      }
     }
 
     let ocrLines: string[] = [];

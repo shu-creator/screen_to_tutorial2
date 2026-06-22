@@ -5,14 +5,8 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type PptxGenJS from "pptxgenjs";
 import { ENV, type SlidePreset } from "./_core/env";
-import { getProjectById, getStepsByProjectId, getFramesByProjectId } from "./db";
 import { readBinaryFromSource } from "./storage";
-import {
-  buildLegacyRenderableStepsFromArtifact,
-  buildStepsArtifactFromDb,
-  loadStepsArtifact,
-  saveStepsArtifact,
-} from "./stepsArtifact";
+import { loadProjectStepRenderState } from "./stepSource";
 import {
   truncateAtSentence,
   ensureTerminalPunctuation,
@@ -895,14 +889,6 @@ export async function generateSlides(projectId: number): Promise<string> {
   const tempFilesToDelete: string[] = [];
 
   try {
-    const project = await getProjectById(projectId);
-    if (!project) {
-      throw new Error(`Project ${projectId} not found`);
-    }
-
-    const frames = await getFramesByProjectId(projectId);
-    const dbSteps = await getStepsByProjectId(projectId);
-
     type SlideStep = {
       id: number;
       frameId: number;
@@ -915,24 +901,12 @@ export async function generateSlides(projectId: number): Promise<string> {
       audioKey: string | null;
     };
 
-    let steps: SlideStep[] = dbSteps.map((step) => ({
-      id: step.id,
-      frameId: step.frameId,
-      sortOrder: step.sortOrder,
-      title: step.title,
-      operation: step.operation,
-      description: step.description,
-      narration: step.narration ?? null,
-      audioUrl: step.audioUrl ?? null,
-      audioKey: step.audioKey ?? null,
-    }));
-    const artifact = await loadStepsArtifact(projectId);
-    if (artifact && artifact.steps.length > 0) {
-      steps = buildLegacyRenderableStepsFromArtifact(projectId, artifact, frames);
-    } else if (dbSteps.length > 0) {
-      const fallbackArtifact = buildStepsArtifactFromDb(project, frames, dbSteps);
-      await saveStepsArtifact(projectId, fallbackArtifact);
+    const { project, steps, frames, artifact, warnings: renderWarnings } =
+      await loadProjectStepRenderState(projectId, undefined, { invalidArtifactFallback: true });
+    for (const warning of renderWarnings) {
+      console.warn(`[SlideGenerator] ${warning}`);
     }
+    const slideSteps: SlideStep[] = steps;
 
     // Phase 3: artifact（v2）のbbox・検証結果・overviewをスライドに反映する
     const artifactStepByDbId = new Map<
@@ -948,13 +922,13 @@ export async function generateSlides(projectId: number): Promise<string> {
     }
     const overview = artifact?.overview ?? null;
 
-    if (!steps || steps.length === 0) {
+    if (!slideSteps || slideSteps.length === 0) {
       throw new Error(`No steps found for project ${projectId}`);
     }
 
     // テキスト整形: 重複タイトルのユニーク化
-    const displayTitleMap = buildDisplayTitleMap(steps);
-    const stepsWithDisplayTitle = steps.map((s) => ({
+    const displayTitleMap = buildDisplayTitleMap(slideSteps);
+    const stepsWithDisplayTitle = slideSteps.map((s) => ({
       ...s,
       displayTitle: displayTitleMap.get(s.id) ?? s.title,
     }));

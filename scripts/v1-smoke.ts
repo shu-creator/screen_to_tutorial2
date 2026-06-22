@@ -31,6 +31,13 @@ type Check = {
   detail: string;
 };
 
+type EditSmokeSummary = {
+  pass?: boolean;
+  restored_after_check?: boolean;
+  restore_error?: string | null;
+  checks?: Array<{ name?: string; pass?: boolean; actual?: unknown; expected?: unknown }>;
+};
+
 function parseArgs(argv: string[]): Options {
   const options: Options = {
     outdir: path.join(repoRoot, "outputs", "v1-smoke"),
@@ -143,6 +150,17 @@ function parseProjectId(stdout: string): number {
 
 function check(name: string, pass: boolean, detail: string): Check {
   return { name, pass, detail };
+}
+
+function editSmokeCheck(summary: EditSmokeSummary, name: string): Check {
+  const item = summary.checks?.find((entry) => entry.name === name);
+  return check(
+    `edit.${name}`,
+    item?.pass === true,
+    item
+      ? `pass=${String(item.pass)} expected=${String(item.expected)} actual=${String(item.actual)}`
+      : "missing",
+  );
 }
 
 function rel(filePath: string): string {
@@ -293,14 +311,14 @@ async function main(): Promise<void> {
       editOutdir,
     ], 5 * 60_000);
     editSummaryPath = path.join(editOutdir, `project_${projectId}_edit_smoke_summary.json`);
-    const editSummary = await readJson<{ pass?: boolean; restored_after_check?: boolean; restore_error?: string | null }>(
-      editSummaryPath,
-    );
+    const editSummary = await readJson<EditSmokeSummary>(editSummaryPath);
     checks.push(check(
       "edit.summary",
       editSummary.pass === true && editSummary.restored_after_check === true && editSummary.restore_error === null,
       `pass=${String(editSummary.pass)} restored_after_check=${String(editSummary.restored_after_check)} restore_error=${editSummary.restore_error ?? "null"}`,
     ));
+    checks.push(editSmokeCheck(editSummary, "adapter.artifactUpdated"));
+    checks.push(editSmokeCheck(editSummary, "adapter.dbUpdated"));
   } catch (error) {
     if (!checks.some((item) => item.name === "v1.smoke.exception")) {
       checks.push(check("v1.smoke.exception", false, error instanceof Error ? error.message : String(error)));

@@ -12,7 +12,13 @@ import type { EvidenceSegment } from "../evidence/types";
 
 /** ラベル照合用の正規化（NFKC・空白除去・小文字化）。eval/metrics.ts と同一規則 */
 export function normalizeLabel(label: string): string {
-  return label.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+  return label
+    .normalize("NFKC")
+    .trim()
+    .replace(/^[「『"'“”‘’]+|[」』"'“”‘’]+$/g, "")
+    .replace(/\s*\(\d+\)\s*$/g, "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
 }
 
 export interface LabelVerification {

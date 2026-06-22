@@ -4,9 +4,8 @@ import path from "path";
 import zlib from "zlib";
 import { generateSlides } from "../server/slideGenerator";
 import { generateVideo } from "../server/videoGenerator";
-import { getStepsByProjectId } from "../server/db";
 import { isLocalStorageUrl, resolveLocalStoragePathFromUrl } from "../server/storage";
-import { loadStepsArtifact } from "../server/stepsArtifact";
+import { loadProjectStepRenderState } from "../server/stepSource";
 import type { AudioMode } from "../server/videoClips";
 
 type Options = {
@@ -209,21 +208,24 @@ async function resolveExpectedStepImageCount(projectId: number): Promise<{
 }> {
   const warnings: string[] = [];
   try {
-    const stepsArtifact = await loadStepsArtifact(projectId);
-    if (stepsArtifact) {
-      return { count: stepsArtifact.steps.length, source: "steps_artifact", warnings };
+    const state = await loadProjectStepRenderState(projectId, undefined, {
+      invalidArtifactFallback: true,
+    });
+    warnings.push(...state.warnings);
+    if (state.steps.length === 0) {
+      warnings.push("no renderable steps found; image count check skipped");
+      return { count: null, source: "unavailable", warnings };
     }
+    return {
+      count: state.steps.length,
+      source: state.source === "steps_artifact" ? "steps_artifact" : "db_steps",
+      warnings,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    warnings.push(`loadStepsArtifact failed; fell back to DB steps: ${message}`);
+    warnings.push(`loadProjectStepRenderState failed: ${message}`);
+    return { count: null, source: "unavailable", warnings };
   }
-
-  const dbSteps = await getStepsByProjectId(projectId);
-  if (dbSteps.length > 0) {
-    return { count: dbSteps.length, source: "db_steps", warnings };
-  }
-  warnings.push("no steps artifact or DB steps found; image count check skipped");
-  return { count: null, source: "unavailable", warnings };
 }
 
 function buildPptxContentInspectionWarning(

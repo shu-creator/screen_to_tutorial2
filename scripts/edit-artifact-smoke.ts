@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { getStepById, getStepsByProjectId, updateStep } from "../server/db";
 import { loadStepsArtifact, saveStepsArtifact, type StepsArtifact } from "../server/stepsArtifact";
+import { updateProjectStepArtifactFirst } from "../server/stepSource";
 import type { AudioMode } from "../server/videoClips";
 
 type Options = {
@@ -63,7 +64,7 @@ function printHelp(): void {
   console.log(`Usage:
   pnpm edit:smoke -- --project-id <id> [--step-id <id>] [--outdir ./outputs/edit-smoke]
 
-This temporarily edits one step, verifies DB and steps.json artifact sync, then restores the original state.
+This temporarily edits one step through the artifact-primary step adapter, verifies DB and steps.json artifact sync, then restores the original state.
 `);
 }
 
@@ -87,52 +88,9 @@ async function selectStep(projectId: number, requestedStepId?: number) {
   return step;
 }
 
-function patchArtifactStep(
-  artifact: StepsArtifact,
-  stepId: number,
-  sortOrder: number,
-  patch: {
-    title: string;
-    operation: string;
-    description: string;
-    narration: string;
-    tStart: number;
-    tEnd: number;
-    audioMode: AudioMode;
-  },
-): StepsArtifact {
-  let matched = false;
-  const steps = artifact.steps.map((step) => {
-    const matchesLegacyId = step.legacy_step_db_id === stepId;
-    const matchesSortOrder = step.legacy_step_db_id === undefined && step.sort_order === sortOrder;
-    if (!matchesLegacyId && !matchesSortOrder) return step;
-    matched = true;
-    return {
-      ...step,
-      title: patch.title,
-      operation: patch.operation,
-      instruction: patch.operation,
-      description: patch.description,
-      expected_result: patch.description,
-      narration: patch.narration,
-      t_start: patch.tStart,
-      t_end: patch.tEnd,
-      audio_mode: patch.audioMode,
-      needs_review: false,
-      review_reasons: [],
-      warnings: [],
-    };
-  });
-
-  if (!matched) {
-    throw new Error(`steps artifact did not contain step ${stepId} or sort_order ${sortOrder}`);
-  }
-  return { ...artifact, steps };
-}
-
 function findArtifactStep(artifact: StepsArtifact, stepId: number, sortOrder: number) {
-  return artifact.steps.find((step) => step.legacy_step_db_id === stepId)
-    ?? artifact.steps.find((step) => step.legacy_step_db_id === undefined && step.sort_order === sortOrder);
+  void sortOrder;
+  return artifact.steps.find((step) => step.legacy_step_db_id === stepId);
 }
 
 function check(name: string, expected: unknown, actual: unknown): SmokeCheck {
@@ -230,13 +188,20 @@ async function main(): Promise<void> {
   let restoreError: string | null = null;
 
   try {
-    await updateStep(step.id, {
-      title: edit.title,
-      operation: edit.operation,
-      description: edit.description,
-      narration: edit.narration,
+    const updateResult = await updateProjectStepArtifactFirst({
+      projectId,
+      stepId: step.id,
+      data: {
+        title: edit.title,
+        operation: edit.operation,
+        description: edit.description,
+        narration: edit.narration,
+        tStart: edit.tStart,
+        tEnd: edit.tEnd,
+        audioMode: edit.audioMode,
+        markReviewed: true,
+      },
     });
-    await saveStepsArtifact(projectId, patchArtifactStep(artifact, step.id, step.sortOrder, edit));
 
     const updatedDbStep = await getStepById(step.id);
     const updatedArtifact = await loadStepsArtifact(projectId);
@@ -246,6 +211,8 @@ async function main(): Promise<void> {
     }
 
     const checks = [
+      check("adapter.artifactUpdated", true, updateResult.artifactUpdated),
+      check("adapter.dbUpdated", true, updateResult.dbUpdated),
       check("db.title", edit.title, updatedDbStep.title),
       check("db.operation", edit.operation, updatedDbStep.operation),
       check("db.description", edit.description, updatedDbStep.description),
@@ -274,7 +241,7 @@ async function main(): Promise<void> {
       checks,
       restored_after_check: false,
       restore_error: null as string | null,
-      note: "This smoke temporarily edits DB and steps.json, verifies sync, then restores the original state in finally and verifies restored values by re-read.",
+      note: "This smoke temporarily edits through the artifact-primary step adapter, verifies DB and steps.json sync, then restores the original state in finally and verifies restored values by re-read.",
     };
     await fs.writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
     if (!pass) {
@@ -282,12 +249,28 @@ async function main(): Promise<void> {
     }
   } finally {
     try {
-      await updateStep(step.id, {
-        title: originalDbStep.title,
-        operation: originalDbStep.operation,
-        description: originalDbStep.description,
-        narration: originalDbStep.narration ?? null,
+      await saveStepsArtifact(projectId, originalArtifact);
+      const restoreResult = await updateProjectStepArtifactFirst({
+        projectId,
+        stepId: step.id,
+        data: {
+          title: originalDbStep.title,
+          operation: originalDbStep.operation,
+          description: originalDbStep.description,
+          narration: originalDbStep.narration ?? "",
+          tStart: originalArtifactStep.t_start,
+          tEnd: originalArtifactStep.t_end,
+          audioMode: originalArtifactStep.audio_mode,
+        },
       });
+      if (!restoreResult.dbUpdated || originalDbStep.narration === null) {
+        await updateStep(step.id, {
+          title: originalDbStep.title,
+          operation: originalDbStep.operation,
+          description: originalDbStep.description,
+          narration: originalDbStep.narration ?? null,
+        });
+      }
       await saveStepsArtifact(projectId, originalArtifact);
       const restoreIssues = await verifyRestored({
         projectId,

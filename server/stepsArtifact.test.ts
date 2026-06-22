@@ -17,6 +17,7 @@ import {
   buildStepsArtifactFromDb,
   invalidateStepsArtifact,
   loadStepsArtifact,
+  loadStepsArtifactResult,
   patchStepArtifact,
   StepsArtifactSchema,
   STEPS_ARTIFACT_VERSION,
@@ -119,6 +120,40 @@ describe("steps artifact v1 -> v2 migration", () => {
 
   it("ファイルが無ければ null（正常系）", async () => {
     expect(await loadStepsArtifact(99999)).toBeNull();
+  });
+
+  it("loadStepsArtifactResult は missing / invalid / loaded を区別する", async () => {
+    await expect(loadStepsArtifactResult(99997)).resolves.toEqual({
+      status: "missing",
+      reason: "not_found",
+    });
+
+    const malformedPath = path.join(storageRoot, "projects/82/artifacts/steps.json");
+    await fs.mkdir(path.dirname(malformedPath), { recursive: true });
+    await fs.writeFile(malformedPath, "{ not valid json");
+    await expect(loadStepsArtifactResult(82)).resolves.toMatchObject({
+      status: "invalid",
+      reason: "json_parse_error",
+    });
+
+    await writeArtifactFile(84, { ...v1Artifact, project_id: 84, version: "9.9" });
+    await expect(loadStepsArtifactResult(84)).resolves.toMatchObject({
+      status: "invalid",
+      reason: "unknown_version",
+    });
+
+    await writeArtifactFile(85, { ...v1Artifact, project_id: 85 });
+    await invalidateStepsArtifact(85);
+    await expect(loadStepsArtifactResult(85)).resolves.toEqual({
+      status: "missing",
+      reason: "invalidated",
+    });
+
+    await writeArtifactFile(83, { ...v1Artifact, project_id: 83 });
+    await expect(loadStepsArtifactResult(83)).resolves.toMatchObject({
+      status: "loaded",
+      artifact: expect.objectContaining({ project_id: 83 }),
+    });
   });
 
   it("patchStepArtifact はファイルが無ければ false を返す", async () => {

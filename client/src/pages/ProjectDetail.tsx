@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock, RefreshCw, Settings, Play, Film, GripVertical, Presentation, Volume2, Pause } from "lucide-react";
+import { ArrowLeft, Image as ImageIcon, FileText, Download, Wand2, Loader2, CheckCircle, XCircle, Clock, RefreshCw, Settings, Play, Film, GripVertical, Presentation, Volume2, Pause, Pencil, Trash2, Gauge, Mic } from "lucide-react";
 import { Link, useParams } from "wouter";
 import { toast } from "sonner";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -55,7 +55,11 @@ type FrameData = {
 };
 
 type StepAudioMode = "auto" | "tts" | "original" | "mixed" | "silent";
-type StepUpdateData = Partial<StepData> & {
+type StepUpdateData = {
+  title?: string;
+  operation?: string;
+  description?: string;
+  narration?: string;
   tStart?: number;
   tEnd?: number;
   audioMode?: StepAudioMode;
@@ -75,6 +79,69 @@ function formatReviewReason(reason: string): string {
 
 function formatReviewDetails(review: { warnings: string[]; reviewReasons: string[] }): string {
   return [...review.warnings, ...review.reviewReasons.map(formatReviewReason)].filter(Boolean).join(" / ");
+}
+
+const LOW_CONFIDENCE_THRESHOLD = 0.5;
+
+function formatStepTime(ms: number): string {
+  if (!Number.isFinite(ms)) return "-";
+  const seconds = Math.max(0, ms / 1000);
+  if (seconds < 60) {
+    const displaySeconds = seconds < 10
+      ? Math.min(9.9, seconds).toFixed(1)
+      : Math.min(59, Math.round(seconds)).toString();
+    return `${displaySeconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${rest}`;
+}
+
+function formatAudioMode(mode: string): string {
+  const labels: Record<string, string> = {
+    auto: "自動",
+    tts: "TTS",
+    original: "元音声",
+    mixed: "混合",
+    silent: "無音",
+  };
+  return labels[mode] ?? mode;
+}
+
+type ArtifactSyncStatus = {
+  source: string;
+  artifactPrimary: boolean;
+  dbMirror: boolean;
+  message: string;
+};
+
+function formatArtifactSyncStatus(status: ArtifactSyncStatus): { label: string; detail: string; variant: "default" | "secondary" | "destructive" | "outline" } {
+  if (status.source === "invalid_artifact") {
+    return {
+      label: "DB互換",
+      detail: status.message,
+      variant: "destructive",
+    };
+  }
+  if (status.artifactPrimary) {
+    return {
+      label: "Artifact主",
+      detail: status.dbMirror ? "DB互換ID確認済み" : status.message,
+      variant: status.dbMirror ? "default" : "secondary",
+    };
+  }
+  if (status.source === "none") {
+    return {
+      label: "未生成",
+      detail: status.message,
+      variant: "outline",
+    };
+  }
+  return {
+    label: "DB互換",
+    detail: status.message,
+    variant: "secondary",
+  };
 }
 
 function SortableStepCard({
@@ -148,7 +215,9 @@ function SortableStepCard({
                     <Input
                       id={`title-${step.id}`}
                       defaultValue={step.title}
-                      onBlur={(e) => onUpdate(step.id, { title: e.target.value })}
+                      onBlur={(e) => {
+                        if (e.target.value !== step.title) onUpdate(step.id, { title: e.target.value });
+                      }}
                     />
                   </div>
                   <div>
@@ -156,7 +225,9 @@ function SortableStepCard({
                     <Input
                       id={`operation-${step.id}`}
                       defaultValue={step.operation}
-                      onBlur={(e) => onUpdate(step.id, { operation: e.target.value })}
+                      onBlur={(e) => {
+                        if (e.target.value !== step.operation) onUpdate(step.id, { operation: e.target.value });
+                      }}
                     />
                   </div>
                   <div>
@@ -165,7 +236,9 @@ function SortableStepCard({
                       id={`description-${step.id}`}
                       defaultValue={step.description}
                       rows={3}
-                      onBlur={(e) => onUpdate(step.id, { description: e.target.value })}
+                      onBlur={(e) => {
+                        if (e.target.value !== step.description) onUpdate(step.id, { description: e.target.value });
+                      }}
                     />
                   </div>
                   <div>
@@ -174,7 +247,9 @@ function SortableStepCard({
                       id={`narration-${step.id}`}
                       defaultValue={step.narration || ""}
                       rows={2}
-                      onBlur={(e) => onUpdate(step.id, { narration: e.target.value })}
+                      onBlur={(e) => {
+                        if (e.target.value !== (step.narration || "")) onUpdate(step.id, { narration: e.target.value });
+                      }}
                     />
                   </div>
                   {review && (
@@ -196,9 +271,17 @@ function SortableStepCard({
                             min={0}
                             defaultValue={review.tStart}
                             onBlur={(e) => {
-                              if (e.target.value.trim() === "") return;
+                              if (e.target.value.trim() === "") {
+                                e.target.value = String(review.tStart);
+                                return;
+                              }
                               const value = Number(e.target.value);
-                              if (Number.isFinite(value)) onUpdate(step.id, { tStart: Math.round(value) });
+                              if (!Number.isFinite(value)) {
+                                e.target.value = String(review.tStart);
+                                return;
+                              }
+                              const rounded = Math.round(value);
+                              if (rounded !== review.tStart) onUpdate(step.id, { tStart: rounded });
                             }}
                           />
                         </div>
@@ -210,9 +293,17 @@ function SortableStepCard({
                             min={0}
                             defaultValue={review.tEnd}
                             onBlur={(e) => {
-                              if (e.target.value.trim() === "") return;
+                              if (e.target.value.trim() === "") {
+                                e.target.value = String(review.tEnd);
+                                return;
+                              }
                               const value = Number(e.target.value);
-                              if (Number.isFinite(value)) onUpdate(step.id, { tEnd: Math.round(value) });
+                              if (!Number.isFinite(value)) {
+                                e.target.value = String(review.tEnd);
+                                return;
+                              }
+                              const rounded = Math.round(value);
+                              if (rounded !== review.tEnd) onUpdate(step.id, { tEnd: rounded });
                             }}
                           />
                         </div>
@@ -260,9 +351,32 @@ function SortableStepCard({
                     )}
                   </div>
                   {review?.needsReview && (
-                    <p className="text-xs text-destructive mt-1">
+                    <p className="mt-1 text-xs leading-relaxed text-destructive">
                       {formatReviewDetails(review) || "信頼度が低いステップです"}
                     </p>
+                  )}
+                  {review && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline" className="gap-1">
+                        <Clock className="h-3 w-3" />
+                        {formatStepTime(review.tStart)}-{formatStepTime(review.tEnd)}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className={
+                          review.needsReview && review.confidence < LOW_CONFIDENCE_THRESHOLD
+                            ? "gap-1 border-destructive/40 text-destructive"
+                            : "gap-1"
+                        }
+                      >
+                        <Gauge className="h-3 w-3" />
+                        {Math.round(review.confidence * 100)}%
+                      </Badge>
+                      <Badge variant="outline" className="gap-1">
+                        <Volume2 className="h-3 w-3" />
+                        {formatAudioMode(review.audioMode)}
+                      </Badge>
+                    </div>
                   )}
                   <CardDescription className="mt-2">
                     <strong>操作:</strong> {step.operation}
@@ -270,8 +384,9 @@ function SortableStepCard({
                   <p className="text-sm text-foreground mt-2">{step.description}</p>
                   {step.narration && (
                     <div className="mt-2 space-y-2">
-                      <p className="text-sm text-muted-foreground italic">
-                        🎙️ {step.narration}
+                      <p className="flex items-start gap-2 text-sm text-muted-foreground italic">
+                        <Mic className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>{step.narration}</span>
                       </p>
                       {step.audioUrl && (
                         <audio
@@ -303,14 +418,19 @@ function SortableStepCard({
                 variant="ghost"
                 size="sm"
                 onClick={onToggleEdit}
+                aria-label={isEditing ? "編集を終了" : "ステップを編集"}
               >
+                {isEditing ? <CheckCircle className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
                 {isEditing ? "完了" : "編集"}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => onDelete(step.id)}
+                className="text-destructive hover:text-destructive"
+                aria-label="ステップを削除"
               >
+                <Trash2 className="h-4 w-4" />
                 削除
               </Button>
             </div>
@@ -501,6 +621,9 @@ export default function ProjectDetail() {
   });
   const reviewSteps = (steps ?? []).filter((step) => artifactInfo?.reviewByStepId?.[step.id]?.needsReview);
   const reviewStepCount = reviewSteps.length;
+  const artifactSyncStatus = artifactInfo?.syncStatus
+    ? formatArtifactSyncStatus(artifactInfo.syncStatus)
+    : null;
   const focusNextReviewStep = () => {
     const nextStep = reviewSteps[0];
     if (!nextStep) return;
@@ -562,13 +685,12 @@ export default function ProjectDetail() {
     }
   };
 
-  const handleUpdateStep = async (stepId: number, data: any) => {
+  const handleUpdateStep = async (stepId: number, data: StepUpdateData) => {
     try {
-      await updateStepMutation.mutateAsync({ id: stepId, ...data });
+      await updateStepMutation.mutateAsync({ projectId, id: stepId, ...data });
       toast.success("ステップを更新しました");
       refetchSteps();
       refetchArtifactInfo();
-      setEditingStepId((current) => (current === stepId ? null : current));
     } catch (error) {
       const message = error instanceof Error ? error.message : "ステップの更新に失敗しました";
       toast.error(message);
@@ -579,7 +701,7 @@ export default function ProjectDetail() {
     if (!confirm("このステップを削除しますか?")) return;
 
     try {
-      await deleteStepMutation.mutateAsync({ id: stepId });
+      await deleteStepMutation.mutateAsync({ projectId, id: stepId });
       toast.success("ステップを削除しました");
       refetchSteps();
       refetchArtifactInfo();
@@ -591,7 +713,7 @@ export default function ProjectDetail() {
   const handleRegenerateStep = async (stepId: number, frameId: number) => {
     setRegeneratingStepId(stepId);
     try {
-      await regenerateStepMutation.mutateAsync({ stepId, frameId });
+      await regenerateStepMutation.mutateAsync({ projectId, stepId, frameId });
       toast.success("ステップをAIで再生成しました");
       refetchSteps();
       refetchArtifactInfo();
@@ -891,17 +1013,25 @@ export default function ProjectDetail() {
 
         {/* Tabs */}
         <Tabs defaultValue="frames" className="w-full">
-          <TabsList className="flex w-full justify-start overflow-x-auto">
-            <TabsTrigger value="frames">
-              <ImageIcon className="h-4 w-4 mr-2" />
-              フレーム ({frames?.length || 0})
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger
+              value="frames"
+              className="min-w-0 px-1 text-xs sm:px-2 sm:text-sm"
+              aria-label={`フレーム (${frames?.length || 0})`}
+            >
+              <ImageIcon className="h-4 w-4" />
+              フレーム<span className="hidden sm:inline"> ({frames?.length || 0})</span>
             </TabsTrigger>
-            <TabsTrigger value="steps">
-              <FileText className="h-4 w-4 mr-2" />
-              ステップ ({steps?.length || 0})
+            <TabsTrigger
+              value="steps"
+              className="min-w-0 px-1 text-xs sm:px-2 sm:text-sm"
+              aria-label={`ステップ (${steps?.length || 0})`}
+            >
+              <FileText className="h-4 w-4" />
+              ステップ<span className="hidden sm:inline"> ({steps?.length || 0})</span>
             </TabsTrigger>
-            <TabsTrigger value="preview">
-              <Play className="h-4 w-4 mr-2" />
+            <TabsTrigger value="preview" className="min-w-0 px-1 text-xs sm:px-2 sm:text-sm">
+              <Play className="h-4 w-4" />
               プレビュー
             </TabsTrigger>
           </TabsList>
@@ -966,6 +1096,15 @@ export default function ProjectDetail() {
               </div>
             ) : steps && steps.length > 0 ? (
               <>
+              {artifactSyncStatus && (
+                <Alert className="border-primary/20">
+                  <AlertTitle className="flex flex-wrap items-center gap-2">
+                    <span>ステップ同期</span>
+                    <Badge variant={artifactSyncStatus.variant}>{artifactSyncStatus.label}</Badge>
+                  </AlertTitle>
+                  <AlertDescription>{artifactSyncStatus.detail}</AlertDescription>
+                </Alert>
+              )}
               {artifactInfo?.overview && (
                 <Card className="border-primary/30">
                   <CardHeader>
@@ -995,6 +1134,7 @@ export default function ProjectDetail() {
                       onClick={focusNextReviewStep}
                       className="w-full sm:w-auto"
                     >
+                      <Pencil className="h-4 w-4 mr-2" />
                       次の要レビューを編集
                     </Button>
                   </AlertDescription>

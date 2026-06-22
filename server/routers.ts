@@ -6,12 +6,23 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { processVideo } from "./videoProcessor";
-import { generateStepsForProject, regenerateStep } from "./stepGenerator";
+import { analyzeFrameForStepRegeneration, generateStepsForProject } from "./stepGenerator";
 import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
 import { getAvailableVoices, type TTSVoice } from "./_core/tts";
 import { storagePut } from "./storage";
-import { StepAudioModeSchema, invalidateStepsArtifact, loadStepsArtifact, patchStepArtifact } from "./stepsArtifact";
+import { StepAudioModeSchema, invalidateStepsArtifact } from "./stepsArtifact";
+import {
+  artifactContainsStepTarget,
+  buildStepListFromDbRows,
+  deleteProjectStepArtifactFirst,
+  InvalidStepsArtifactError,
+  listProjectStepsArtifactFirst,
+  loadOrCreateStepsArtifactForProject,
+  regenerateProjectStepArtifactFirst,
+  reorderProjectStepsArtifactFirst,
+  updateProjectStepArtifactFirst,
+} from "./stepSource";
 import { invalidateEvidenceArtifact } from "./evidence/artifactStore";
 
 const logger = createLogger("Router");
@@ -302,18 +313,34 @@ export const appRouter = router({
     listByProject: protectedProcedure
       .input(z.object({ projectId: z.number() }))
       .query(async ({ ctx, input }) => {
-        // セキュリティ: ユーザーIDによる所有者チェック
-        return db.getStepsByProjectId(input.projectId, ctx.user.id);
+        try {
+          return await listProjectStepsArtifactFirst(input.projectId, ctx.user.id);
+        } catch (error) {
+          if (error instanceof InvalidStepsArtifactError) {
+            logger.warn("Invalid steps artifact ignored for step list read", {
+              projectId: input.projectId,
+              message: error.message,
+            });
+            const dbSteps = await db.getStepsByProjectId(input.projectId, ctx.user.id);
+            return buildStepListFromDbRows(dbSteps);
+          }
+          if (error instanceof Error && error.message.includes("プロジェクト")) {
+            return [];
+          }
+          throw error;
+        }
       }),
 
     // Phase 2: steps.json v2 のメタ情報（overview / 機械検証結果）をUIへ提供
     artifactInfo: protectedProcedure
       .input(z.object({ projectId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const project = await db.getProjectById(input.projectId, ctx.user.id);
-        if (!project) {
-          throw new Error("プロジェクトが見つかりません");
-        }
+        const compatibilityStatus = {
+          source: "db_steps" as const,
+          artifactPrimary: false,
+          dbMirror: true,
+          message: "DB互換ステップを表示中",
+        };
         const empty: Record<number, {
           needsReview: boolean;
           reviewReasons: string[];
@@ -323,12 +350,44 @@ export const appRouter = router({
           tEnd: number;
           audioMode: string;
         }> = {};
-        const artifact = await loadStepsArtifact(input.projectId).catch(() => null);
-        if (!artifact) {
-          return { overview: null, reviewByStepId: empty };
+        let state;
+        try {
+          state = await loadOrCreateStepsArtifactForProject(input.projectId, ctx.user.id);
+        } catch (error) {
+          if (error instanceof InvalidStepsArtifactError) {
+            logger.warn("Invalid steps artifact ignored for artifactInfo read", {
+              projectId: input.projectId,
+              message: error.message,
+            });
+            return {
+              overview: null,
+              reviewByStepId: empty,
+              syncStatus: {
+                source: "invalid_artifact" as const,
+                artifactPrimary: false,
+                dbMirror: true,
+                message: "不正なsteps.jsonを無視してDB互換ステップを表示中",
+              },
+            };
+          }
+          throw error;
+        }
+        if (!state.artifact || state.source === "db_steps" || state.artifact.config.prompt_version === "legacy-adapter-v1") {
+          return {
+            overview: null,
+            reviewByStepId: empty,
+            syncStatus: state.source === "none"
+              ? {
+                  source: "none" as const,
+                  artifactPrimary: false,
+                  dbMirror: false,
+                  message: "ステップはまだ生成されていません",
+                }
+              : compatibilityStatus,
+          };
         }
         const reviewByStepId = { ...empty };
-        for (const step of artifact.steps) {
+        for (const step of state.artifact.steps) {
           if (step.legacy_step_db_id) {
             reviewByStepId[step.legacy_step_db_id] = {
               needsReview: step.needs_review,
@@ -341,12 +400,35 @@ export const appRouter = router({
             };
           }
         }
-        return { overview: artifact.overview, reviewByStepId };
+        const dbSteps = await db.getStepsByProjectId(input.projectId, ctx.user.id);
+        const dbStepIds = new Set(dbSteps.map((step) => step.id));
+        const legacyStepIds = state.artifact.steps
+          .map((step) => step.legacy_step_db_id)
+          .filter((id): id is number => typeof id === "number");
+        const uniqueLegacyStepIds = new Set(legacyStepIds);
+        const dbMirrorAvailable =
+          state.artifact.steps.length > 0 &&
+          legacyStepIds.length === state.artifact.steps.length &&
+          uniqueLegacyStepIds.size === legacyStepIds.length &&
+          legacyStepIds.every((id) => dbStepIds.has(id));
+        return {
+          overview: state.artifact.overview,
+          reviewByStepId,
+          syncStatus: {
+            source: "steps_artifact" as const,
+            artifactPrimary: true,
+            dbMirror: dbMirrorAvailable,
+            message: dbMirrorAvailable
+              ? "steps.jsonを主データとして表示中"
+              : "steps.jsonを表示中（DB互換IDの確認が必要）",
+          },
+        };
       }),
 
     update: protectedProcedure
       .input(z.object({
         id: z.number(),
+        projectId: z.number().optional(),
         title: z.string().optional(),
         operation: z.string().optional(),
         description: z.string().optional(),
@@ -357,124 +439,18 @@ export const appRouter = router({
         markReviewed: z.literal(true).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        const existingStep = await db.getStepById(id, ctx.user.id);
-        if (!existingStep) {
-          throw new Error("ステップが見つかりません");
-        }
-        // セキュリティ: ユーザーIDによる所有者チェック
-        const dbData = {
-          ...(data.title !== undefined ? { title: data.title } : {}),
-          ...(data.operation !== undefined ? { operation: data.operation } : {}),
-          ...(data.description !== undefined ? { description: data.description } : {}),
-          ...(data.narration !== undefined ? { narration: data.narration } : {}),
-        };
-        const hasArtifactOnlyFields =
-          data.tStart !== undefined ||
-          data.tEnd !== undefined ||
-          data.audioMode !== undefined ||
-          data.markReviewed !== undefined;
-        const hasArtifactSyncFields = Object.keys(dbData).length > 0 || hasArtifactOnlyFields;
-        let artifactPatched = false;
-        if (hasArtifactSyncFields) {
-          artifactPatched = await patchStepArtifact(existingStep.projectId, (artifact) => {
-            let matched = false;
-            const steps = artifact.steps.map((step) => {
-              const matchesLegacyId = step.legacy_step_db_id === id;
-              const matchesSortOrder = step.legacy_step_db_id === undefined && step.sort_order === existingStep.sortOrder;
-              if (!matchesLegacyId && !matchesSortOrder) {
-                return step;
-              }
-              matched = true;
-              const nextTStart = data.tStart ?? step.t_start;
-              const nextTEnd = data.tEnd ?? step.t_end;
-              if ((data.tStart !== undefined || data.tEnd !== undefined) && nextTEnd <= nextTStart) {
-                throw new Error("t_end は t_start より後にしてください");
-              }
-              return {
-                ...step,
-                ...(data.title !== undefined ? { title: data.title } : {}),
-                ...(data.operation !== undefined
-                  ? { operation: data.operation, instruction: data.operation }
-                  : {}),
-                ...(data.description !== undefined
-                  ? { description: data.description, expected_result: data.description }
-                  : {}),
-                ...(data.narration !== undefined ? { narration: data.narration } : {}),
-                t_start: nextTStart,
-                t_end: nextTEnd,
-                ...(data.audioMode !== undefined ? { audio_mode: data.audioMode } : {}),
-                ...(data.markReviewed
-                  ? { needs_review: false, review_reasons: [], warnings: [] }
-                  : {}),
-              };
-            });
-            if (!matched && hasArtifactOnlyFields) {
-              throw new Error("artifactに対象ステップが見つかりませんでした");
-            }
-            if (!matched) {
-              return artifact;
-            }
-            return { ...artifact, steps };
-          });
-        }
-        if (hasArtifactOnlyFields && !artifactPatched) {
-          throw new Error("steps artifactが存在しないため、時刻/音声モード/レビュー状態を保存できません");
-        }
-        if (Object.keys(dbData).length > 0) {
-          await db.updateStep(id, dbData, ctx.user.id);
-        }
+        const { id, projectId, ...data } = input;
+        await updateProjectStepArtifactFirst({ projectId, stepId: id, data }, ctx.user.id);
         return { success: true };
       }),
 
     delete: protectedProcedure
-      .input(z.object({ id: z.number() }))
+      .input(z.object({ id: z.number(), projectId: z.number().optional() }))
       .mutation(async ({ ctx, input }) => {
-        const step = await db.getStepById(input.id, ctx.user.id);
-        if (!step) {
-          throw new Error("ステップが見つかりません");
-        }
-        // セキュリティ: ユーザーIDによる所有者チェック
-        await db.deleteStep(input.id, ctx.user.id);
-        const remainingSteps = await db.getStepsByProjectId(step.projectId, ctx.user.id);
-        const sortedRemaining = remainingSteps
-          .slice()
-          .sort((a, b) => a.sortOrder - b.sortOrder);
-        if (sortedRemaining.length > 0) {
-          await db.reorderSteps(
-            step.projectId,
-            sortedRemaining.map((item) => item.id),
-          );
-        }
-
-        await patchStepArtifact(step.projectId, (artifact) => {
-          const byLegacyId = new Map(
-            artifact.steps
-              .filter((item) => typeof item.legacy_step_db_id === "number")
-              .map((item) => [item.legacy_step_db_id as number, item]),
-          );
-
-          const filtered = sortedRemaining
-            .map((dbStep, idx) => {
-              const artifactStep = byLegacyId.get(dbStep.id);
-              if (!artifactStep) return null;
-              return {
-                ...artifactStep,
-                sort_order: idx,
-                step_id: `step-${idx + 1}`,
-              };
-            })
-            .filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-          if (filtered.length !== sortedRemaining.length) {
-            return artifact;
-          }
-
-          return {
-            ...artifact,
-            steps: filtered,
-          };
-        });
+        await deleteProjectStepArtifactFirst({
+          projectId: input.projectId,
+          stepId: input.id,
+        }, ctx.user.id);
         return { success: true };
       }),
     
@@ -510,11 +486,18 @@ export const appRouter = router({
       }),
     
     regenerate: protectedProcedure
-      .input(z.object({ stepId: z.number(), frameId: z.number() }))
+      .input(z.object({ stepId: z.number(), frameId: z.number(), projectId: z.number().optional() }))
       .mutation(async ({ ctx, input }) => {
         // セキュリティ: ステップの所有者チェック
         const step = await db.getStepById(input.stepId, ctx.user.id);
-        if (!step) {
+        if (!step && input.projectId === undefined) {
+          throw new Error("ステップが見つかりません");
+        }
+        if (step && input.projectId !== undefined && step.projectId !== input.projectId) {
+          throw new Error("ステップが見つかりません");
+        }
+        const projectId = input.projectId ?? step?.projectId;
+        if (projectId === undefined) {
           throw new Error("ステップが見つかりません");
         }
         // セキュリティ: フレームの所有者チェック
@@ -522,31 +505,27 @@ export const appRouter = router({
         if (!frame) {
           throw new Error("フレームが見つかりません");
         }
-        await regenerateStep(input.stepId, input.frameId);
-        const updated = await db.getStepById(input.stepId, ctx.user.id);
-        if (updated) {
-          await patchStepArtifact(updated.projectId, (artifact) => ({
-            ...artifact,
-            steps: artifact.steps.map((item) => {
-              if (
-                item.legacy_step_db_id !== updated.id &&
-                item.sort_order !== updated.sortOrder
-              ) {
-                return item;
-              }
-              return {
-                ...item,
-                frame_id: updated.frameId,
-                title: updated.title,
-                operation: updated.operation,
-                description: updated.description,
-                narration: updated.narration ?? "",
-                instruction: updated.operation,
-                expected_result: updated.description,
-              };
-            }),
-          }));
+        if (frame.projectId !== projectId) {
+          throw new Error("フレームが見つかりません");
         }
+        const state = await loadOrCreateStepsArtifactForProject(projectId, ctx.user.id);
+        if (!state.artifact) {
+          throw new Error("steps artifactを作成できないため、ステップを再生成できません");
+        }
+        if (
+          !artifactContainsStepTarget(state.artifact, input.stepId)
+        ) {
+          throw new Error("ステップがsteps artifact内に見つかりませんでした");
+        }
+        const regenerated = await analyzeFrameForStepRegeneration(frame);
+        await regenerateProjectStepArtifactFirst({
+          projectId,
+          stepId: input.stepId,
+          frame,
+          data: regenerated,
+          state,
+          existingStep: step,
+        }, ctx.user.id);
         return { success: true };
       }),
 
@@ -556,35 +535,7 @@ export const appRouter = router({
         stepIds: z.array(z.number()),
       }))
       .mutation(async ({ ctx, input }) => {
-        // セキュリティ: プロジェクトの所有者チェック
-        const project = await db.getProjectById(input.projectId, ctx.user.id);
-        if (!project) {
-          throw new Error("プロジェクトが見つかりません");
-        }
-        // ステップの並び順を更新
-        await db.reorderSteps(input.projectId, input.stepIds);
-        await patchStepArtifact(input.projectId, (artifact) => {
-          const byLegacyId = new Map(
-            artifact.steps
-              .filter((step) => typeof step.legacy_step_db_id === "number")
-              .map((step) => [step.legacy_step_db_id as number, step]),
-          );
-
-          const reordered = input.stepIds
-            .map((id) => byLegacyId.get(id))
-            .filter((step): step is NonNullable<typeof step> => Boolean(step))
-            .map((step, idx) => ({
-              ...step,
-              sort_order: idx,
-              step_id: `step-${idx + 1}`,
-            }));
-
-          if (reordered.length === artifact.steps.length) {
-            return { ...artifact, steps: reordered };
-          }
-
-          return artifact;
-        });
+        await reorderProjectStepsArtifactFirst(input, ctx.user.id);
         return { success: true };
       }),
   }),
