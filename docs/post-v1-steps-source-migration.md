@@ -48,6 +48,8 @@ no `steps.json` exists.
 The thirteenth slice strengthened `pnpm v1:release-audit` so the Phase 6 source
 contract fails if unmatched artifact edit branches reintroduce DB writes in
 `stepSource`.
+The close-out audit is recorded in
+`docs/post-v1-steps-source-completion-audit.md`.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.
