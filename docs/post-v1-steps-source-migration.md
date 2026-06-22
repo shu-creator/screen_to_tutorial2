@@ -45,6 +45,9 @@ The twelfth slice removed edit-route DB fallbacks for valid artifacts whose
 and regenerate now reject before DB writes when the artifact bridge is
 incomplete; DB-only projects are still promoted to compatibility artifacts when
 no `steps.json` exists.
+The thirteenth slice strengthened `pnpm v1:release-audit` so the Phase 6 source
+contract fails if unmatched artifact edit branches reintroduce DB writes in
+`stepSource`.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.

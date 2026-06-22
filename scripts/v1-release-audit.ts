@@ -397,6 +397,10 @@ const PHASE6_SOURCE_CONTRACT_REQUIREMENTS: SourceContractRequirement[] = [
     file: "scripts/edit-artifact-smoke.ts",
     calls: ["updateProjectStepArtifactFirst"],
   },
+  {
+    file: "server/stepSource.ts",
+    calls: [],
+  },
 ];
 
 function collectCalledIdentifiers(source: string, fileName: string): Set<string> {
@@ -417,9 +421,49 @@ function collectCalledIdentifiers(source: string, fileName: string): Set<string>
   return calls;
 }
 
+function collectDbStepWriteCalls(node: ts.Node): string[] {
+  const calls: string[] = [];
+  const visit = (current: ts.Node): void => {
+    if (ts.isCallExpression(current) && ts.isPropertyAccessExpression(current.expression)) {
+      const expression = current.expression;
+      if (
+        ts.isIdentifier(expression.expression) &&
+        expression.expression.text === "db" &&
+        ["createStep", "updateStep", "deleteStep", "deleteStepsByProjectId", "reorderSteps"].includes(expression.name.text)
+      ) {
+        calls.push(`db.${expression.name.text}()`);
+      }
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return calls;
+}
+
+function collectForbiddenUnmatchedFallbacks(source: string, fileName: string): string[] {
+  if (fileName !== "server/stepSource.ts") return [];
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const forbidden: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isIfStatement(node)) {
+      const condition = node.expression.getText(sourceFile).replace(/\s+/g, "");
+      if (["!patchResult.matched", "!deleted.matched", "!reordered.matched", "!matched"].includes(condition)) {
+        const dbWrites = collectDbStepWriteCalls(node.thenStatement);
+        if (dbWrites.length > 0) {
+          forbidden.push(`${fileName} ${node.expression.getText(sourceFile)} contains ${Array.from(new Set(dbWrites)).join(", ")}`);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return forbidden;
+}
+
 export async function checkPhase6SourceContract(root: string = repoRoot): Promise<ReleaseCheck> {
   const missing: string[] = [];
   const unreadable: string[] = [];
+  const forbidden: string[] = [];
   for (const requirement of PHASE6_SOURCE_CONTRACT_REQUIREMENTS) {
     const filePath = path.join(root, requirement.file);
     let source: string;
@@ -433,14 +477,18 @@ export async function checkPhase6SourceContract(root: string = repoRoot): Promis
     for (const call of requirement.calls) {
       if (!calledIdentifiers.has(call)) missing.push(`${requirement.file} missing call ${call}()`);
     }
+    forbidden.push(...collectForbiddenUnmatchedFallbacks(source, requirement.file));
   }
 
-  if (unreadable.length > 0 || missing.length > 0) {
-    return fail("phase6.source_contract", `unreadable=${unreadable.join("; ") || "-"}; missing=${missing.join("; ") || "-"}`);
+  if (unreadable.length > 0 || missing.length > 0 || forbidden.length > 0) {
+    return fail(
+      "phase6.source_contract",
+      `unreadable=${unreadable.join("; ") || "-"}; missing=${missing.join("; ") || "-"}; forbidden=${forbidden.join("; ") || "-"}`,
+    );
   }
   return pass(
     "phase6.source_contract",
-    "routers, render/export paths, and edit smoke retain the stepSource artifact-primary contract",
+    "routers, render/export paths, edit smoke, and unmatched edit branches retain the stepSource artifact-primary contract",
   );
 }
 

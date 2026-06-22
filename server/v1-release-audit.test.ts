@@ -113,6 +113,21 @@ async function writeSourceContractFixture(root: string, overrides: Record<string
     "server/videoGenerator.ts": "async function render() { await loadProjectStepRenderState(projectId); }",
     "scripts/export-project.ts": "async function inspect() { await loadProjectStepRenderState(projectId); }",
     "scripts/edit-artifact-smoke.ts": "async function smoke() { await updateProjectStepArtifactFirst(input); }",
+    "server/stepSource.ts": [
+      "function artifactContainsStepTarget() { return true; }",
+      "async function update() {",
+      "  if (!patchResult.matched) { throw new Error('missing'); }",
+      "}",
+      "async function remove() {",
+      "  if (!deleted.matched) { throw new Error('missing'); }",
+      "}",
+      "async function reorder() {",
+      "  if (!reordered.matched) { throw new Error('missing'); }",
+      "}",
+      "async function regenerate() {",
+      "  if (!matched) { throw new Error('missing'); }",
+      "}",
+    ].join("\n"),
     ...overrides,
   };
   for (const [relativePath, source] of Object.entries(files)) {
@@ -511,7 +526,7 @@ describe("v1 release audit", () => {
     expect(result).toEqual({
       name: "phase6.source_contract",
       status: "pass",
-      detail: "routers, render/export paths, and edit smoke retain the stepSource artifact-primary contract",
+      detail: "routers, render/export paths, edit smoke, and unmatched edit branches retain the stepSource artifact-primary contract",
     });
   });
 
@@ -533,6 +548,46 @@ describe("v1 release audit", () => {
 
     expect(result.status).toBe("fail");
     expect(result.detail).toContain("server/routers.ts missing call regenerateProjectStepArtifactFirst()");
+  });
+
+  it("fails when unmatched artifact edit branches reintroduce DB writes", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    await writeSourceContractFixture(tempDir, {
+      "server/stepSource.ts": [
+        "function artifactContainsStepTarget() { return true; }",
+        "async function update() {",
+        "  if (!patchResult.matched) {",
+        "    await db.updateStep(stepId, data, userId);",
+        "    await db.createStep(data);",
+        "    return { artifactUpdated: false, dbUpdated: true };",
+        "  }",
+        "}",
+        "async function remove() {",
+        "  if (!deleted.matched) {",
+        "    await db.deleteStep(stepId, userId);",
+        "  }",
+        "}",
+        "async function reorder() {",
+        "  if (!reordered.matched) {",
+        "    await db.reorderSteps(projectId, stepIds);",
+        "  }",
+        "}",
+        "async function regenerate() {",
+        "  if (!matched) {",
+        "    await db.updateStep(stepId, data, userId);",
+        "  }",
+        "}",
+      ].join("\n"),
+    });
+
+    const result = await checkPhase6SourceContract(tempDir);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("forbidden=");
+    expect(result.detail).toContain("!patchResult.matched contains db.updateStep(), db.createStep()");
+    expect(result.detail).toContain("!deleted.matched contains db.deleteStep()");
+    expect(result.detail).toContain("!reordered.matched contains db.reorderSteps()");
+    expect(result.detail).toContain("!matched contains db.updateStep()");
   });
 
   it("does not count imports or comments as Phase 6 source-contract calls", async () => {
