@@ -134,6 +134,7 @@ export function normalizeLabel(label: string): string {
     .trim()
     .replace(/^[「『"'“”‘’]+|[」』"'“”‘’]+$/g, "")
     .replace(/\s*\(\d+\)\s*$/g, "")
+    .replace(/^(ステップ)\s*\d+$/i, "$1")
     .replace(/\s+/g, "")
     .toLowerCase();
 }

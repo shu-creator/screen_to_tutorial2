@@ -201,6 +201,27 @@ describe("computeG2", () => {
     expect(result.matchedLabels).toBe(1);
   });
 
+  it("structured cited_ui_labels のステップ番号サフィックスを照合時に吸収する", () => {
+    const generated = [
+      {
+        t_start: 0,
+        t_end: 1,
+        title: "ステップを開く",
+        cited_ui_labels: ["ステップ 1"],
+      },
+    ];
+    const result = computeG2(generated, ["ステップ"]);
+    expect(normalizeLabel("ステップ 1")).toBe("ステップ");
+    expect(result.accuracy).toBe(1);
+    expect(result.totalLabels).toBe(1);
+    expect(result.matchedLabels).toBe(1);
+  });
+
+  it("ステップ番号以外の数値付きラベルはステップに畳まない", () => {
+    expect(normalizeLabel("ステップ 1 を確認")).toBe("ステップ1を確認");
+    expect(normalizeLabel("元動画 1")).toBe("元動画1");
+  });
+
   it("正規化後に空になる cited_ui_labels は分母から除外する", () => {
     const generated = [
       {

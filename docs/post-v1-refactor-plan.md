@@ -797,3 +797,20 @@ Validation result for the Phase 7 approved prompt measurement slice:
 - `pnpm eval:quality-gate`: PASS, G2=87.8%, G3=2.0%, fallback=0 for all real cases.
 - `pnpm v1:release-audit`: PASS; required real-case human_review records are
   present for all five cases.
+
+Validation result for the Phase 7 step-number label normalization slice:
+
+- Extended G2 label normalization to treat dynamic step-number labels such as
+  `ステップ 1` like the base `ステップ` label, matching the existing dynamic
+  count suffix handling for labels such as `ステップ (0)`.
+- This deliberately does not accept unrelated unmatched labels such as
+  `元動画`, `処理中`, or `ステップがありません`.
+- `pnpm vitest run server/eval/metrics.test.ts`: PASS, 29 tests.
+- `pnpm eval:candidate -- --case real-app-workflow-04-export-video --steps eval/results/generated/real-app-workflow-04-export-video/steps.json --details`:
+  PASS, G2 `88.9%`, G3 `0.0%`, remaining unmatched label `元動画`.
+- `pnpm eval:candidate -- --case real-app-workflow-01 --steps eval/results/generated/real-app-workflow-01/steps.json --details`:
+  PASS, G2 `86.1%`, G3 `10.0%`, remaining unmatched labels
+  `アップロードするファイルを選択`, `処理中`, `ステップがありません`, and
+  `元動画`.
+- `pnpm eval:quality-gate`: PASS, G2 `90.6%`, G3 `2.0%`, fallback=0 for all
+  real cases.

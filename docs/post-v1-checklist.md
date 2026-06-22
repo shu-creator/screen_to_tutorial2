@@ -10,7 +10,8 @@ work that should improve the product after v1 without weakening release gates.
 - Fixed baseline tag: `v1.0.0`
 - Fixed v1 quality baseline: G2 `69.4%`, G3 `7.0%`, fallback reasons `0`
 - Current post-v1 quality gate on persisted local eval artifacts in this branch
-  after case 03 promotion: G2 `87.8%`, G3 `2.0%`, fallback reasons `0`
+  after the case 03 promotion and step-number label normalization: G2 `90.6%`,
+  G3 `2.0%`, fallback reasons `0`
 - Required release audit remains `pnpm v1:release-audit`
 - Human G4 records exist for all five real recording cases.
 - Cases 01 and 02 were reviewed by `iwsh23` on `2026-06-21`; promoted case 03
@@ -316,18 +317,16 @@ Promotion record for `project_40_steps.json`:
 
 | Priority | Case | Tracked G2 (post-v1 norm) | Tracked G3 (post-v1 norm) | v1 baseline G2 | Focus |
 | --- | --- | ---: | ---: | ---: | --- |
-| 1 | `real-app-workflow-04-export-video` | `77.8%` | `0.0%` | `55.6%` | export/video controls and exact cited labels |
-| 2 | `real-app-workflow-01` | `83.3%` | `10.0%` | `72.2%` | split merged project/file-select actions |
+| 1 | `real-app-workflow-01` | `86.1%` | `10.0%` | `72.2%` | split merged project/file-select actions; remaining unmatched state/source-video labels |
+| 2 | `real-app-workflow-04-export-video` | `88.9%` | `0.0%` | `55.6%` | remaining unmatched source-video label |
 | resolved | `real-app-workflow-03-generate-steps` | `100.0%` | `0.0%` | `41.7%` | promoted on `2026-06-22`; future candidates must not regress G2 |
 
 ## UI Polish Queue
 
 Open:
 
-- Keep edit/delete/reorder UI behavior aligned with the artifact-first route
-  contract once the Phase 6 branch is merged.
-- Artifact sync status remains queued because the Phase 6 artifact-first route
-  is still separate from this branch.
+- Artifact sync status remains queued as a later UI-polish item; Phase 6 route
+  integration is complete, but no new sync-status UI has been added.
 
 Done:
 
@@ -342,6 +341,9 @@ Done:
   390px, and 320px widths; tabs now use a three-column layout so labels stay
   visible.
 - Verified that the updated button labels and icons fit without overlap.
+- Integrated the Phase 6 artifact-first route contract into
+  `codex/post-v1-refactor`; edit/delete/reorder routes now share the
+  artifact-derived adapter contract guarded by release audit.
 
 ## Gate Before Closing Phase 7
 
