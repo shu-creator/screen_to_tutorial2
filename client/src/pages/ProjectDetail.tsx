@@ -662,7 +662,7 @@ export default function ProjectDetail() {
     if (!confirm("このステップを削除しますか?")) return;
 
     try {
-      await deleteStepMutation.mutateAsync({ id: stepId });
+      await deleteStepMutation.mutateAsync({ projectId, id: stepId });
       toast.success("ステップを削除しました");
       refetchSteps();
       refetchArtifactInfo();

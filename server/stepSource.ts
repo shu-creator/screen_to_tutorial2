@@ -41,6 +41,16 @@ export type UpdateProjectStepResult = {
   dbUpdated: boolean;
 };
 
+export type DeleteProjectStepResult = {
+  artifactUpdated: boolean;
+  dbDeleted: boolean;
+};
+
+export type ReorderProjectStepsResult = {
+  artifactUpdated: boolean;
+  dbReordered: boolean;
+};
+
 function buildDbStepPatch(data: ArtifactStepUpdate): Partial<InsertStep> {
   return {
     ...(data.title !== undefined ? { title: data.title } : {}),
@@ -341,4 +351,114 @@ export async function updateProjectStepArtifactFirst(
   }
 
   return { artifactUpdated: true, dbUpdated };
+}
+
+export async function deleteProjectStepArtifactFirst(
+  input: {
+    projectId?: number;
+    stepId: number;
+  },
+  userId?: number,
+): Promise<DeleteProjectStepResult> {
+  const existingStep = await db.getStepById(input.stepId, userId);
+  const projectId = input.projectId ?? existingStep?.projectId;
+  if (projectId === undefined) {
+    throw new Error("ステップが見つかりません");
+  }
+  if (existingStep && existingStep.projectId !== projectId) {
+    throw new Error("ステップが見つかりません");
+  }
+
+  const state = await loadOrCreateStepsArtifactForProject(projectId, userId);
+  if (!state.artifact) {
+    throw new Error("steps artifactを作成できないため、ステップを削除できません");
+  }
+
+  const deleted = deleteArtifactStepByLegacyId(state.artifact, input.stepId);
+  if (!deleted.matched) {
+    if (existingStep) {
+      await db.deleteStep(input.stepId, userId);
+      try {
+        const remainingSteps = await db.getStepsByProjectId(projectId, userId);
+        const sortedRemaining = remainingSteps
+          .slice()
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+        if (sortedRemaining.length > 0) {
+          await db.reorderSteps(
+            projectId,
+            sortedRemaining.map((item) => item.id),
+          );
+        }
+      } catch (error) {
+        logger.warn("Failed to compact DB step order after unmatched artifact delete fallback", {
+          projectId,
+          stepId: input.stepId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return { artifactUpdated: false, dbDeleted: true };
+    }
+    throw new Error("artifactに対象ステップが見つかりませんでした");
+  }
+
+  await saveStepsArtifact(projectId, deleted.artifact);
+
+  let dbDeleted = false;
+  if (existingStep) {
+    try {
+      await db.deleteStep(input.stepId, userId);
+      const remainingSteps = await db.getStepsByProjectId(projectId, userId);
+      const sortedRemaining = remainingSteps
+        .slice()
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      if (sortedRemaining.length > 0) {
+        await db.reorderSteps(
+          projectId,
+          sortedRemaining.map((item) => item.id),
+        );
+      }
+      dbDeleted = true;
+    } catch (error) {
+      logger.warn("Failed to mirror artifact-first step delete into DB", {
+        projectId,
+        stepId: input.stepId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { artifactUpdated: true, dbDeleted };
+}
+
+export async function reorderProjectStepsArtifactFirst(
+  input: {
+    projectId: number;
+    stepIds: number[];
+  },
+  userId?: number,
+): Promise<ReorderProjectStepsResult> {
+  const state = await loadOrCreateStepsArtifactForProject(input.projectId, userId);
+  if (!state.artifact) {
+    throw new Error("steps artifactを作成できないため、順序を保存できません");
+  }
+
+  const reordered = reorderArtifactStepsByLegacyIds(state.artifact, input.stepIds);
+  if (!reordered.matched) {
+    throw new Error("artifactのステップ順序を解決できませんでした");
+  }
+
+  await saveStepsArtifact(input.projectId, reordered.artifact);
+
+  let dbReordered = false;
+  try {
+    await db.reorderSteps(input.projectId, input.stepIds);
+    dbReordered = true;
+  } catch (error) {
+    logger.warn("Failed to mirror artifact-first step reorder into DB", {
+      projectId: input.projectId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return { artifactUpdated: true, dbReordered };
 }

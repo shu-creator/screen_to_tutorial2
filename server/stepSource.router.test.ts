@@ -102,6 +102,17 @@ const dbStep: Step = {
   updatedAt: new Date(),
 };
 
+const dbStep2: Step = {
+  ...dbStep,
+  id: 502,
+  frameId: 101,
+  title: "DB title 2",
+  operation: "DB op 2",
+  description: "DB desc 2",
+  narration: "DB narration 2",
+  sortOrder: 1,
+};
+
 function makeArtifact(): StepsArtifact {
   return {
     version: "2.0",
@@ -153,6 +164,42 @@ function makeArtifact(): StepsArtifact {
         cited_ui_labels: [],
         needs_review: true,
         review_reasons: ["verification:low_confidence"],
+      },
+    ],
+  };
+}
+
+function makeTwoStepArtifact(): StepsArtifact {
+  const artifact = makeArtifact();
+  return {
+    ...artifact,
+    steps: [
+      artifact.steps[0],
+      {
+        ...artifact.steps[0],
+        step_id: "step-2",
+        sort_order: 1,
+        frame_id: 101,
+        legacy_step_db_id: 502,
+        t_start: 1000,
+        t_end: 2500,
+        representative_frames: [
+          {
+            frame_id: 101,
+            frame_number: 1,
+            timestamp: 1000,
+            image_url: "/api/storage/projects/50/frames/1.jpg",
+          },
+        ],
+        instruction: "Artifact op 2",
+        expected_result: "Artifact desc 2",
+        title: "Artifact title 2",
+        operation: "Artifact op 2",
+        description: "Artifact desc 2",
+        narration: "Artifact narration 2",
+        audio_url: undefined,
+        audio_key: undefined,
+        source_segment_ids: ["seg-2"],
       },
     ],
   };
@@ -531,5 +578,313 @@ describe("step router artifact-first read routes", () => {
 
     expect(dbMocks.updateStep).toHaveBeenCalledWith(501, { title: "DB fallback title" }, 1);
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe("{ not valid json");
+  });
+
+  it("deletes from steps.json first and mirrors the legacy DB delete", async () => {
+    await saveStepsArtifact(50, makeTwoStepArtifact());
+    dbMocks.getStepsByProjectId.mockResolvedValue([dbStep2]);
+    const caller = createCaller();
+
+    await expect(caller.step.delete({ projectId: 50, id: 501 })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          step_id: "step-1",
+          sort_order: 0,
+          legacy_step_db_id: 502,
+          title: "Artifact title 2",
+        }),
+      ],
+    });
+    expect(dbMocks.deleteStep).toHaveBeenCalledWith(501, 1);
+    expect(dbMocks.reorderSteps).toHaveBeenCalledWith(50, [502]);
+  });
+
+  it("keeps delete backward-compatible when projectId is omitted", async () => {
+    await saveStepsArtifact(50, makeTwoStepArtifact());
+    dbMocks.getStepsByProjectId.mockResolvedValue([dbStep2]);
+    const caller = createCaller();
+
+    await expect(caller.step.delete({ id: 501 })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 502,
+          sort_order: 0,
+        }),
+      ],
+    });
+    expect(dbMocks.deleteStep).toHaveBeenCalledWith(501, 1);
+    expect(dbMocks.reorderSteps).toHaveBeenCalledWith(50, [502]);
+  });
+
+  it("deletes an artifact step even when the legacy DB row no longer exists", async () => {
+    dbMocks.getStepById.mockResolvedValue(undefined);
+    await saveStepsArtifact(50, makeTwoStepArtifact());
+    const caller = createCaller();
+
+    await expect(caller.step.delete({ projectId: 50, id: 501 })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 502,
+          sort_order: 0,
+        }),
+      ],
+    });
+    expect(dbMocks.deleteStep).not.toHaveBeenCalled();
+  });
+
+  it("promotes a DB-only project to steps.json before deleting", async () => {
+    dbMocks.getStepsByProjectId
+      .mockResolvedValueOnce([dbStep, dbStep2])
+      .mockResolvedValueOnce([dbStep2]);
+    const caller = createCaller();
+
+    await expect(caller.step.delete({ projectId: 50, id: 501 })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      config: expect.objectContaining({ prompt_version: "legacy-adapter-v1" }),
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 502,
+          sort_order: 0,
+          title: "DB title 2",
+        }),
+      ],
+    });
+    expect(dbMocks.deleteStep).toHaveBeenCalledWith(501, 1);
+    expect(dbMocks.reorderSteps).toHaveBeenCalledWith(50, [502]);
+  });
+
+  it("falls back to DB delete and compacts DB order when the artifact has no matching step", async () => {
+    const artifact = makeTwoStepArtifact();
+    await saveStepsArtifact(50, {
+      ...artifact,
+      steps: artifact.steps.map((step) => ({
+        ...step,
+        legacy_step_db_id: step.legacy_step_db_id === 501 ? 777 : step.legacy_step_db_id,
+      })),
+    });
+    dbMocks.getStepsByProjectId.mockResolvedValue([dbStep2]);
+    const caller = createCaller();
+
+    await expect(caller.step.delete({ projectId: 50, id: 501 })).resolves.toEqual({ success: true });
+
+    expect(dbMocks.deleteStep).toHaveBeenCalledWith(501, 1);
+    expect(dbMocks.reorderSteps).toHaveBeenCalledWith(50, [502]);
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({ legacy_step_db_id: 777 }),
+        expect.objectContaining({ legacy_step_db_id: 502 }),
+      ],
+    });
+  });
+
+  it("keeps unmatched delete fallback successful when DB order compaction fails", async () => {
+    const artifact = makeTwoStepArtifact();
+    await saveStepsArtifact(50, {
+      ...artifact,
+      steps: artifact.steps.map((step) => ({
+        ...step,
+        legacy_step_db_id: step.legacy_step_db_id === 501 ? 777 : step.legacy_step_db_id,
+      })),
+    });
+    dbMocks.getStepsByProjectId.mockResolvedValue([dbStep2]);
+    dbMocks.reorderSteps.mockRejectedValueOnce(new Error("DB reorder gone"));
+    const caller = createCaller();
+
+    await expect(caller.step.delete({ projectId: 50, id: 501 })).resolves.toEqual({ success: true });
+
+    expect(dbMocks.deleteStep).toHaveBeenCalledWith(501, 1);
+    expect(dbMocks.reorderSteps).toHaveBeenCalledWith(50, [502]);
+  });
+
+  it("rejects deletes for inaccessible projectIds before writing", async () => {
+    dbMocks.getStepById.mockResolvedValue(undefined);
+    dbMocks.getProjectById.mockResolvedValue(undefined);
+    const caller = createCaller();
+
+    await expect(caller.step.delete({
+      projectId: 50,
+      id: 501,
+    })).rejects.toThrow("プロジェクトが見つかりません");
+    expect(dbMocks.deleteStep).not.toHaveBeenCalled();
+  });
+
+  it("rejects delete requests when the DB step belongs to another project", async () => {
+    dbMocks.getStepById.mockResolvedValue({ ...dbStep, projectId: 99 });
+    const caller = createCaller();
+
+    await expect(caller.step.delete({
+      projectId: 50,
+      id: 501,
+    })).rejects.toThrow("ステップが見つかりません");
+    expect(dbMocks.deleteStep).not.toHaveBeenCalled();
+  });
+
+  it("does not delete DB rows when artifact deletion cannot be persisted", async () => {
+    await saveStepsArtifact(50, makeTwoStepArtifact());
+    const writeSpy = vi.spyOn(fs, "writeFile").mockRejectedValue(new Error("storage gone"));
+    const caller = createCaller();
+
+    try {
+      await expect(caller.step.delete({ projectId: 50, id: 501 })).rejects.toThrow("storage gone");
+      expect(dbMocks.deleteStep).not.toHaveBeenCalled();
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
+  it("keeps artifact deletion visible when the legacy DB mirror fails", async () => {
+    await saveStepsArtifact(50, makeTwoStepArtifact());
+    dbMocks.deleteStep.mockRejectedValueOnce(new Error("DB gone"));
+    const caller = createCaller();
+
+    await expect(caller.step.delete({ projectId: 50, id: 501 })).resolves.toEqual({ success: true });
+
+    await expect(caller.step.listByProject({ projectId: 50 })).resolves.toEqual([
+      expect.objectContaining({
+        id: 502,
+        title: "Artifact title 2",
+      }),
+    ]);
+  });
+
+  it("rejects artifact-first deletes for invalid artifacts without changing DB", async () => {
+    const filePath = await writeMalformedArtifact(50);
+    const caller = createCaller();
+
+    await expect(caller.step.delete({ projectId: 50, id: 501 })).rejects.toThrow("steps artifactが不正");
+
+    expect(dbMocks.deleteStep).not.toHaveBeenCalled();
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("{ not valid json");
+  });
+
+  it("rejects artifact-first reorder for invalid artifacts without changing DB", async () => {
+    const filePath = await writeMalformedArtifact(50);
+    const caller = createCaller();
+
+    await expect(caller.step.reorder({
+      projectId: 50,
+      stepIds: [502, 501],
+    })).rejects.toThrow("steps artifactが不正");
+
+    expect(dbMocks.reorderSteps).not.toHaveBeenCalled();
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("{ not valid json");
+  });
+
+  it("rejects reorders for inaccessible projectIds before writing", async () => {
+    dbMocks.getProjectById.mockResolvedValue(undefined);
+    const caller = createCaller();
+
+    await expect(caller.step.reorder({
+      projectId: 50,
+      stepIds: [502, 501],
+    })).rejects.toThrow("プロジェクトが見つかりません");
+    expect(dbMocks.reorderSteps).not.toHaveBeenCalled();
+  });
+
+  it("reorders steps.json first and mirrors legacy DB order", async () => {
+    await saveStepsArtifact(50, makeTwoStepArtifact());
+    const caller = createCaller();
+
+    await expect(caller.step.reorder({
+      projectId: 50,
+      stepIds: [502, 501],
+    })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          step_id: "step-1",
+          sort_order: 0,
+          legacy_step_db_id: 502,
+        }),
+        expect.objectContaining({
+          step_id: "step-2",
+          sort_order: 1,
+          legacy_step_db_id: 501,
+        }),
+      ],
+    });
+    expect(dbMocks.reorderSteps).toHaveBeenCalledWith(50, [502, 501]);
+  });
+
+  it("promotes a DB-only project to steps.json before reordering", async () => {
+    dbMocks.getStepsByProjectId.mockResolvedValue([dbStep, dbStep2]);
+    const caller = createCaller();
+
+    await expect(caller.step.reorder({
+      projectId: 50,
+      stepIds: [502, 501],
+    })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      config: expect.objectContaining({ prompt_version: "legacy-adapter-v1" }),
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 502,
+          sort_order: 0,
+          title: "DB title 2",
+        }),
+        expect.objectContaining({
+          legacy_step_db_id: 501,
+          sort_order: 1,
+          title: "DB title",
+        }),
+      ],
+    });
+    expect(dbMocks.reorderSteps).toHaveBeenCalledWith(50, [502, 501]);
+  });
+
+  it("rejects incomplete or duplicate reorder inputs before DB sync", async () => {
+    await saveStepsArtifact(50, makeTwoStepArtifact());
+    const caller = createCaller();
+
+    await expect(caller.step.reorder({
+      projectId: 50,
+      stepIds: [502],
+    })).rejects.toThrow("artifactのステップ順序を解決できませんでした");
+    await expect(caller.step.reorder({
+      projectId: 50,
+      stepIds: [501, 501],
+    })).rejects.toThrow("artifactのステップ順序を解決できませんでした");
+    expect(dbMocks.reorderSteps).not.toHaveBeenCalled();
+  });
+
+  it("does not reorder DB rows when artifact reorder cannot be persisted", async () => {
+    await saveStepsArtifact(50, makeTwoStepArtifact());
+    const writeSpy = vi.spyOn(fs, "writeFile").mockRejectedValue(new Error("storage gone"));
+    const caller = createCaller();
+
+    try {
+      await expect(caller.step.reorder({
+        projectId: 50,
+        stepIds: [502, 501],
+      })).rejects.toThrow("storage gone");
+      expect(dbMocks.reorderSteps).not.toHaveBeenCalled();
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
+  it("keeps artifact reorder visible when the legacy DB mirror fails", async () => {
+    await saveStepsArtifact(50, makeTwoStepArtifact());
+    dbMocks.reorderSteps.mockRejectedValueOnce(new Error("DB gone"));
+    const caller = createCaller();
+
+    await expect(caller.step.reorder({
+      projectId: 50,
+      stepIds: [502, 501],
+    })).resolves.toEqual({ success: true });
+
+    await expect(caller.step.listByProject({ projectId: 50 })).resolves.toEqual([
+      expect.objectContaining({ id: 502, sortOrder: 0 }),
+      expect.objectContaining({ id: 501, sortOrder: 1 }),
+    ]);
   });
 });

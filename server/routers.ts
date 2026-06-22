@@ -14,8 +14,10 @@ import { storagePut } from "./storage";
 import { StepAudioModeSchema, invalidateStepsArtifact, patchStepArtifact } from "./stepsArtifact";
 import {
   buildStepListFromDbRows,
+  deleteProjectStepArtifactFirst,
   listProjectStepsArtifactFirst,
   loadOrCreateStepsArtifactForProject,
+  reorderProjectStepsArtifactFirst,
   updateProjectStepArtifactFirst,
 } from "./stepSource";
 import { invalidateEvidenceArtifact } from "./evidence/artifactStore";
@@ -392,56 +394,12 @@ export const appRouter = router({
       }),
 
     delete: protectedProcedure
-      .input(z.object({ id: z.number() }))
+      .input(z.object({ id: z.number(), projectId: z.number().optional() }))
       .mutation(async ({ ctx, input }) => {
-        const step = await db.getStepById(input.id, ctx.user.id);
-        if (!step) {
-          throw new Error("ステップが見つかりません");
-        }
-        // セキュリティ: ユーザーIDによる所有者チェック
-        await db.deleteStep(input.id, ctx.user.id);
-        const remainingSteps = await db.getStepsByProjectId(step.projectId, ctx.user.id);
-        const sortedRemaining = remainingSteps
-          .slice()
-          .sort((a, b) => a.sortOrder - b.sortOrder);
-        if (sortedRemaining.length > 0) {
-          await db.reorderSteps(
-            step.projectId,
-            sortedRemaining.map((item) => item.id),
-          );
-        }
-
-        await patchStepArtifact(step.projectId, (artifact) => {
-          const byLegacyId = new Map(
-            artifact.steps
-              .filter((item) => typeof item.legacy_step_db_id === "number")
-              .map((item) => [item.legacy_step_db_id as number, item]),
-          );
-
-          const filtered = sortedRemaining
-            .map((dbStep, idx) => {
-              const artifactStep = byLegacyId.get(dbStep.id);
-              if (!artifactStep) return null;
-              return {
-                ...artifactStep,
-                sort_order: idx,
-                step_id: `step-${idx + 1}`,
-              };
-            })
-            .filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-          if (filtered.length !== sortedRemaining.length) {
-            // Phase 6 migration note: the stepSource delete adapter returns
-            // matched=false for this partial bridge case. Reconcile whether the
-            // route should keep this legacy silent no-op before adopting it.
-            return artifact;
-          }
-
-          return {
-            ...artifact,
-            steps: filtered,
-          };
-        });
+        await deleteProjectStepArtifactFirst({
+          projectId: input.projectId,
+          stepId: input.id,
+        }, ctx.user.id);
         return { success: true };
       }),
     
@@ -523,38 +481,7 @@ export const appRouter = router({
         stepIds: z.array(z.number()),
       }))
       .mutation(async ({ ctx, input }) => {
-        // セキュリティ: プロジェクトの所有者チェック
-        const project = await db.getProjectById(input.projectId, ctx.user.id);
-        if (!project) {
-          throw new Error("プロジェクトが見つかりません");
-        }
-        // ステップの並び順を更新
-        await db.reorderSteps(input.projectId, input.stepIds);
-        await patchStepArtifact(input.projectId, (artifact) => {
-          const byLegacyId = new Map(
-            artifact.steps
-              .filter((step) => typeof step.legacy_step_db_id === "number")
-              .map((step) => [step.legacy_step_db_id as number, step]),
-          );
-
-          const reordered = input.stepIds
-            .map((id) => byLegacyId.get(id))
-            .filter((step): step is NonNullable<typeof step> => Boolean(step))
-            .map((step, idx) => ({
-              ...step,
-              sort_order: idx,
-              step_id: `step-${idx + 1}`,
-            }));
-
-          if (reordered.length === artifact.steps.length) {
-            return { ...artifact, steps: reordered };
-          }
-
-          // Phase 6 migration note: the stepSource reorder adapter rejects
-          // missing or duplicate IDs explicitly via matched=false. Reconcile
-          // this legacy silent no-op before adopting it in the router.
-          return artifact;
-        });
+        await reorderProjectStepsArtifactFirst(input, ctx.user.id);
         return { success: true };
       }),
   }),
