@@ -41,9 +41,9 @@ Phase 6 has reached the artifact-primary compatibility target described in
 `docs/post-v1-steps-source-migration.md` and
 `docs/post-v1-artifact-db-responsibility.md`.
 
-The next implementation step should not be more opportunistic cleanup on this
-branch. It should be one of:
+The branch has since been fast-forward integrated into `codex/post-v1-refactor`.
+The next implementation step should not be more opportunistic compatibility
+cleanup. It should be:
 
-- merge or otherwise integrate the Phase 6 branch after review; or
 - start a separate DB-free branch that removes the `legacy_step_db_id` bridge
   and DB-dependent route addressing in one coordinated design.

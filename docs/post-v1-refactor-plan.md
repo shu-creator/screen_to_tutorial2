@@ -418,14 +418,15 @@ Completed or started changes:
   `source_artifact_sha256` is
   `88208bb96925978ba14f63d1749def4f01a23073650f78d63b2a1561edc40d8a`.
 
-Deferred from the parent `codex/post-v1-refactor` branch:
+Integrated follow-up status:
 
-- Artifact sync status UI remains a later UI-polish item; Phase 6 route work
-  updates the source contract but does not add new sync-status UI.
-- Phase 6 `steps.json` source migration moved to the separate
-  `codex/post-v1-steps-source-v2` branch as designed.
+- Phase 6 `steps.json` source migration was implemented on
+  `codex/post-v1-steps-source-v2` and fast-forward integrated into
+  `codex/post-v1-refactor`.
+- Artifact sync status UI is implemented on the Steps tab and shows the active
+  source contract plus DB compatibility ID status.
 
-Current Phase 6 branch status:
+Current Phase 6 status:
 
 - UI list/edit routes, edit smoke, and render/export step loading now use the
   artifact-derived `stepSource` adapter.
