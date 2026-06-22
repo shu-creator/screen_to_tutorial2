@@ -25,6 +25,9 @@ The seventh slice moved `pnpm edit:smoke` from direct DB/artifact writes to the
 artifact-primary step adapter so the smoke now checks the same edit source
 contract as the UI route implementation, while still restoring the original DB
 and artifact state after verification.
+The eighth slice lifted the edit-smoke adapter checks into `pnpm v1:smoke` so
+release smoke summaries now fail unless `adapter.artifactUpdated` and
+`adapter.dbUpdated` are both verified.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.

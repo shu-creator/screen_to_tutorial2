@@ -63,6 +63,25 @@ function qualityGateResult(overrides: Partial<QualityGateResult> = {}): QualityG
   };
 }
 
+function requiredSmokeChecks() {
+  return [
+    "setup.check",
+    "pipeline.generate",
+    "steps.version",
+    "steps.count",
+    "steps.fallback_reasons",
+    "project.export",
+    "export.slide.bytes",
+    "export.slide.content_check",
+    "export.video.bytes",
+    "export.video.still_image_fallback_count",
+    "edit.smoke",
+    "edit.summary",
+    "edit.adapter.artifactUpdated",
+    "edit.adapter.dbUpdated",
+  ].map((name) => ({ name, pass: true }));
+}
+
 describe("v1 release audit", () => {
   it("--allow-incomplete does not suppress fail checks", () => {
     const incompleteOnly = {
@@ -90,7 +109,7 @@ describe("v1 release audit", () => {
       pass: true,
       project_id: 1,
       metrics: { step_count: 1, fallback_reason_count: 0 },
-      checks: [{ name: "setup.check", pass: true }],
+      checks: requiredSmokeChecks(),
     }));
 
     const result = await checkV1Smoke(summaryPath, "smoke.test", false);
@@ -117,6 +136,33 @@ describe("v1 release audit", () => {
     expect(result.detail).toContain("missing summary");
   });
 
+  it("fails stale smoke evidence without the Phase 6 adapter checks", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
+    const stepsPath = path.join(tempDir, "steps.json");
+    const exportPath = path.join(tempDir, "export.json");
+    const editPath = path.join(tempDir, "edit.json");
+    const summaryPath = path.join(tempDir, "v1_smoke_summary.json");
+    await fs.writeFile(stepsPath, "{}");
+    await fs.writeFile(exportPath, "{}");
+    await fs.writeFile(editPath, "{}");
+    await fs.writeFile(summaryPath, JSON.stringify({
+      pass: true,
+      project_id: 1,
+      artifacts: {
+        steps: stepsPath,
+        export_summary: exportPath,
+        edit_smoke_summary: editPath,
+      },
+      metrics: { step_count: 1, fallback_reason_count: 0 },
+      checks: requiredSmokeChecks().filter((check) => !check.name.startsWith("edit.adapter.")),
+    }));
+
+    const result = await checkV1Smoke(summaryPath, "smoke.test", false);
+
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("missing required checks: edit.adapter.artifactUpdated, edit.adapter.dbUpdated");
+  });
+
   it("requires fresh checkout metadata for fresh-env smoke evidence", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "v1-release-audit-"));
     const stepsPath = path.join(tempDir, "steps.json");
@@ -136,7 +182,7 @@ describe("v1 release audit", () => {
         edit_smoke_summary: editPath,
       },
       metrics: { step_count: 1, fallback_reason_count: 0 },
-      checks: [{ name: "setup.check", pass: true }],
+      checks: requiredSmokeChecks(),
     }));
 
     const result = await checkV1Smoke(summaryPath, "smoke.fresh", true);
@@ -164,7 +210,7 @@ describe("v1 release audit", () => {
         edit_smoke_summary: editPath,
       },
       metrics: { step_count: 1, fallback_reason_count: 0 },
-      checks: [{ name: "setup.check", pass: true }],
+      checks: requiredSmokeChecks(),
       environment: {
         kind: "fresh_checkout",
         source_commit: "abc1234def5678",

@@ -52,6 +52,23 @@ type V1SmokeSummary = {
   checks?: Array<{ name?: string; pass?: boolean; detail?: string }>;
 };
 
+const REQUIRED_V1_SMOKE_CHECKS = [
+  "setup.check",
+  "pipeline.generate",
+  "steps.version",
+  "steps.count",
+  "steps.fallback_reasons",
+  "project.export",
+  "export.slide.bytes",
+  "export.slide.content_check",
+  "export.video.bytes",
+  "export.video.still_image_fallback_count",
+  "edit.smoke",
+  "edit.summary",
+  "edit.adapter.artifactUpdated",
+  "edit.adapter.dbUpdated",
+];
+
 export type ExportQaSummary = {
   case_id?: string;
   artifacts?: {
@@ -222,6 +239,8 @@ export async function checkV1Smoke(
   }
   const summary = parsed.value;
   const failedChecks = (summary.checks ?? []).filter((check) => check.pass !== true);
+  const checkNames = new Set((summary.checks ?? []).map((check) => check.name));
+  const missingRequiredChecks = REQUIRED_V1_SMOKE_CHECKS.filter((name) => !checkNames.has(name));
   const requiredArtifacts = {
     steps: summary.artifacts?.steps,
     export_summary: summary.artifacts?.export_summary,
@@ -238,6 +257,7 @@ export async function checkV1Smoke(
   const reasons: string[] = [];
   if (summary.pass !== true) reasons.push("summary pass is not true");
   if (failedChecks.length > 0) reasons.push(`failed checks: ${failedChecks.map((check) => check.name ?? "unnamed").join(", ")}`);
+  if (missingRequiredChecks.length > 0) reasons.push(`missing required checks: ${missingRequiredChecks.join(", ")}`);
   if ((summary.metrics?.step_count ?? 0) <= 0) reasons.push("step_count is not positive");
   if (summary.metrics?.fallback_reason_count !== 0) reasons.push(`fallback_reason_count=${summary.metrics?.fallback_reason_count ?? "missing"}; expected 0`);
   if (missingArtifactFields.length > 0) reasons.push(`missing artifact fields: ${missingArtifactFields.join(", ")}`);
