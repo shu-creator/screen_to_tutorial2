@@ -1,6 +1,7 @@
 import type { Frame, InsertStep, Project, Step } from "../drizzle/schema";
 import { createLogger } from "./_core/logger";
 import * as db from "./db";
+import type { RegeneratedStepData } from "./stepGenerator";
 import {
   buildLegacyRenderableStepsFromArtifact,
   buildStepsArtifactFromDb,
@@ -49,6 +50,11 @@ export type DeleteProjectStepResult = {
 export type ReorderProjectStepsResult = {
   artifactUpdated: boolean;
   dbReordered: boolean;
+};
+
+export type RegenerateProjectStepResult = {
+  artifactUpdated: boolean;
+  dbUpdated: boolean;
 };
 
 function buildDbStepPatch(data: ArtifactStepUpdate): Partial<InsertStep> {
@@ -461,4 +467,102 @@ export async function reorderProjectStepsArtifactFirst(
   }
 
   return { artifactUpdated: true, dbReordered };
+}
+
+export async function regenerateProjectStepArtifactFirst(
+  input: {
+    projectId?: number;
+    stepId: number;
+    frame: Frame;
+    data: RegeneratedStepData;
+    state?: StepSourceState;
+    existingStep?: Step | null;
+  },
+  userId?: number,
+): Promise<RegenerateProjectStepResult> {
+  const existingStep = input.existingStep ?? await db.getStepById(input.stepId, userId);
+  const projectId = input.projectId ?? existingStep?.projectId ?? input.state?.project.id;
+  if (projectId === undefined) {
+    throw new Error("ステップが見つかりません");
+  }
+  if (existingStep && existingStep.projectId !== projectId) {
+    throw new Error("ステップが見つかりません");
+  }
+  if (input.frame.projectId !== projectId) {
+    throw new Error("フレームが見つかりません");
+  }
+
+  const state = input.state ?? await loadOrCreateStepsArtifactForProject(projectId, userId);
+  if (!state.artifact) {
+    throw new Error("steps artifactを作成できないため、ステップを再生成できません");
+  }
+
+  let matched = false;
+  const steps = state.artifact.steps.map((step) => {
+    const matchesLegacyId = step.legacy_step_db_id === input.stepId;
+    const matchesSortOrder = step.legacy_step_db_id === undefined && step.sort_order === existingStep?.sortOrder;
+    if (!matchesLegacyId && !matchesSortOrder) {
+      return step;
+    }
+
+    matched = true;
+    return {
+      ...step,
+      frame_id: input.frame.id,
+      representative_frames: [
+        {
+          frame_id: input.frame.id,
+          frame_number: input.frame.frameNumber,
+          timestamp: input.frame.timestamp,
+          image_url: input.frame.imageUrl,
+        },
+      ],
+      title: input.data.title,
+      operation: input.data.operation,
+      description: input.data.description,
+      narration: input.data.narration,
+      instruction: input.data.instruction,
+      expected_result: input.data.expected_result,
+      warnings: input.data.warnings,
+      confidence: input.data.confidence,
+    };
+  });
+
+  if (!matched) {
+    if (existingStep) {
+      await db.updateStep(input.stepId, {
+        frameId: input.frame.id,
+        title: input.data.title,
+        operation: input.data.operation,
+        description: input.data.description,
+        narration: input.data.narration,
+      }, userId);
+      return { artifactUpdated: false, dbUpdated: true };
+    }
+    throw new Error("artifactに対象ステップが見つかりませんでした");
+  }
+
+  await saveStepsArtifact(projectId, { ...state.artifact, steps });
+
+  let dbUpdated = false;
+  if (existingStep) {
+    try {
+      await db.updateStep(input.stepId, {
+        frameId: input.frame.id,
+        title: input.data.title,
+        operation: input.data.operation,
+        description: input.data.description,
+        narration: input.data.narration,
+      }, userId);
+      dbUpdated = true;
+    } catch (error) {
+      logger.warn("Failed to mirror artifact-first step regenerate into DB", {
+        projectId,
+        stepId: input.stepId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { artifactUpdated: true, dbUpdated };
 }

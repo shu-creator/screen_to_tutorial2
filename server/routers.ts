@@ -6,17 +6,18 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { processVideo } from "./videoProcessor";
-import { generateStepsForProject, regenerateStep } from "./stepGenerator";
+import { analyzeFrameForStepRegeneration, generateStepsForProject } from "./stepGenerator";
 import { generateSlides } from "./slideGenerator";
 import { generateAudioForProject, generateVideo } from "./videoGenerator";
 import { getAvailableVoices, type TTSVoice } from "./_core/tts";
 import { storagePut } from "./storage";
-import { StepAudioModeSchema, invalidateStepsArtifact, patchStepArtifact } from "./stepsArtifact";
+import { StepAudioModeSchema, invalidateStepsArtifact } from "./stepsArtifact";
 import {
   buildStepListFromDbRows,
   deleteProjectStepArtifactFirst,
   listProjectStepsArtifactFirst,
   loadOrCreateStepsArtifactForProject,
+  regenerateProjectStepArtifactFirst,
   reorderProjectStepsArtifactFirst,
   updateProjectStepArtifactFirst,
 } from "./stepSource";
@@ -435,11 +436,18 @@ export const appRouter = router({
       }),
     
     regenerate: protectedProcedure
-      .input(z.object({ stepId: z.number(), frameId: z.number() }))
+      .input(z.object({ stepId: z.number(), frameId: z.number(), projectId: z.number().optional() }))
       .mutation(async ({ ctx, input }) => {
         // セキュリティ: ステップの所有者チェック
         const step = await db.getStepById(input.stepId, ctx.user.id);
-        if (!step) {
+        if (!step && input.projectId === undefined) {
+          throw new Error("ステップが見つかりません");
+        }
+        if (step && input.projectId !== undefined && step.projectId !== input.projectId) {
+          throw new Error("ステップが見つかりません");
+        }
+        const projectId = input.projectId ?? step?.projectId;
+        if (projectId === undefined) {
           throw new Error("ステップが見つかりません");
         }
         // セキュリティ: フレームの所有者チェック
@@ -447,31 +455,19 @@ export const appRouter = router({
         if (!frame) {
           throw new Error("フレームが見つかりません");
         }
-        await regenerateStep(input.stepId, input.frameId);
-        const updated = await db.getStepById(input.stepId, ctx.user.id);
-        if (updated) {
-          await patchStepArtifact(updated.projectId, (artifact) => ({
-            ...artifact,
-            steps: artifact.steps.map((item) => {
-              if (
-                item.legacy_step_db_id !== updated.id &&
-                item.sort_order !== updated.sortOrder
-              ) {
-                return item;
-              }
-              return {
-                ...item,
-                frame_id: updated.frameId,
-                title: updated.title,
-                operation: updated.operation,
-                description: updated.description,
-                narration: updated.narration ?? "",
-                instruction: updated.operation,
-                expected_result: updated.description,
-              };
-            }),
-          }));
+        if (frame.projectId !== projectId) {
+          throw new Error("フレームが見つかりません");
         }
+        const state = await loadOrCreateStepsArtifactForProject(projectId, ctx.user.id);
+        const regenerated = await analyzeFrameForStepRegeneration(frame);
+        await regenerateProjectStepArtifactFirst({
+          projectId,
+          stepId: input.stepId,
+          frame,
+          data: regenerated,
+          state,
+          existingStep: step,
+        }, ctx.user.id);
         return { success: true };
       }),
 

@@ -674,7 +674,7 @@ export default function ProjectDetail() {
   const handleRegenerateStep = async (stepId: number, frameId: number) => {
     setRegeneratingStepId(stepId);
     try {
-      await regenerateStepMutation.mutateAsync({ stepId, frameId });
+      await regenerateStepMutation.mutateAsync({ projectId, stepId, frameId });
       toast.success("ステップをAIで再生成しました");
       refetchSteps();
       refetchArtifactInfo();

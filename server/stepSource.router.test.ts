@@ -26,6 +26,7 @@ const dbMocks = vi.hoisted(() => ({
 }));
 
 const stepGeneratorMocks = vi.hoisted(() => ({
+  analyzeFrameForStepRegeneration: vi.fn(),
   generateStepsForProject: vi.fn(),
   regenerateStep: vi.fn(),
 }));
@@ -245,11 +246,23 @@ describe("step router artifact-first read routes", () => {
     dbMocks.getProjectById.mockResolvedValue(project);
     dbMocks.getFramesByProjectId.mockResolvedValue(frames);
     dbMocks.getStepsByProjectId.mockResolvedValue([dbStep]);
-    dbMocks.getFrameById.mockResolvedValue(frames[0]);
+    dbMocks.getFrameById.mockImplementation((frameId: number) => (
+      Promise.resolve(frames.find((frame) => frame.id === frameId))
+    ));
     dbMocks.getStepById.mockResolvedValue(dbStep);
     dbMocks.updateStep.mockResolvedValue(undefined);
     dbMocks.deleteStep.mockResolvedValue(undefined);
     dbMocks.reorderSteps.mockResolvedValue(undefined);
+    stepGeneratorMocks.analyzeFrameForStepRegeneration.mockResolvedValue({
+      title: "Regenerated title",
+      operation: "Regenerated op",
+      description: "Regenerated desc",
+      narration: "Regenerated narration",
+      instruction: "Regenerated instruction",
+      expected_result: "Regenerated expected",
+      warnings: ["regenerated warning"],
+      confidence: 0.72,
+    });
     stepGeneratorMocks.generateStepsForProject.mockResolvedValue(undefined);
     stepGeneratorMocks.regenerateStep.mockResolvedValue(undefined);
     slideGeneratorMocks.generateSlides.mockResolvedValue("/api/storage/projects/50/slides/demo.pptx");
@@ -886,5 +899,283 @@ describe("step router artifact-first read routes", () => {
       expect.objectContaining({ id: 502, sortOrder: 0 }),
       expect.objectContaining({ id: 501, sortOrder: 1 }),
     ]);
+  });
+
+  it("regenerates steps.json first and mirrors regenerated text to the legacy DB row", async () => {
+    await saveStepsArtifact(50, makeArtifact());
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).resolves.toEqual({ success: true });
+
+    expect(stepGeneratorMocks.analyzeFrameForStepRegeneration).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 101, projectId: 50 }),
+    );
+    expect(dbMocks.getStepById).toHaveBeenCalledTimes(1);
+    expect(dbMocks.getProjectById).toHaveBeenCalledTimes(1);
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 501,
+          frame_id: 101,
+          representative_frames: [
+            expect.objectContaining({
+              frame_id: 101,
+              frame_number: 1,
+              timestamp: 1000,
+              image_url: "/api/storage/projects/50/frames/1.jpg",
+            }),
+          ],
+          title: "Regenerated title",
+          operation: "Regenerated op",
+          description: "Regenerated desc",
+          narration: "Regenerated narration",
+          instruction: "Regenerated instruction",
+          expected_result: "Regenerated expected",
+          warnings: ["regenerated warning"],
+          confidence: 0.72,
+        }),
+      ],
+    });
+    expect(dbMocks.updateStep).toHaveBeenCalledWith(501, {
+      frameId: 101,
+      title: "Regenerated title",
+      operation: "Regenerated op",
+      description: "Regenerated desc",
+      narration: "Regenerated narration",
+    }, 1);
+  });
+
+  it("keeps regenerate backward-compatible when projectId is omitted", async () => {
+    await saveStepsArtifact(50, makeArtifact());
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      stepId: 501,
+      frameId: 101,
+    })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 501,
+          frame_id: 101,
+          title: "Regenerated title",
+        }),
+      ],
+    });
+  });
+
+  it("rejects backward-compatible regenerate calls when no DB step resolves project scope", async () => {
+    dbMocks.getStepById.mockResolvedValue(undefined);
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      stepId: 501,
+      frameId: 101,
+    })).rejects.toThrow("ステップが見つかりません");
+
+    expect(stepGeneratorMocks.analyzeFrameForStepRegeneration).not.toHaveBeenCalled();
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+  });
+
+  it("regenerates an artifact step when no legacy DB row exists and projectId scopes ownership", async () => {
+    dbMocks.getStepById.mockResolvedValue(undefined);
+    await saveStepsArtifact(50, makeArtifact());
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 501,
+          frame_id: 101,
+          title: "Regenerated title",
+        }),
+      ],
+    });
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+  });
+
+  it("promotes a DB-only project to steps.json before regenerating", async () => {
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).resolves.toEqual({ success: true });
+
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      config: expect.objectContaining({ prompt_version: "legacy-adapter-v1" }),
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 501,
+          frame_id: 101,
+          title: "Regenerated title",
+        }),
+      ],
+    });
+    expect(dbMocks.updateStep).toHaveBeenCalledWith(501, expect.objectContaining({
+      frameId: 101,
+      title: "Regenerated title",
+    }), 1);
+  });
+
+  it("falls back to DB regenerate when the existing artifact has no matching step", async () => {
+    const artifact = makeArtifact();
+    await saveStepsArtifact(50, {
+      ...artifact,
+      steps: artifact.steps.map((step) => ({
+        ...step,
+        legacy_step_db_id: 777,
+      })),
+    });
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).resolves.toEqual({ success: true });
+
+    expect(dbMocks.updateStep).toHaveBeenCalledWith(501, {
+      frameId: 101,
+      title: "Regenerated title",
+      operation: "Regenerated op",
+      description: "Regenerated desc",
+      narration: "Regenerated narration",
+    }, 1);
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 777,
+          title: "Artifact title",
+        }),
+      ],
+    });
+  });
+
+  it("does not update DB when regenerated artifact cannot be persisted", async () => {
+    await saveStepsArtifact(50, makeArtifact());
+    const writeSpy = vi.spyOn(fs, "writeFile").mockRejectedValue(new Error("storage gone"));
+    const caller = createCaller();
+
+    try {
+      await expect(caller.step.regenerate({
+        projectId: 50,
+        stepId: 501,
+        frameId: 101,
+      })).rejects.toThrow("storage gone");
+      expect(dbMocks.updateStep).not.toHaveBeenCalled();
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
+  it("leaves artifact and DB unchanged when frame analysis fails", async () => {
+    await saveStepsArtifact(50, makeArtifact());
+    stepGeneratorMocks.analyzeFrameForStepRegeneration.mockRejectedValueOnce(new Error("LLM timeout"));
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).rejects.toThrow("LLM timeout");
+
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+    await expect(loadStepsArtifact(50)).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          legacy_step_db_id: 501,
+          frame_id: 100,
+          title: "Artifact title",
+        }),
+      ],
+    });
+  });
+
+  it("keeps regenerated artifact visible when the legacy DB mirror fails", async () => {
+    await saveStepsArtifact(50, makeArtifact());
+    dbMocks.updateStep.mockRejectedValueOnce(new Error("DB gone"));
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).resolves.toEqual({ success: true });
+
+    await expect(caller.step.listByProject({ projectId: 50 })).resolves.toEqual([
+      expect.objectContaining({
+        id: 501,
+        frameId: 101,
+        title: "Regenerated title",
+      }),
+    ]);
+  });
+
+  it("rejects regenerate for invalid artifacts before analyzing the frame", async () => {
+    const filePath = await writeMalformedArtifact(50);
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).rejects.toThrow("steps artifactが不正");
+
+    expect(stepGeneratorMocks.analyzeFrameForStepRegeneration).not.toHaveBeenCalled();
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("{ not valid json");
+  });
+
+  it("rejects regenerate requests when the DB step belongs to another project", async () => {
+    dbMocks.getStepById.mockResolvedValue({ ...dbStep, projectId: 99 });
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).rejects.toThrow("ステップが見つかりません");
+    expect(stepGeneratorMocks.analyzeFrameForStepRegeneration).not.toHaveBeenCalled();
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+  });
+
+  it("rejects regenerate for inaccessible projects before analyzing the frame", async () => {
+    dbMocks.getStepById.mockResolvedValue(undefined);
+    dbMocks.getProjectById.mockResolvedValue(undefined);
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).rejects.toThrow("プロジェクトが見つかりません");
+    expect(stepGeneratorMocks.analyzeFrameForStepRegeneration).not.toHaveBeenCalled();
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+  });
+
+  it("rejects regenerate when the selected frame belongs to another project", async () => {
+    dbMocks.getFrameById.mockResolvedValue({ ...frames[1], projectId: 99 });
+    const caller = createCaller();
+
+    await expect(caller.step.regenerate({
+      projectId: 50,
+      stepId: 501,
+      frameId: 101,
+    })).rejects.toThrow("フレームが見つかりません");
+    expect(stepGeneratorMocks.analyzeFrameForStepRegeneration).not.toHaveBeenCalled();
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
   });
 });

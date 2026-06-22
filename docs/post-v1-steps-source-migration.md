@@ -10,8 +10,10 @@ adapter boundary and focused tests. The second slice moved `step.listByProject`
 and `step.artifactInfo` reads to the adapter. The third slice moved
 `step.update` to the adapter as an artifact-primary write while keeping legacy
 DB text-field mirroring for compatibility. The fourth slice moved
-delete/reorder to artifact-primary writes with legacy DB mirror best-effort;
-regenerate still uses its legacy bridge path.
+delete/reorder to artifact-primary writes with legacy DB mirror best-effort.
+The fifth slice moved regenerate to artifact-primary writes by separating frame
+analysis from persistence and mirroring regenerated text/frame fields to DB for
+compatibility.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.
@@ -96,7 +98,8 @@ Porting rule:
    rather than silently writing DB-only state.
 5. Add route-level tests for update/delete/reorder/regenerate behavior. Status:
    completed for read routes, `step.update`, `step.delete`, and
-   `step.reorder`; regenerate remains pending.
+   `step.reorder`; `step.regenerate` is completed for artifact-primary route
+   behavior.
 6. Update `pnpm edit:smoke` expectations only after route tests define the new
    source contract.
 7. Re-run export, eval, and release gates before removing any compatibility

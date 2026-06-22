@@ -48,6 +48,8 @@ interface StepData {
   confidence: number;
 }
 
+export type RegeneratedStepData = StepData;
+
 interface GroundingInput {
   imageUrl: string;
   frameNumber: number;
@@ -624,24 +626,32 @@ function generateErrorMessage(error: unknown): string {
 }
 
 /**
- * 単一のフレームを再分析してステップを更新
+ * 単一フレームを再分析してステップ内容を返す。
+ * 保存先（steps.json / DB）は呼び出し側で決める。
+ */
+export async function analyzeFrameForStepRegeneration(frame: Frame): Promise<RegeneratedStepData> {
+  const ocrResult = await extractFrameOcr(frame.imageUrl, frame.frameNumber, ENV.ocrProvider);
+  return analyzeFrame({
+    imageUrl: frame.imageUrl,
+    frameNumber: frame.frameNumber,
+    ocrText: ocrResult.lines,
+    transcriptSnippet: "",
+  });
+}
+
+/**
+ * 単一のフレームを再分析してステップを更新する互換関数。
+ * tRPC の step.regenerate は Phase 6 以降 artifact-primary route を使う。
  */
 export async function regenerateStep(stepId: number, frameId: number): Promise<void> {
-  // フレーム情報を取得（所有者チェックはrouters.tsで実施済み）
+  // フレーム情報を取得（所有者チェックは呼び出し側で実施済み）
   const frame = await db.getFrameById(frameId);
 
   if (!frame) {
     throw new Error("フレームが見つかりません");
   }
 
-  // AIで画像を分析
-  const ocrResult = await extractFrameOcr(frame.imageUrl, frame.frameNumber, ENV.ocrProvider);
-  const stepData = await analyzeFrame({
-    imageUrl: frame.imageUrl,
-    frameNumber: frame.frameNumber,
-    ocrText: ocrResult.lines,
-    transcriptSnippet: "",
-  });
+  const stepData = await analyzeFrameForStepRegeneration(frame);
 
   // ステップを更新
   await db.updateStep(stepId, {
