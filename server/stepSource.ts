@@ -50,7 +50,7 @@ export class InvalidStepsArtifactError extends Error {
   readonly reason: string;
 
   constructor(projectId: number, reason: string, message: string) {
-    super(`steps artifactが不正なためDB fallbackを作成できません: ${message}`);
+    super(`steps artifactが不正です (${reason}): ${message}`);
     this.name = "InvalidStepsArtifactError";
     this.projectId = projectId;
     this.reason = reason;
@@ -375,21 +375,7 @@ export async function updateProjectStepArtifactFirst(
   const hasArtifactOnlyFields = hasArtifactOnlyUpdateFields(input.data);
   const hasArtifactFields = hasDbFields || hasArtifactOnlyFields;
 
-  let state: StepSourceState;
-  try {
-    state = await loadOrCreateStepsArtifactForProject(projectId, userId);
-  } catch (error) {
-    if (!hasArtifactOnlyFields && hasDbFields && existingStep) {
-      logger.warn("Invalid steps artifact ignored for legacy DB step update", {
-        projectId,
-        stepId: input.stepId,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      await db.updateStep(input.stepId, dbData, userId);
-      return { artifactUpdated: false, dbUpdated: true };
-    }
-    throw error;
-  }
+  const state = await loadOrCreateStepsArtifactForProject(projectId, userId);
 
   if (!state.artifact || !hasArtifactFields) {
     if (hasArtifactOnlyFields) {

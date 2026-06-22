@@ -36,6 +36,10 @@ The tenth slice added a `phase6.source_contract` check to
 `pnpm v1:release-audit` so router, render/export, and edit-smoke paths fail the
 release audit if they stop using the `stepSource` artifact-primary adapter
 contract.
+The eleventh slice removed the last invalid-artifact text-edit DB fallback from
+`step.update`: edit routes now reject malformed `steps.json` before writing DB,
+matching delete/reorder/regenerate strictness. Render/export paths still keep
+their explicit invalid-artifact DB fallback.
 The older branch `codex/post-v1-steps-source` already exists, but it is based
 before the Phase 7 prompt, G4, review-packet, and quality-gate follow-up
 commits. Treat it as a patch source only, not as the branch to continue.
@@ -114,11 +118,11 @@ Porting rule:
    text fields only for compatibility. This slice must also define the
    consistency strategy for DB write failure after artifact save. Status:
    completed for `step.update`; artifact save is the primary commit point and a
-   DB mirror failure is logged without failing the artifact edit. Legacy
-   text-only DB updates remain available when an existing artifact is invalid.
-   DB-only projects are promoted to a compatibility `steps.json` on first
-   update; if that artifact promotion cannot be persisted, the update fails
-   rather than silently writing DB-only state.
+   DB mirror failure is logged without failing the artifact edit. Existing
+   malformed artifacts reject text edits before any DB write. DB-only projects
+   are promoted to a compatibility `steps.json` on first update; if that
+   artifact promotion cannot be persisted, the update fails rather than
+   silently writing DB-only state.
 5. Add route-level tests for update/delete/reorder/regenerate behavior. Status:
    completed for read routes, `step.update`, `step.delete`, and
    `step.reorder`; `step.regenerate` is completed for artifact-primary route
@@ -149,8 +153,8 @@ artifact-primary. It is not a full DB removal.
   DB rows when possible. Artifact state is the primary commit point.
 - Render/export callers keep the v1 DB fallback for missing or malformed
   artifacts so legacy projects remain loadable.
-- Edit routes are stricter than render/export routes: invalid `steps.json` is
-  not silently overwritten by text edits.
+- Edit routes are stricter than render/export routes: invalid `steps.json`
+  rejects update/delete/reorder/regenerate before DB mirror writes.
 - `step.artifactInfo` intentionally returns empty metadata for missing artifacts
   or DB compatibility artifacts.
 - `pnpm edit:smoke` verifies one project step through the adapter and restores

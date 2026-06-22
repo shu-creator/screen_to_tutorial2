@@ -580,16 +580,32 @@ describe("step router artifact-first read routes", () => {
     });
   });
 
-  it("keeps legacy DB text updates working when an existing artifact is invalid", async () => {
+  it("rejects text updates when an existing artifact is invalid without changing DB", async () => {
     const filePath = await writeMalformedArtifact(50);
     const caller = createCaller();
 
     await expect(caller.step.update({
       id: 501,
       title: "DB fallback title",
-    })).resolves.toEqual({ success: true });
+    })).rejects.toThrow("steps artifactが不正");
 
-    expect(dbMocks.updateStep).toHaveBeenCalledWith(501, { title: "DB fallback title" }, 1);
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("{ not valid json");
+  });
+
+  it("rejects mixed text and artifact-only updates when an existing artifact is invalid without changing DB", async () => {
+    const filePath = await writeMalformedArtifact(50);
+    const caller = createCaller();
+
+    await expect(caller.step.update({
+      id: 501,
+      title: "Mixed rejected",
+      tStart: 100,
+      tEnd: 900,
+      markReviewed: true,
+    })).rejects.toThrow("steps artifactが不正");
+
+    expect(dbMocks.updateStep).not.toHaveBeenCalled();
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe("{ not valid json");
   });
 
