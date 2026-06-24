@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EvidenceArtifact, EvidenceSegment } from "../evidence/types";
+import { AUTHORING_PROMPT_VERSION } from "./promptVersion";
 
 const invokeLLMMock = vi.hoisted(() => vi.fn());
 vi.mock("../_core/llm", () => ({ invokeLLM: invokeLLMMock }));
@@ -94,6 +95,11 @@ beforeEach(() => {
 });
 
 describe("authorSteps", () => {
+  it("uses the expected post-v1 authoring prompt version", () => {
+    // Intentional promotion guard: update this only with a reviewed prompt bump.
+    expect(AUTHORING_PROMPT_VERSION).toBe("authoring-v2-grounded-4");
+  });
+
   it("低G2対策の操作単位・引用制約をLLM system promptに渡す", async () => {
     const evidence = makeEvidence([makeSegment("seg-1", 0, 2000)]);
 
@@ -113,6 +119,12 @@ describe("authorSteps", () => {
     expect(systemPrompt).toContain("OCR根拠が弱い場合は cited_ui_labels を空配列");
     expect(systemPrompt).toContain("単なる状態表示・完了表示・空状態メッセージ・トースト文言");
     expect(systemPrompt).toContain("ステップがありません");
+    expect(systemPrompt).toContain("操作そのものが起きた区間");
+    expect(systemPrompt).toContain("クリック後の「処理中」「生成中」「完了待ち」");
+    expect(systemPrompt).toContain("ボタン名が見えている操作前後の区間");
+    expect(systemPrompt).toContain("結果一覧・完了状態が表示された後のセグメント");
+    expect(systemPrompt).toContain("待機・生成中・完了待ちセグメントと重ならない");
+    expect(systemPrompt).toContain("推測で「確認する」ステップを作らない");
   });
 
   it("セグメント統合・破棄を受け入れ、検証済みステップを返す", async () => {

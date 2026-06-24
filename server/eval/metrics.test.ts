@@ -107,6 +107,14 @@ describe("extractQuotedLabels / normalizeLabel", () => {
     expect(normalizeLabel("「保存」")).toBe("保存");
     expect(normalizeLabel("ステップ (12)")).toBe("ステップ");
   });
+
+  it("ファイル入力の説明付きラベルをファイル選択ラベルとして照合する", () => {
+    expect(normalizeLabel("アップロードするファイルを選択")).toBe(
+      normalizeLabel("ファイルを選択"),
+    );
+    expect(normalizeLabel("処理中")).toBe("処理中");
+    expect(normalizeLabel("元動画")).toBe("元動画");
+  });
 });
 
 describe("computeG2", () => {
@@ -215,6 +223,40 @@ describe("computeG2", () => {
     expect(result.accuracy).toBe(1);
     expect(result.totalLabels).toBe(1);
     expect(result.matchedLabels).toBe(1);
+  });
+
+  it("structured cited_ui_labels のファイル入力ラベル揺れを照合時に吸収する", () => {
+    const generated = [
+      {
+        t_start: 0,
+        t_end: 1,
+        title: "ファイル選択を開く",
+        cited_ui_labels: ["アップロードするファイルを選択"],
+      },
+    ];
+    const result = computeG2(generated, ["ファイルを選択"]);
+    expect(result.accuracy).toBe(1);
+    expect(result.totalLabels).toBe(1);
+    expect(result.matchedLabels).toBe(1);
+  });
+
+  it("本文引用と正解側のファイル入力ラベル揺れも同じ正規化で照合する", () => {
+    const generated = [
+      {
+        t_start: 0,
+        t_end: 1,
+        title: "「アップロードするファイルを選択」をクリックする",
+      },
+      {
+        t_start: 1,
+        t_end: 2,
+        title: "「ファイルを選択」をクリックする",
+      },
+    ];
+    const result = computeG2(generated, ["ファイルを選択", "アップロードするファイルを選択"]);
+    expect(result.accuracy).toBe(1);
+    expect(result.totalLabels).toBe(2);
+    expect(result.matchedLabels).toBe(2);
   });
 
   it("ステップ番号以外の数値付きラベルはステップに畳まない", () => {

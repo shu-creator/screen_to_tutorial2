@@ -486,7 +486,7 @@ describe("eval candidate", () => {
         maxG2Regression: 0,
         maxG3Regression: 0,
         requireG2Improvement: false,
-        includeG2Details: true,
+        includeDetails: true,
       },
     );
 
@@ -519,7 +519,7 @@ describe("eval candidate", () => {
         maxG2Regression: 0,
         maxG3Regression: 0,
         requireG2Improvement: false,
-        includeG2Details: true,
+        includeDetails: true,
       },
     );
 
@@ -534,7 +534,11 @@ describe("eval candidate", () => {
       {
         caseId: "case-01",
         groundTruth,
-        artifact: artifact({ cited_ui_labels: ["保存", "処理中"] }),
+        artifact: artifact({
+          t_start: 1000,
+          t_end: 2000,
+          cited_ui_labels: ["保存", "処理中"],
+        }),
         baseline: {
           caseId: "case-01",
           g2: { accuracy: 0.5 },
@@ -549,6 +553,67 @@ describe("eval candidate", () => {
     );
 
     expect(result.g2Details).toBeUndefined();
+    expect(result.g3Details).toBeUndefined();
+  });
+
+  it("returns empty G3 diagnostics when details are requested and no non-step interval matches", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact(),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 1 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 0,
+        requireG2Improvement: false,
+        includeDetails: true,
+      },
+    );
+
+    expect(result.g3Rate).toBe(0);
+    expect(result.g3Details?.nonStepMatches).toEqual([]);
+  });
+
+  it("includes candidate G3 non-step diagnostics when details are requested", () => {
+    const result = evaluateCandidate(
+      {
+        caseId: "case-01",
+        groundTruth,
+        artifact: artifact({ t_start: 1000, t_end: 2000 }),
+        baseline: {
+          caseId: "case-01",
+          g2: { accuracy: 1 },
+          g3: { rate: 0 },
+        },
+      },
+      {
+        maxG2Regression: 0,
+        maxG3Regression: 1,
+        requireG2Improvement: false,
+        includeDetails: true,
+      },
+    );
+
+    expect(result.g3Rate).toBe(1);
+    expect(result.g3Details?.nonStepMatches).toEqual([
+      {
+        stepNumber: 1,
+        stepTitle: "「保存」をクリックする",
+        stepStart: 1000,
+        stepEnd: 2000,
+        groundTruthIndex: 2,
+        groundTruthTitle: "待機",
+        groundTruthStart: 1000,
+        groundTruthEnd: 2000,
+        iou: 1,
+      },
+    ]);
   });
 
   it("allows equal current-artifact no-citation rates at zero tolerance", () => {

@@ -6,7 +6,7 @@ import { spawn } from "child_process";
 import { pathToFileURL } from "url";
 
 export const repoRoot = path.resolve(import.meta.dirname, "..");
-const defaultCaseId = "real-app-workflow-03-generate-steps";
+const defaultCaseId = "real-app-workflow-01";
 
 export type PromptCheckOptions = {
   caseId: string;
@@ -441,6 +441,8 @@ export function formatReviewPacket(inputs: ReviewPacketInputs): string {
     "## Promotion Commands",
     "",
     "Only run these after human acceptance.",
+    "",
+    "> Replacing the persisted generated artifact invalidates any previous G4 `source_artifact_sha256` for this case. After copying an accepted candidate, record a replacement `human_review` G4 with `--overwrite`; `pnpm v1:release-audit` will fail until that reviewed record matches the new artifact SHA.",
     "",
     "```bash",
     "cp \\",

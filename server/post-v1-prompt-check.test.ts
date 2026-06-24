@@ -10,14 +10,15 @@ import {
 } from "../scripts/post-v1-prompt-check";
 
 describe("post-v1 prompt check helper", () => {
-  it("prints a no-write plan by default for the low-G2 case", () => {
+  it("prints a no-write plan by default for the next priority low-G3 case", () => {
     const options = parseArgs(["--", "--run-id", "test-run"]);
     const plan = buildPromptCheckPlan(options);
     const text = formatPlan(plan, options.execute);
 
     expect(options.execute).toBe(false);
-    expect(plan.caseId).toBe("real-app-workflow-03-generate-steps");
-    expect(plan.outdir).toBe(path.join(repoRoot, "outputs", "post-v1-prompt-check", "real-app-workflow-03-generate-steps-run-test-run"));
+    expect(options.explicitCase).toBe(false);
+    expect(plan.caseId).toBe("real-app-workflow-01");
+    expect(plan.outdir).toBe(path.join(repoRoot, "outputs", "post-v1-prompt-check", "real-app-workflow-01-run-test-run"));
     expect(plan.preflightCommand).toContain("--preflight");
     expect(plan.executeCommand).not.toContain("--preflight");
     expect(plan.evalStepsPathTemplate).toContain("project_<project-id>_steps.json");
@@ -54,6 +55,29 @@ describe("post-v1 prompt check helper", () => {
     expect(plan.executeCommand).toContain("30");
     expect(plan.executeCommand).toContain("--max-frames");
     expect(plan.executeCommand).toContain("12");
+  });
+
+  it("keeps explicit case selection independent from the default case", () => {
+    const options = parseArgs([
+      "--case",
+      "real-app-workflow-03-generate-steps",
+      "--run-id",
+      "case-03-recovery",
+    ]);
+    const plan = buildPromptCheckPlan(options);
+
+    expect(options.explicitCase).toBe(true);
+    expect(plan.caseId).toBe("real-app-workflow-03-generate-steps");
+    expect(plan.outdir).toBe(
+      path.join(
+        repoRoot,
+        "outputs",
+        "post-v1-prompt-check",
+        "real-app-workflow-03-generate-steps-run-case-03-recovery",
+      ),
+    );
+    expect(plan.executeCommand.join(" ")).toContain("real-app-workflow-03-generate-steps/video.mp4");
+    expect(plan.evalCommandTemplate).toContain("--case real-app-workflow-03-generate-steps");
   });
 
   it("requires explicit side-effect acceptance before execute mode", () => {
@@ -185,6 +209,8 @@ describe("post-v1 prompt check helper", () => {
     expect(markdown).toContain("Candidate steps SHA-256: `steps-hash`");
     expect(markdown).toContain("PPTX SHA-256: `pptx-hash`");
     expect(markdown).toContain("MP4 SHA-256: `video-hash`");
+    expect(markdown).toContain("Replacing the persisted generated artifact invalidates any previous G4");
+    expect(markdown).toContain("record a replacement `human_review` G4 with `--overwrite`");
     expect(markdown).toContain(
       "| 1 | 61.5s-65.5s | AIでステップ生成 \\| 開始する | no | - | first line second \\| line | `「AIで\\`ステップを生成」` |",
     );

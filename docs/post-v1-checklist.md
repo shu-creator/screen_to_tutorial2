@@ -10,15 +10,21 @@ work that should improve the product after v1 without weakening release gates.
 - Fixed baseline tag: `v1.0.0`
 - Fixed v1 quality baseline: G2 `69.4%`, G3 `7.0%`, fallback reasons `0`
 - Current post-v1 quality gate on persisted local eval artifacts in this branch
-  after the case 03 promotion and step-number label normalization: G2 `90.6%`,
-  G3 `2.0%`, fallback reasons `0`
+  after the case 01 and case 03 promotions plus post-v1 label normalization
+  and the case 04 `元動画` ground-truth correction: G2 `97.8%`, G3 `1.8%`,
+  fallback reasons `0`
 - Required release audit remains `pnpm v1:release-audit`
 - Human G4 records exist for all five real recording cases.
-- Cases 01 and 02 were reviewed by `iwsh23` on `2026-06-21`; promoted case 03
-  was reviewed by `iwsh23` on `2026-06-22`. All three have
-  `total_manual_edits: 0` and no blocking issues.
+- Case 02 was reviewed by `iwsh23` on `2026-06-21`; promoted case 03 was
+  reviewed by `iwsh23` on `2026-06-22`; promoted case 01 was reviewed by
+  `iwsh23` on `2026-06-24`. All three have `total_manual_edits: 0` and no
+  blocking issues.
 - The case 03 `authoring-v2-grounded-3` candidate passed
   `--post-v1-promotion-gate`, was promoted into the persisted generated
+  artifact, and has a refreshed `human_review` G4 record.
+- Active authoring prompt is now `authoring-v2-grounded-4`.
+- The `real-app-workflow-01` `authoring-v2-grounded-4` project 44 candidate
+  passed `--post-v1-promotion-gate`, was promoted into the persisted generated
   artifact, and has a refreshed `human_review` G4 record.
 
 ## Human G4 For Cases 01/02/03
@@ -42,8 +48,9 @@ pnpm g4:review-pack -- --missing-human-review --overwrite
 ```
 
 This selector creates packets for real generated cases that do not yet have
-`review_type: "human_review"`. After the `2026-06-21` human G4 update, it should
-not surface cases 01, 02, or 03 unless their records are intentionally reverted.
+`review_type: "human_review"`. After the case 01 re-review on `2026-06-24`,
+it should not surface cases 01, 02, or 03 unless their records are intentionally
+reverted.
 
 After actual human review, dry-run each record first:
 
@@ -63,8 +70,9 @@ Only after inspecting the JSON, remove `--dry-run` and add `--overwrite`.
 
 ## Quality Prompt Follow-up
 
-`server/authoring/author.ts` now uses `authoring-v2-grounded-3`. The prompt
-tightens three low-G2 failure modes:
+`server/authoring/author.ts` now uses `authoring-v2-grounded-4`. The prompt
+keeps the `authoring-v2-grounded-3` low-G2 rules and adds
+`real-app-workflow-01` G3/source-segment guidance:
 
 - do not merge distinct user intents such as tab open, generation start, and
   completion confirmation into one step;
@@ -73,12 +81,18 @@ tightens three low-G2 failure modes:
 - do not include state/result-only text such as `プレビュー`, `完了`,
   `ステップがありません`, or `ステップの生成を開始しました` in
   `cited_ui_labels` unless that text is the explicit confirmation target.
+- choose `source_segment_ids` from the operation segment itself, not a later
+  waiting/progress/completion-only segment.
 
-Case 03 has been promoted to current-prompt output. Use this workflow to re-run
-future prompt impact checks before replacing any persisted eval artifact:
+Case 03 has been promoted to the `authoring-v2-grounded-3` output, and case 01
+has been promoted to the `authoring-v2-grounded-4` project 44 output. The
+default prompt-check target remains `real-app-workflow-01` because it is still
+the highest remaining G3 candidate; use an explicit `--case` for the next G2
+candidate such as `real-app-workflow-04-export-video`.
 
 ```bash
 pnpm post-v1:prompt-check -- --run-id "$(date +%Y%m%dT%H%M)"
+pnpm post-v1:prompt-check -- --case real-app-workflow-04-export-video --run-id "$(date +%Y%m%dT%H%M)"
 ```
 
 The default mode prints a no-write plan, including the preflight command, the
@@ -94,8 +108,8 @@ Manual equivalent:
 ```bash
 RUN_ID=$(date +%Y%m%dT%H%M)
 pnpm pipeline:generate -- \
-  --video eval/dataset/real-app-workflow-03-generate-steps/video.mp4 \
-  --outdir "outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-${RUN_ID}" \
+  --video eval/dataset/real-app-workflow-01/video.mp4 \
+  --outdir "outputs/post-v1-prompt-check/real-app-workflow-01-run-${RUN_ID}" \
   --use-audio false \
   --asr-provider none \
   --preflight
@@ -116,12 +130,12 @@ exported `project_*_steps.json`.
 
 ```bash
 pnpm pipeline:generate -- \
-  --video eval/dataset/real-app-workflow-03-generate-steps/video.mp4 \
-  --outdir "outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-${RUN_ID}" \
+  --video eval/dataset/real-app-workflow-01/video.mp4 \
+  --outdir "outputs/post-v1-prompt-check/real-app-workflow-01-run-${RUN_ID}" \
   --use-audio false \
   --asr-provider none
 
-STEPS_PATH=$(echo "outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-${RUN_ID}"/project_*_steps.json)
+STEPS_PATH=$(echo "outputs/post-v1-prompt-check/real-app-workflow-01-run-${RUN_ID}"/project_*_steps.json)
 [[ -f "$STEPS_PATH" ]] || { echo "Error: steps file not found: $STEPS_PATH"; exit 1; }
 ```
 
@@ -134,7 +148,7 @@ artifact:
 ```bash
 STEPS_PATH=${STEPS_PATH:?run the generation block first}
 pnpm eval:candidate -- \
-  --case real-app-workflow-03-generate-steps \
+  --case real-app-workflow-01 \
   --steps "$STEPS_PATH" \
   --post-v1-promotion-gate \
   --details
@@ -143,8 +157,10 @@ pnpm eval:candidate -- \
 The output prints the candidate `prompt version` and, when comparing against the
 persisted generated artifact, `current artifact prompt version`. Confirm these
 before promoting a candidate. The earlier `project_39_steps.json` candidate was
-from `authoring-v2-grounded-2` and is retained below as a stale-prompt example;
-the current `project_40_steps.json` candidate is from `authoring-v2-grounded-3`.
+from `authoring-v2-grounded-2` for `real-app-workflow-03-generate-steps` and is
+retained below as a stale-prompt example; the promoted `project_40_steps.json`
+candidate, also for `real-app-workflow-03-generate-steps`, is from
+`authoring-v2-grounded-3`.
 The `--post-v1-promotion-gate` check rejects candidates whose prompt version
 does not match the active authoring prompt.
 
@@ -153,12 +169,83 @@ artifact:
 
 ```bash
 pnpm eval -- \
-  --case real-app-workflow-03-generate-steps \
+  --case real-app-workflow-01 \
   --steps "$STEPS_PATH"
 ```
 
 Do not update `eval/results/generated/*` or `eval/baseline.json` unless the new
 output is reviewed and the improvement is intentional.
+
+Current case 01 measured candidate:
+
+- First approved run:
+  `outputs/post-v1-prompt-check/real-app-workflow-01-run-approved-20260623T205107/project_43_steps.json`.
+- Prompt path: `authoring-v2-grounded-4`.
+- Result: invalid fallback-heavy run caused by OpenAI API `520`; step count
+  `23`, `needs_review` `23`, fallback reasons `23`, G2 `0.0%`, G3 `4.3%`.
+  This artifact must not be promoted.
+- Retry run:
+  `outputs/post-v1-prompt-check/real-app-workflow-01-run-approved-20260623T205107-retry1/project_44_steps.json`.
+- Prompt path: `authoring-v2-grounded-4`.
+- Promotion gate:
+  `pnpm eval:candidate -- --case real-app-workflow-01 --steps outputs/post-v1-prompt-check/real-app-workflow-01-run-approved-20260623T205107-retry1/project_44_steps.json --post-v1-promotion-gate --details`
+  PASS.
+- Candidate metrics: G2 `100.0%` versus fixed baseline `72.2%` and current
+  persisted artifact `86.1%`; G2 no-citation `0.0%`; unmatched cited labels
+  `none`; G3 `9.1%` versus fixed baseline/current `10.0%`; fallback reasons
+  `0`; `needs_review` steps `2` with review reasons
+  `verification:unverified_ui_label` and `verification:low_confidence`.
+- Candidate steps SHA-256:
+  `adfd04674edad21a24127a69a09528755530d8f0e1cbfc87a461deb9b8f0623f`.
+- Project 44 export summary:
+  `outputs/post-v1-prompt-check/real-app-workflow-01-run-approved-20260623T205107-retry1/export/project_44_export_summary.json`
+  (`sha256:faebf75276eeabf8ed60bb8560238b443e6d08f62f5d87b792d7d8cbecfc6cb7`).
+- Export QA: PPTX content check `pass`, total slides `15`, media images `11`,
+  slides with images `11`, expected step images `11`,
+  speaker-note review warnings `2`, placeholder hits `0`; MP4 bytes `3880455`,
+  still-image fallback count `0`, with the known no-usable-font intro-card skip
+  warning.
+- Local artifacts:
+  - PPTX: `data/storage/projects/44/slides/1782215672635.pptx`
+    (`sha256:c541ae80aa354b00fbf41aa96074be25e9fa4bf0a5675855ebc6fd61134b2aa2`)
+  - MP4: `data/storage/projects/44/videos/DRmHtkRuUo7DAKhRSgL3n.mp4`
+    (`sha256:7636bc19f9ac0c91d8f2b758306b6d5281896cfd2cc5a81c72abf672578d69fe`)
+  - human-review worksheet:
+    `outputs/post-v1-prompt-check/real-app-workflow-01-run-approved-20260623T205107-retry1/human-review-packet.md`
+    (`sha256:cccfae186700ee810c11ec222c546eed52aa3e40bcd056922c77e414a69cf41c`)
+- Promotion decision: after human confirmation from `iwsh23` on `2026-06-24`,
+  this candidate was copied into
+  `eval/results/generated/real-app-workflow-01/steps.json`; the matching
+  `eval/g4/records/real-app-workflow-01.json` `human_review` record was
+  refreshed with `source_artifact_sha256`
+  `adfd04674edad21a24127a69a09528755530d8f0e1cbfc87a461deb9b8f0623f` and
+  `total_manual_edits: 0`.
+- Post-promotion diagnostic: rerunning `pnpm eval:candidate -- --case
+  real-app-workflow-01 --steps eval/results/generated/real-app-workflow-01/steps.json
+  --post-v1-promotion-gate --details` fails with `current_g3_not_improved`
+  because the candidate is now compared against itself as the current persisted
+  artifact. The pre-promotion gate above is the promotion evidence.
+
+Rejected follow-up G3 prompt candidates:
+
+- `authoring-v2-grounded-5` project 45:
+  `outputs/post-v1-prompt-check/real-app-workflow-01-run-grounded-5-case01-20260624T021758/project_45_steps.json`.
+  Promotion gate FAIL with `current_g3_not_improved`; G2 stayed `100.0%`,
+  G3 regressed to `10.0%` versus current `9.1%`, fallback reasons `0`,
+  `needs_review` `1`. The remaining G3 match was still
+  `生成されたステップを確認する` overlapping ground-truth entry 12
+  `ステップ生成の完了を待つ` at IoU `87.5%`.
+- `authoring-v2-grounded-6` project 46:
+  `outputs/post-v1-prompt-check/real-app-workflow-01-run-grounded-6-case01-20260624T022102/project_46_steps.json`.
+  Promotion gate FAIL with `current_g2_regression` and
+  `current_g3_not_improved`; G2 fell to `93.3%` versus current `100.0%`
+  because `スライドプレビュー` and `スライドプレビューを開く` were unmatched,
+  G3 stayed `9.1%`, fallback reasons `0`, `needs_review` `1`.
+- Decision: neither candidate is promoted, no persisted generated artifact or
+  G4 `human_review` record is updated, and the active prompt remains the
+  promoted `authoring-v2-grounded-4`. Further case 01 G3 work should change
+  approach instead of continuing prompt-only nudges; inspect evidence
+  segmentation or a deterministic confirmation-transition filter first.
 
 Earlier measured candidate:
 
@@ -172,7 +259,8 @@ Earlier measured candidate:
 - Current-artifact diagnostic: `pnpm eval:candidate -- --case real-app-workflow-03-generate-steps --steps outputs/post-v1-prompt-check/real-app-workflow-03-generate-steps-run-20260621T0902/project_39_steps.json --current-generated --json` reports current G2 delta `-3.6%` and current G3 delta `-25.0%`.
 - Strict promotion check with `--post-v1-promotion-gate` fails as expected with
   `prompt_version_mismatch` and current-artifact G2 regression; this candidate
-  predates the active `authoring-v2-grounded-3` prompt and should not be
+  predates the `authoring-v2-grounded-3` prompt that produced the promoted
+  project 40 artifact and should not be
   promoted. Add `--details` to list candidate cited labels that do not match
   the case's allowed UI label set.
 - Result vs fixed baseline: G2 `71.4%` (baseline `41.7%`, delta `+29.8%`),
@@ -266,7 +354,7 @@ Promotion record for `project_40_steps.json`:
 
    If DB project `40` is cleared before review, export-only regeneration is not
    possible. Re-run the prompt check with
-   `pnpm post-v1:prompt-check -- --execute --accept-side-effects --run-id <new-run-id>`
+   `pnpm post-v1:prompt-check -- --case real-app-workflow-03-generate-steps --execute --accept-side-effects --run-id <new-run-id>`
    to create a new local project, then export that new project ID.
 
    Machine checks: PPTX content check `pass`, total slides `7`, media images
@@ -317,9 +405,11 @@ Promotion record for `project_40_steps.json`:
 
 | Priority | Case | Tracked G2 (post-v1 norm) | Tracked G3 (post-v1 norm) | v1 baseline G2 | Focus |
 | --- | --- | ---: | ---: | ---: | --- |
-| 1 | `real-app-workflow-01` | `86.1%` | `10.0%` | `72.2%` | split merged project/file-select actions; remaining unmatched state/source-video labels |
-| 2 | `real-app-workflow-04-export-video` | `88.9%` | `0.0%` | `55.6%` | remaining unmatched source-video label |
+| 1 | `real-app-workflow-01` | `100.0%` | `9.1%` | `72.2%` | remaining G3 overlap: step 9 overlaps ground-truth entry 12, "ステップ生成の完了を待つ"; grounded-5/6 prompt-only follow-ups rejected |
+| 2 | `real-app-workflow-02-create-project` | `94.4%` | `0.0%` | `88.9%` | remaining unmatched state label `処理中`; file-input label variant resolved |
+| 3 | `real-app-workflow-05-narrated-create-project` | `94.4%` | `0.0%` | `88.9%` | same create-project state label as case 02; file-input label variant resolved |
 | resolved | `real-app-workflow-03-generate-steps` | `100.0%` | `0.0%` | `41.7%` | promoted on `2026-06-22`; future candidates must not regress G2 |
+| resolved | `real-app-workflow-04-export-video` | `100.0%` | `0.0%` | `55.6%` | `元動画` was corrected as an expected preview-pane label on `2026-06-24` |
 
 ## UI Polish Queue
 

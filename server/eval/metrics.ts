@@ -127,8 +127,12 @@ export function extractQuotedLabels(text: string): string[] {
   return labels;
 }
 
+const normalizedLabelAliases: Record<string, string> = {
+  アップロードするファイルを選択: "ファイルを選択",
+};
+
 /** ラベル照合用の正規化（NFKC・空白除去・小文字化） */
-export function normalizeLabel(label: string): string {
+function normalizeLabelBase(label: string): string {
   return label
     .normalize("NFKC")
     .trim()
@@ -137,6 +141,13 @@ export function normalizeLabel(label: string): string {
     .replace(/^(ステップ)\s*\d+$/i, "$1")
     .replace(/\s+/g, "")
     .toLowerCase();
+}
+
+export function normalizeLabel(label: string): string {
+  const normalized = normalizeLabelBase(label);
+  const alias = normalizedLabelAliases[normalized];
+
+  return alias === undefined ? normalized : normalizeLabelBase(alias);
 }
 
 /**
