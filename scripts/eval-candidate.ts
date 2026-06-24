@@ -7,6 +7,7 @@ import {
   computeG2,
   computeG3,
   extractQuotedLabels,
+  intervalIoU,
   normalizeLabel,
   type GeneratedStepLike,
   type GroundTruthStep,
@@ -44,7 +45,7 @@ export type CandidateEvalOptions = {
   maxG3Regression: number;
   requireG2Improvement: boolean;
   postV1PromotionGate?: boolean;
-  includeG2Details?: boolean;
+  includeDetails?: boolean;
   maxCurrentG2Regression?: number;
   maxCurrentG3Regression?: number;
   maxCurrentNoCitationRegression?: number;
@@ -70,6 +71,22 @@ type G2Details = {
   noCitationStepNumbers: number[];
 };
 
+type G3NonStepMatch = {
+  stepNumber: number;
+  stepTitle: string;
+  stepStart: number;
+  stepEnd: number;
+  groundTruthIndex: number;
+  groundTruthTitle: string;
+  groundTruthStart: number;
+  groundTruthEnd: number;
+  iou: number;
+};
+
+type G3Details = {
+  nonStepMatches: G3NonStepMatch[];
+};
+
 export type CandidateEvalResult = {
   pass: boolean;
   caseId: string;
@@ -92,6 +109,7 @@ export type CandidateEvalResult = {
   g3Delta?: number;
   currentG3Rate?: number;
   currentG3Delta?: number;
+  g3Details?: G3Details;
   fallbackReasonCount: number;
   fallbackStepCount: number;
   invalidReasons: string[];
@@ -169,7 +187,7 @@ function parseArgs(argv: string[]): CliOptions {
         options.postV1PromotionGate = true;
         break;
       case "--details":
-        options.includeG2Details = true;
+        options.includeDetails = true;
         break;
       case "--json":
         options.json = true;
@@ -243,7 +261,7 @@ Options:
                                 match the active authoring prompt version. Current G2 and
                                 no-citation tolerances are fixed at 0 while this flag is
                                 active.
-  --details                     Print G2 cited-label diagnostics for the candidate.
+  --details                     Print G2 cited-label and G3 non-step diagnostics for the candidate.
   --json                        Print JSON.
 
 This command reads a candidate steps.json and compares it with eval/baseline.json.
@@ -357,6 +375,43 @@ function buildG2Details(
   };
 }
 
+function buildG3Details(
+  generated: GeneratedStepLike[],
+  groundTruth: GroundTruthStep[],
+  iouThreshold = 0.5,
+): G3Details {
+  const nonStepIntervals = groundTruth
+    .map((step, index) => ({ step, index }))
+    .filter(({ step }) => step.non_step);
+  const nonStepMatches: G3NonStepMatch[] = [];
+
+  generated.forEach((step, generatedIndex) => {
+    const matches = nonStepIntervals
+      .map(({ step: groundTruthStep, index }) => ({
+        groundTruthStep,
+        groundTruthIndex: index,
+        iou: intervalIoU(step, groundTruthStep),
+      }))
+      .filter((match) => match.iou >= iouThreshold)
+      .sort((a, b) => b.iou - a.iou);
+    const bestMatch = matches[0];
+    if (!bestMatch) return;
+    nonStepMatches.push({
+      stepNumber: generatedIndex + 1,
+      stepTitle: step.title,
+      stepStart: step.t_start,
+      stepEnd: step.t_end,
+      groundTruthIndex: bestMatch.groundTruthIndex + 1,
+      groundTruthTitle: bestMatch.groundTruthStep.title,
+      groundTruthStart: bestMatch.groundTruthStep.t_start,
+      groundTruthEnd: bestMatch.groundTruthStep.t_end,
+      iou: bestMatch.iou,
+    });
+  });
+
+  return { nonStepMatches };
+}
+
 export function evaluateCandidate(
   input: {
     caseId: string;
@@ -371,10 +426,13 @@ export function evaluateCandidate(
   const allowedLabels = input.groundTruth.flatMap((step) => step.ui_labels ?? []);
   const g1 = computeG1(generated, input.groundTruth);
   const g2 = computeG2(generated, allowedLabels);
-  const g2Details = options.includeG2Details
+  const g2Details = options.includeDetails
     ? buildG2Details(generated, allowedLabels)
     : undefined;
   const g3 = computeG3(generated, input.groundTruth);
+  const g3Details = options.includeDetails
+    ? buildG3Details(generated, input.groundTruth)
+    : undefined;
   const fallback = detectFallbackStats(input.artifact);
   const baselineG2 = input.baseline?.g2?.accuracy;
   const baselineG3 = input.baseline?.g3?.rate;
@@ -506,6 +564,7 @@ export function evaluateCandidate(
     g3Delta,
     currentG3Rate: currentG3?.rate,
     currentG3Delta,
+    g3Details,
     fallbackReasonCount: fallback.fallbackReasonCount,
     fallbackStepCount: fallback.fallbackStepCount,
     invalidReasons,
@@ -555,6 +614,9 @@ function printResult(result: CandidateEvalResult): void {
       `G3 vs current: ${pct(result.g3Rate)} (current ${pct(result.currentG3Rate)}, delta ${signedPct(result.currentG3Delta)})`,
     );
   }
+  if (result.g3Details) {
+    printG3Details(result.g3Details);
+  }
   console.log(`fallback reasons: ${result.fallbackReasonCount}`);
   if (result.invalidReasons.length > 0) {
     console.log("Invalid reasons:");
@@ -582,6 +644,23 @@ function printG2Details(details: G2Details): void {
     console.log(`G2 no-citation steps: ${details.noCitationStepNumbers.join(", ")}`);
   } else {
     console.log("G2 no-citation steps: none");
+  }
+}
+
+function formatMs(value: number): string {
+  return `${value}ms`;
+}
+
+function printG3Details(details: G3Details): void {
+  if (details.nonStepMatches.length > 0) {
+    console.log("G3 non-step matches:");
+    for (const detail of details.nonStepMatches) {
+      console.log(
+        `- step ${detail.stepNumber} "${detail.stepTitle}" ${formatMs(detail.stepStart)}-${formatMs(detail.stepEnd)} overlaps ground-truth entry ${detail.groundTruthIndex} (non-step) "${detail.groundTruthTitle}" ${formatMs(detail.groundTruthStart)}-${formatMs(detail.groundTruthEnd)} (IoU ${(detail.iou * 100).toFixed(1)}%)`,
+      );
+    }
+  } else {
+    console.log("G3 non-step matches: none");
   }
 }
 
