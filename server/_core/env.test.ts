@@ -45,6 +45,31 @@ describe("ENV authoring provider", () => {
     await expect(import("./env")).rejects.toThrow("AUTHORING_PROVIDER");
   });
 
+  it("defaults OCR_ENGINE_FALLBACK to llm", async () => {
+    setEnv({ OCR_ENGINE_FALLBACK: undefined });
+    vi.resetModules();
+
+    const { ENV } = await import("./env");
+
+    expect(ENV.ocrEngineFallback).toBe("llm");
+  });
+
+  it("accepts OCR_ENGINE_FALLBACK=none", async () => {
+    setEnv({ OCR_ENGINE_FALLBACK: "none" });
+    vi.resetModules();
+
+    const { ENV } = await import("./env");
+
+    expect(ENV.ocrEngineFallback).toBe("none");
+  });
+
+  it("rejects invalid OCR_ENGINE_FALLBACK values", async () => {
+    setEnv({ OCR_ENGINE_FALLBACK: "api" });
+    vi.resetModules();
+
+    await expect(import("./env")).rejects.toThrow("OCR_ENGINE_FALLBACK");
+  });
+
   it("does not require an LLM API key in production for Codex authoring with non-LLM OCR", async () => {
     setEnv({
       NODE_ENV: "production",

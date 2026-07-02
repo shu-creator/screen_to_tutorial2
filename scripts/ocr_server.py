@@ -7,7 +7,7 @@ stdin/stdout のJSONLプロトコルで複数画像のOCRを処理する。
 
 エンジン選択（起動時に自動）:
   1. PaddleOCR（lang=japan）… 推奨。モデル未取得の環境では利用不可
-  2. Tesseract（-l jpn）   … フォールバック
+  2. Tesseract（-l jpn+eng --psm 6）   … フォールバック
   どちらも使えない場合は ready:false を返して終了し、
   呼び出し側（server/_core/ocrEngine.ts）がLLM-OCRへフォールバックする。
 
@@ -28,6 +28,10 @@ import tempfile
 def emit(obj):
     sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
     sys.stdout.flush()
+
+
+def decode_process_output(value):
+    return value.decode("utf-8", errors="replace")
 
 
 class PaddleEngine:
@@ -94,31 +98,41 @@ class TesseractEngine:
 
     def __init__(self):
         lang_check = subprocess.run(
-            ["tesseract", "--list-langs"], capture_output=True, text=True, timeout=30
+            ["tesseract", "--list-langs"], capture_output=True, timeout=30
         )
-        self.lang = os.environ.get("OCR_TESSERACT_LANG", "jpn")
-        if self.lang not in lang_check.stdout:
-            raise RuntimeError(f"tesseract言語データがありません: {self.lang}")
+        langs = set(decode_process_output(lang_check.stdout).split())
+        self.lang = os.environ.get("OCR_TESSERACT_LANG", "jpn+eng")
+        missing_langs = [lang for lang in self.lang.split("+") if lang not in langs]
+        if missing_langs:
+            raise RuntimeError(f"tesseract言語データがありません: {'+'.join(missing_langs)}")
 
     def recognize(self, image_path):
-        from PIL import Image  # noqa: PLC0415
+        from PIL import Image, ImageOps  # noqa: PLC0415
 
         with Image.open(image_path) as img:
             width, height = img.size
+            preprocessed = ImageOps.autocontrast(img.convert("L"))
 
-        proc = subprocess.run(
-            ["tesseract", image_path, "-", "-l", self.lang, "tsv"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            preprocessed.save(f.name)
+            preprocessed_path = f.name
+        try:
+            proc = subprocess.run(
+                ["tesseract", preprocessed_path, "-", "-l", self.lang, "--psm", "6", "tsv"],
+                capture_output=True,
+                timeout=120,
+            )
+        finally:
+            os.unlink(preprocessed_path)
+        stdout = decode_process_output(proc.stdout)
+        stderr = decode_process_output(proc.stderr)
         if proc.returncode != 0:
-            raise RuntimeError(f"tesseract失敗: {proc.stderr[:200]}")
+            raise RuntimeError(f"tesseract失敗: {stderr[:200]}")
 
         # TSVの単語を (block, par, line) 単位で行にグループ化する
         groups = {}
         header = None
-        for row in proc.stdout.splitlines():
+        for row in stdout.splitlines():
             cols = row.split("\t")
             if header is None:
                 header = cols
