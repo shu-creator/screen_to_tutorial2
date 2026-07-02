@@ -161,13 +161,20 @@ export function buildPreflightChecks(
     checks.push({
       status: "PASS",
       code: "asr_provider",
-      message: "ASR_PROVIDER=none is within the first-pass API-free scope",
+      message: "ASR_PROVIDER=none is within the Codex API-free scope",
+    });
+  } else if (asrProvider === "local_whisper") {
+    checks.push({
+      status: "PASS",
+      code: "asr_provider",
+      message:
+        "ASR_PROVIDER=local_whisper uses the local whisper CLI and is within the Codex API-free scope",
     });
   } else {
     checks.push({
       status: "FAIL",
       code: "asr_provider",
-      message: `ASR provider ${asrProvider} is outside the first-pass Codex authoring scope; use --use-audio false --asr-provider none`,
+      message: `ASR provider ${asrProvider} is outside the Codex API-free scope; use --asr-provider none or --asr-provider local_whisper`,
     });
   }
 
@@ -219,11 +226,12 @@ export function buildPreflightChecks(
   return checks;
 }
 
-async function collectPreflightChecks(
+export async function collectPreflightChecks(
   options: CliOptions,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<PreflightCheck[]> {
   const checks = buildPreflightChecks(options, env);
+  const asrProvider = effectiveAsrProvider(options, env);
 
   if (options.video) {
     try {
@@ -245,12 +253,34 @@ async function collectPreflightChecks(
   }
 
   if (effectiveAuthoringProvider(env) === "codex_app_server") {
+    if (asrProvider === "local_whisper") {
+      try {
+        await execFileAsync("whisper", ["--help"], { timeout: 10_000, env });
+        checks.push({
+          status: "PASS",
+          code: "asr_local_whisper_cli",
+          message: "whisper CLI is available for ASR_PROVIDER=local_whisper",
+        });
+      } catch (error) {
+        const execError = error as { message?: unknown };
+        checks.push({
+          status: "FAIL",
+          code: "asr_local_whisper_cli",
+          message: `whisper CLI is required for ASR_PROVIDER=local_whisper; install Python openai-whisper first, for example with pip install openai-whisper. Check failed: ${
+            typeof execError.message === "string"
+              ? execError.message
+              : String(error)
+          }`,
+        });
+      }
+    }
+
     let helpText = "";
     try {
       const { stdout, stderr } = await execFileAsync(
         "codex",
         ["app-server", "--help"],
-        { timeout: 10_000 }
+        { timeout: 10_000, env }
       );
       helpText = `${stdout}\n${stderr}`;
     } catch (error) {

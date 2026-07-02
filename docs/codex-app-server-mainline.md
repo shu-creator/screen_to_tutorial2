@@ -18,14 +18,18 @@ authoring through Codex App Server while preserving the existing API-backed
 AUTHORING_PROVIDER=codex_app_server
 OCR_PROVIDER=engine
 ASR_PROVIDER=none
+# ASR_PROVIDER=local_whisper is also API-free when the local whisper CLI is
+# installed.
 # TTS_PROVIDER=none is not supported yet. Leave TTS_PROVIDER=openai|gemini;
 # pipeline:generate does not synthesize TTS in this experiment.
 ```
 
 `LLM_PROVIDER` remains available for the existing API-backed mode, but
 `AUTHORING_PROVIDER=codex_app_server` must not call `server/_core/llm.ts` for
-step authoring. `OCR_PROVIDER=engine` is required for the first pass; replacing
-OCR/ASR/TTS providers is outside this slice.
+step authoring. `OCR_PROVIDER=engine` is required for the first pass.
+`ASR_PROVIDER=none` and `ASR_PROVIDER=local_whisper` are inside the API-free
+scope; `ASR_PROVIDER=openai` remains outside it. Replacing OCR or TTS providers
+is outside this slice.
 
 `CODEX_MODEL` is optional. When set, TutorialGen launches app-server with
 `-c model=<CODEX_MODEL>` and includes the value in the authoring cache key. When
@@ -57,7 +61,8 @@ video
 
 ## Non-goals For The First Pass
 
-- Do not replace OpenAI ASR.
+- Do not use OpenAI ASR in API-free mode; use `ASR_PROVIDER=none` or local
+  `ASR_PROVIDER=local_whisper`.
 - Do not replace OpenAI/Gemini TTS.
 - Do not use `OCR_PROVIDER=llm` in API-free mode.
 - Do not support `TTS_PROVIDER=none` yet.
@@ -82,15 +87,33 @@ pnpm pipeline:generate -- \
   --preflight
 ```
 
+For narrated recordings, use local Whisper without Platform API calls:
+
+```bash
+AUTHORING_PROVIDER=codex_app_server \
+OCR_PROVIDER=engine \
+ASR_PROVIDER=local_whisper \
+pnpm pipeline:generate -- \
+  --video outputs/codex-app-server-smoke/input/narrated.mp4 \
+  --outdir outputs/codex-app-server-smoke/run \
+  --use-audio true \
+  --asr-provider local_whisper \
+  --ocr-provider engine \
+  --preflight
+```
+
 Expected preflight checks:
 
 - `authoring_provider`: confirms Codex authoring is active and legacy frame LLM
   authoring is disabled when evidence is missing.
 - `evidence_required`: confirms the run must produce `evidence.json` before
   authoring.
-- `asr_provider`: must be `none` for this first-pass smoke.
+- `asr_provider`: must be `none` or `local_whisper` for API-free mode;
+  `openai` fails as outside scope.
+- `asr_local_whisper_cli`: when `local_whisper` is selected, confirms the
+  local `whisper` CLI is executable.
 - `ocr_provider`: must be `engine`.
-- `tts_scope`: records that TTS is not invoked by `pipeline:generate`.
+- `tts_provider`: records that TTS is not invoked by `pipeline:generate`.
 - `codex_model`: records whether Codex authoring cache is enabled or disabled.
 - `codex_app_server_cli`: confirms `codex app-server --listen stdio://`
   support.
