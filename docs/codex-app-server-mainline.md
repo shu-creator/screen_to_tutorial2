@@ -31,6 +31,8 @@ ASR_PROVIDER=none
 step authoring. `OCR_PROVIDER=engine` is required for the first pass.
 `OCR_PYTHON_BIN` selects the Python used to spawn `scripts/ocr_server.py`.
 Use a project virtualenv when possible, for example `.venv/bin/python3`.
+The Tesseract fallback defaults to `OCR_TESSERACT_LANG=jpn+eng`, `--psm 6`,
+and grayscale plus autocontrast preprocessing for Japanese UI text.
 `OCR_ENGINE_FALLBACK=none` disables the legacy LLM-OCR fallback after local OCR
 engine startup or recognition failure; the pipeline records empty OCR evidence
 with a warning instead. The default remains `OCR_ENGINE_FALLBACK=llm` for

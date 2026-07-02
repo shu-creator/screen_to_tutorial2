@@ -124,7 +124,7 @@ async function extractFrameOcrWithEngine(
   const cacheKey = {
     provider: "engine",
     engine: engine.engine ?? "unknown",
-    promptVersion: "ocr-engine-v1",
+    promptVersion: "ocr-engine-v2",
     imageHash: hashBinary(imageBuffer),
   };
   const cached = await getCachedJson<OcrResult>("ocr", cacheKey);
