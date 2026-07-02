@@ -8,6 +8,7 @@ type TTSProvider = "openai" | "gemini";
 type SlidePreset = "default" | "training";
 type ASRProvider = "none" | "openai" | "local_whisper";
 type OCRProvider = "none" | "llm" | "engine";
+type OcrEngineFallback = "llm" | "none";
 
 const DEFAULT_LLM_MODEL: Record<LLMProvider, string> = {
   openai: "gpt-5.4",
@@ -129,6 +130,11 @@ const ocrProvider = parseEnumEnv<OCRProvider>(
   "OCR_PROVIDER",
   ["none", "llm", "engine"],
   "llm"
+);
+const ocrEngineFallback = parseEnumEnv<OcrEngineFallback>(
+  "OCR_ENGINE_FALLBACK",
+  ["llm", "none"],
+  "llm",
 );
 const slidePreset = parseEnumEnv<SlidePreset>(
   "SLIDE_PRESET",
@@ -309,6 +315,7 @@ export const ENV = {
   asrProvider,
   asrModel,
   ocrProvider,
+  ocrEngineFallback,
   pipelineCacheDir,
   frameDedupeHashDistance,
   evidenceSampleFps,
@@ -342,4 +349,5 @@ export type {
   SlidePreset,
   ASRProvider,
   OCRProvider,
+  OcrEngineFallback,
 };

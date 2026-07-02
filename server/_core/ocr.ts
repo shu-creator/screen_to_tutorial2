@@ -65,7 +65,8 @@ function clamp(value: number, min: number, max: number): number {
 /**
  * OCRの統一エントリポイント。
  * provider=engine はローカルOCRエンジン（PaddleOCR/Tesseract）を使用し、
- * エンジンが利用できない環境では自動的にLLM-OCRへフォールバックする。
+ * エンジンが利用できない環境では既定でLLM-OCRへフォールバックする。
+ * OCR_ENGINE_FALLBACK=none の場合はAPI呼び出しを避け、空OCRと警告を返す。
  */
 export async function extractFrameOcrUnified(
   source: string,
@@ -82,15 +83,36 @@ export async function extractFrameOcrUnified(
       return await extractFrameOcrWithEngine(source, frameNumber);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (ENV.ocrEngineFallback === "none") {
+        return emptyEngineOcrResult(
+          `engine OCR failed; LLM fallback disabled by OCR_ENGINE_FALLBACK=none: ${message.substring(0, 120)}`,
+        );
+      }
       const fallback = await extractFrameOcr(source, frameNumber, "llm");
       fallback.warnings.push(`engine OCR failed, fell back to llm: ${message.substring(0, 120)}`);
       return fallback;
     }
   }
 
+  if (ENV.ocrEngineFallback === "none") {
+    return emptyEngineOcrResult(
+      "engine OCR unavailable; LLM fallback disabled by OCR_ENGINE_FALLBACK=none",
+    );
+  }
+
   const fallback = await extractFrameOcr(source, frameNumber, "llm");
   fallback.warnings.push("engine OCR unavailable, fell back to llm");
   return fallback;
+}
+
+function emptyEngineOcrResult(warning: string): OcrResult {
+  return {
+    provider: "engine",
+    lines: [],
+    regions: [],
+    warnings: [warning],
+    confidence: 0,
+  };
 }
 
 async function extractFrameOcrWithEngine(

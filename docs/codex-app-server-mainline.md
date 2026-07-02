@@ -17,6 +17,8 @@ authoring through Codex App Server while preserving the existing API-backed
 ```env
 AUTHORING_PROVIDER=codex_app_server
 OCR_PROVIDER=engine
+OCR_ENGINE_FALLBACK=none
+OCR_PYTHON_BIN=.venv/bin/python3
 ASR_PROVIDER=none
 # ASR_PROVIDER=local_whisper is also API-free when the local whisper CLI is
 # installed.
@@ -27,6 +29,12 @@ ASR_PROVIDER=none
 `LLM_PROVIDER` remains available for the existing API-backed mode, but
 `AUTHORING_PROVIDER=codex_app_server` must not call `server/_core/llm.ts` for
 step authoring. `OCR_PROVIDER=engine` is required for the first pass.
+`OCR_PYTHON_BIN` selects the Python used to spawn `scripts/ocr_server.py`.
+Use a project virtualenv when possible, for example `.venv/bin/python3`.
+`OCR_ENGINE_FALLBACK=none` disables the legacy LLM-OCR fallback after local OCR
+engine startup or recognition failure; the pipeline records empty OCR evidence
+with a warning instead. The default remains `OCR_ENGINE_FALLBACK=llm` for
+compatibility with the existing API-backed mode.
 `ASR_PROVIDER=none` and `ASR_PROVIDER=local_whisper` are inside the API-free
 scope; `ASR_PROVIDER=openai` remains outside it. Replacing OCR or TTS providers
 is outside this slice.
@@ -76,6 +84,8 @@ Use no-write preflight before the side-effecting run:
 DATABASE_URL=mysql://root@127.0.0.1:3306/tutorialgen \
 AUTHORING_PROVIDER=codex_app_server \
 OCR_PROVIDER=engine \
+OCR_ENGINE_FALLBACK=none \
+OCR_PYTHON_BIN=.venv/bin/python3 \
 ASR_PROVIDER=none \
 pnpm pipeline:generate -- \
   --video outputs/codex-app-server-smoke/input/synth-login-click-01/video.mp4 \
@@ -92,6 +102,8 @@ For narrated recordings, use local Whisper without Platform API calls:
 ```bash
 AUTHORING_PROVIDER=codex_app_server \
 OCR_PROVIDER=engine \
+OCR_ENGINE_FALLBACK=none \
+OCR_PYTHON_BIN=.venv/bin/python3 \
 ASR_PROVIDER=local_whisper \
 pnpm pipeline:generate -- \
   --video outputs/codex-app-server-smoke/input/narrated.mp4 \
@@ -113,6 +125,12 @@ Expected preflight checks:
 - `asr_local_whisper_cli`: when `local_whisper` is selected, confirms the
   local `whisper` CLI is executable.
 - `ocr_provider`: must be `engine`.
+- `ocr_engine_fallback`: must be `none` for strict API-free operation. The
+  default `llm` fallback is compatible with existing runs but can call LLM-OCR.
+- `ocr_engine_dependencies`: confirms `OCR_PYTHON_BIN` can import Pillow and
+  find PaddleOCR or Tesseract for local OCR. If this fails, create a project
+  `.venv` and install OCR dependencies such as `paddlepaddle` and `paddleocr`,
+  or provide a working Tesseract installation.
 - `tts_provider`: records that TTS is not invoked by `pipeline:generate`.
 - `codex_model`: records whether Codex authoring cache is enabled or disabled.
 - `codex_app_server_cli`: confirms `codex app-server --listen stdio://`
@@ -136,6 +154,8 @@ pnpm test server/authoring/author.test.ts \
 DATABASE_URL=mysql://root@127.0.0.1:3306/tutorialgen \
 AUTHORING_PROVIDER=codex_app_server \
 OCR_PROVIDER=engine \
+OCR_ENGINE_FALLBACK=none \
+OCR_PYTHON_BIN=.venv/bin/python3 \
 ASR_PROVIDER=none \
 CODEX_APP_SERVER_TIMEOUT_MS=300000 \
 pnpm pipeline:generate -- \
@@ -198,7 +218,8 @@ Go/no-go:
 Observed risk:
 
 - `OCR_PROVIDER=engine` started Tesseract, but the synthetic Japanese UI yielded
-  weak/empty OCR evidence in the pipeline smoke. Existing OCR engine failure
-  behavior can still attempt LLM OCR fallback; full API-free operation should
-  either harden local OCR or make engine fallback policy explicit in a later
-  OCR-focused slice.
+  weak/empty OCR evidence in the pipeline smoke. Sprint B made the engine
+  fallback policy explicit: set `OCR_ENGINE_FALLBACK=none` for strict API-free
+  operation, and use preflight to verify `OCR_PYTHON_BIN` points at a Python
+  environment with local OCR dependencies. The remaining quality risk is local
+  OCR accuracy, not hidden LLM-OCR fallback.

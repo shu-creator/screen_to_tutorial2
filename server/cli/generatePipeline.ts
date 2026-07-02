@@ -123,6 +123,12 @@ function effectiveOcrProvider(
   return options.ocrProvider ?? env.OCR_PROVIDER ?? "llm";
 }
 
+function effectiveOcrEngineFallback(
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  return env.OCR_ENGINE_FALLBACK ?? "llm";
+}
+
 export function buildPreflightChecks(
   options: CliOptions,
   env: NodeJS.ProcessEnv = process.env
@@ -130,6 +136,7 @@ export function buildPreflightChecks(
   const authoringProvider = effectiveAuthoringProvider(env);
   const asrProvider = effectiveAsrProvider(options, env);
   const ocrProvider = effectiveOcrProvider(options, env);
+  const ocrEngineFallback = effectiveOcrEngineFallback(env);
   const ttsProvider = env.TTS_PROVIDER ?? "openai";
   const codexModel = (env.CODEX_MODEL ?? "").trim();
   const checks: PreflightCheck[] = [];
@@ -184,6 +191,21 @@ export function buildPreflightChecks(
       code: "ocr_provider",
       message: "OCR_PROVIDER=engine avoids LLM OCR in the authoring experiment",
     });
+    if (ocrEngineFallback === "none") {
+      checks.push({
+        status: "PASS",
+        code: "ocr_engine_fallback",
+        message:
+          "OCR_ENGINE_FALLBACK=none keeps engine OCR failures API-free by recording empty OCR evidence with a warning",
+      });
+    } else {
+      checks.push({
+        status: "FAIL",
+        code: "ocr_engine_fallback",
+        message:
+          "OCR_ENGINE_FALLBACK=llm leaves LLM-OCR fallback enabled, so this run is not strictly API-free; set OCR_ENGINE_FALLBACK=none",
+      });
+    }
   } else {
     checks.push({
       status: "FAIL",
@@ -226,12 +248,62 @@ export function buildPreflightChecks(
   return checks;
 }
 
+async function checkLocalOcrEngineDependencies(
+  env: NodeJS.ProcessEnv,
+): Promise<PreflightCheck> {
+  const pythonBin = env.OCR_PYTHON_BIN ?? "python3";
+  const probe = [
+    "import importlib.util, shutil, sys",
+    "missing = []",
+    "if importlib.util.find_spec('PIL') is None:",
+    "    missing.append('Pillow')",
+    "has_paddle = importlib.util.find_spec('paddleocr') is not None",
+    "has_tesseract = shutil.which('tesseract') is not None",
+    "if missing or not (has_paddle or has_tesseract):",
+    "    details = []",
+    "    if missing:",
+    "        details.append('missing Python modules: ' + ', '.join(missing))",
+    "    if not (has_paddle or has_tesseract):",
+    "        details.append('missing OCR engine: install paddleocr/paddlepaddle or tesseract')",
+    "    print('; '.join(details), file=sys.stderr)",
+    "    sys.exit(2)",
+    "print('ok')",
+  ].join("\n");
+
+  try {
+    await execFileAsync(pythonBin, ["-c", probe], { timeout: 10_000, env });
+    return {
+      status: "PASS",
+      code: "ocr_engine_dependencies",
+      message: `OCR_PYTHON_BIN=${pythonBin} can import PIL and find PaddleOCR or tesseract`,
+    };
+  } catch (error) {
+    const execError = error as {
+      stderr?: unknown;
+      message?: unknown;
+    };
+    const stderr =
+      typeof execError.stderr === "string" ? execError.stderr.trim() : "";
+    const message =
+      typeof execError.message === "string" ? execError.message : String(error);
+    return {
+      status: "FAIL",
+      code: "ocr_engine_dependencies",
+      message:
+        `OCR_PROVIDER=engine requires local OCR dependencies via OCR_PYTHON_BIN=${pythonBin}. ` +
+        "Prepare a project .venv and install dependencies, for example: python3 -m venv .venv; .venv/bin/pip install pillow paddlepaddle paddleocr. " +
+        `Check failed: ${stderr || message}`,
+    };
+  }
+}
+
 export async function collectPreflightChecks(
   options: CliOptions,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<PreflightCheck[]> {
   const checks = buildPreflightChecks(options, env);
   const asrProvider = effectiveAsrProvider(options, env);
+  const ocrProvider = effectiveOcrProvider(options, env);
 
   if (options.video) {
     try {
@@ -253,6 +325,10 @@ export async function collectPreflightChecks(
   }
 
   if (effectiveAuthoringProvider(env) === "codex_app_server") {
+    if (ocrProvider === "engine") {
+      checks.push(await checkLocalOcrEngineDependencies(env));
+    }
+
     if (asrProvider === "local_whisper") {
       try {
         await execFileAsync("whisper", ["--help"], { timeout: 10_000, env });
@@ -339,6 +415,7 @@ export function buildPreflightLines(
     options.asrProvider ?? (!options.useAudio ? "none" : env.ASR_PROVIDER);
   const ocrProvider = options.ocrProvider ?? env.OCR_PROVIDER;
   const authoringProvider = env.AUTHORING_PROVIDER ?? "llm";
+  const ocrEngineFallback = env.OCR_ENGINE_FALLBACK ?? "llm";
   const lines = [
     `Pipeline preflight: ${status}`,
     `video: ${videoPath}`,
@@ -347,6 +424,7 @@ export function buildPreflightLines(
     `authoring_provider: ${describeProvider(authoringProvider)}`,
     `asr_provider: ${describeProvider(asrProvider)}`,
     `ocr_provider: ${describeProvider(ocrProvider)}`,
+    `ocr_engine_fallback: ${describeProvider(ocrEngineFallback)}`,
     `cache_dir: ${options.cacheDir ?? "(not set)"}`,
     `debug: ${options.debug}`,
     `dry_run: ${options.dryRun}`,

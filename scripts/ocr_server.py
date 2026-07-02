@@ -30,6 +30,10 @@ def emit(obj):
     sys.stdout.flush()
 
 
+def decode_process_output(value):
+    return value.decode("utf-8", errors="replace")
+
+
 class PaddleEngine:
     name = "paddle"
 
@@ -94,10 +98,11 @@ class TesseractEngine:
 
     def __init__(self):
         lang_check = subprocess.run(
-            ["tesseract", "--list-langs"], capture_output=True, text=True, timeout=30
+            ["tesseract", "--list-langs"], capture_output=True, timeout=30
         )
+        langs = decode_process_output(lang_check.stdout)
         self.lang = os.environ.get("OCR_TESSERACT_LANG", "jpn")
-        if self.lang not in lang_check.stdout:
+        if self.lang not in langs:
             raise RuntimeError(f"tesseract言語データがありません: {self.lang}")
 
     def recognize(self, image_path):
@@ -109,16 +114,17 @@ class TesseractEngine:
         proc = subprocess.run(
             ["tesseract", image_path, "-", "-l", self.lang, "tsv"],
             capture_output=True,
-            text=True,
             timeout=120,
         )
+        stdout = decode_process_output(proc.stdout)
+        stderr = decode_process_output(proc.stderr)
         if proc.returncode != 0:
-            raise RuntimeError(f"tesseract失敗: {proc.stderr[:200]}")
+            raise RuntimeError(f"tesseract失敗: {stderr[:200]}")
 
         # TSVの単語を (block, par, line) 単位で行にグループ化する
         groups = {}
         header = None
-        for row in proc.stdout.splitlines():
+        for row in stdout.splitlines():
             cols = row.split("\t")
             if header is None:
                 header = cols
