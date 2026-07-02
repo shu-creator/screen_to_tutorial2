@@ -1,9 +1,14 @@
 import { execFile } from "child_process";
 import fs from "fs/promises";
+import os from "os";
 import path from "path";
 import { promisify } from "util";
 import { describe, expect, it } from "vitest";
-import { buildPreflightLines, parseArgs } from "./generatePipeline";
+import {
+  buildPreflightChecks,
+  buildPreflightLines,
+  parseArgs,
+} from "./generatePipeline";
 
 const execFileAsync = promisify(execFile);
 
@@ -60,12 +65,64 @@ describe("generate pipeline CLI helpers", () => {
     );
   });
 
-  it("runs preflight before creating the output directory", async () => {
-    const outdir = path.resolve(process.cwd(), "outputs/generate-pipeline-preflight-test");
-    const video = path.resolve(
-      process.cwd(),
-      "eval/dataset/real-app-workflow-03-generate-steps/video.mp4",
+  it("reports Codex App Server preflight constraints before execution", () => {
+    const options = parseArgs([
+      "--video",
+      "sample.mp4",
+      "--outdir",
+      "outputs/demo",
+      "--use-audio",
+      "false",
+      "--asr-provider",
+      "none",
+      "--preflight",
+    ]);
+
+    const checks = buildPreflightChecks(options, {
+      AUTHORING_PROVIDER: "codex_app_server",
+      OCR_PROVIDER: "llm",
+      TTS_PROVIDER: "none",
+      CODEX_MODEL: "",
+    } as NodeJS.ProcessEnv);
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "PASS",
+          code: "evidence_required",
+        }),
+        expect.objectContaining({
+          status: "FAIL",
+          code: "ocr_provider",
+        }),
+        expect.objectContaining({
+          status: "FAIL",
+          code: "tts_provider",
+        }),
+        expect.objectContaining({
+          status: "WARN",
+          code: "codex_model",
+        }),
+      ])
     );
+
+    const lines = buildPreflightLines(options, "FAIL", checks, {
+      AUTHORING_PROVIDER: "codex_app_server",
+      OCR_PROVIDER: "llm",
+      TTS_PROVIDER: "none",
+      CODEX_MODEL: "",
+    } as NodeJS.ProcessEnv);
+    expect(lines).toContain("authoring_provider: codex_app_server");
+    expect(lines).toContain("ocr_provider: llm");
+  });
+
+  it("runs preflight before creating the output directory", async () => {
+    const tempDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "generate-pipeline-preflight-test-")
+    );
+    const outdir = path.join(tempDir, "out");
+    const video = path.join(tempDir, "sample.mp4");
+    await fs.writeFile(video, "preflight only");
 
     await expect(fs.rm(outdir, { recursive: true, force: true })).resolves.toBeUndefined();
 
@@ -91,4 +148,46 @@ describe("generate pipeline CLI helpers", () => {
     expect(stdout).toContain(`outdir: ${outdir}`);
     await expect(fs.access(outdir)).rejects.toThrow();
   }, 15_000);
+
+  it("fails codex preflight before creating the output directory when settings are incompatible", async () => {
+    const tempDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "generate-pipeline-codex-preflight-test-")
+    );
+    const outdir = path.join(tempDir, "out");
+    const video = path.join(tempDir, "sample.mp4");
+    await fs.writeFile(video, "preflight only");
+
+    await expect(
+      execFileAsync(
+        "pnpm",
+        [
+          "tsx",
+          "server/cli/generatePipeline.ts",
+          "--video",
+          video,
+          "--outdir",
+          outdir,
+          "--use-audio",
+          "false",
+          "--asr-provider",
+          "none",
+          "--preflight",
+        ],
+        {
+          cwd: process.cwd(),
+          timeout: 20_000,
+          env: {
+            ...process.env,
+            AUTHORING_PROVIDER: "codex_app_server",
+            OCR_PROVIDER: "llm",
+            TTS_PROVIDER: "none",
+            CODEX_MODEL: "",
+          },
+        }
+      )
+    ).rejects.toMatchObject({
+      stdout: expect.stringContaining("Pipeline preflight: FAIL"),
+    });
+    await expect(fs.access(outdir)).rejects.toThrow();
+  }, 20_000);
 });

@@ -3,7 +3,12 @@ import os from "os";
 import path from "path";
 import { invokeLLM } from "./_core/llm";
 import { detectChangedRegion } from "./_core/frameAnalysis";
-import { ensurePipelineCacheDir, getCachedJson, hashBinary, setCachedJson } from "./_core/pipelineCache";
+import {
+  ensurePipelineCacheDir,
+  getCachedJson,
+  hashBinary,
+  setCachedJson,
+} from "./_core/pipelineCache";
 import { extractFrameOcr } from "./_core/ocr";
 import { pickTranscriptSnippet, transcribeVideoSource } from "./_core/asr";
 import { ENV } from "./_core/env";
@@ -30,9 +35,11 @@ const STEP_PROMPT_VERSION = "steps-grounded-v1";
  * activity が "action"（undefined は "action" 扱い）のセグメントのみを返す。
  * action セグメントが1つもない場合は入力をそのまま返す（防御的フォールバック）。
  */
-export function selectClipSegments(segments: EvidenceSegment[]): EvidenceSegment[] {
+export function selectClipSegments(
+  segments: EvidenceSegment[]
+): EvidenceSegment[] {
   const actionSegments = segments.filter(
-    (segment) => (segment.activity ?? "action") === "action",
+    segment => (segment.activity ?? "action") === "action"
   );
   return actionSegments.length > 0 ? actionSegments : segments;
 }
@@ -165,10 +172,17 @@ async function analyzeFrame(input: GroundingInput): Promise<StepData> {
     operation: parsed.operation?.trim() || "操作を確認する",
     description: parsed.description?.trim() || "画面の内容を確認してください。",
     narration: parsed.narration?.trim() || "",
-    instruction: parsed.instruction?.trim() || parsed.operation?.trim() || "操作を実行する",
+    instruction:
+      parsed.instruction?.trim() ||
+      parsed.operation?.trim() ||
+      "操作を実行する",
     expected_result:
-      parsed.expected_result?.trim() || parsed.description?.trim() || "画面が更新される",
-    warnings: (parsed.warnings ?? []).map((warning) => warning.trim()).filter(Boolean),
+      parsed.expected_result?.trim() ||
+      parsed.description?.trim() ||
+      "画面が更新される",
+    warnings: (parsed.warnings ?? [])
+      .map(warning => warning.trim())
+      .filter(Boolean),
     confidence: clamp(parsed.confidence ?? 0.6, 0, 1),
   };
 
@@ -196,7 +210,9 @@ async function createFrameLocalPathCache(frames: Frame[]): Promise<{
   };
 
   const cleanup = async (): Promise<void> => {
-    await Promise.all(tempFiles.map((filePath) => fs.unlink(filePath).catch(() => {})));
+    await Promise.all(
+      tempFiles.map(filePath => fs.unlink(filePath).catch(() => {}))
+    );
   };
 
   return { getLocalPath, cleanup };
@@ -204,14 +220,14 @@ async function createFrameLocalPathCache(frames: Frame[]): Promise<{
 
 async function persistStepsToDb(
   projectId: number,
-  artifact: StepsArtifact,
+  artifact: StepsArtifact
 ): Promise<StepsArtifact> {
   await db.deleteStepsByProjectId(projectId);
 
-  for (const step of artifact.steps.sort((a, b) => a.sort_order - b.sort_order)) {
-    const frameId =
-      step.frame_id ??
-      step.representative_frames[0]?.frame_id;
+  for (const step of artifact.steps.sort(
+    (a, b) => a.sort_order - b.sort_order
+  )) {
+    const frameId = step.frame_id ?? step.representative_frames[0]?.frame_id;
     if (!frameId) {
       throw new Error(`Missing frame_id for ${step.step_id}`);
     }
@@ -233,7 +249,7 @@ async function persistStepsToDb(
 async function writeRunLog(
   projectId: number,
   runId: string,
-  lines: string[],
+  lines: string[]
 ): Promise<void> {
   const key = `projects/${projectId}/outputs/${runId}/log.jsonl`;
   await storagePut(key, `${lines.join("\n")}\n`, "application/jsonl");
@@ -246,44 +262,53 @@ async function writeRunLog(
  */
 async function generateStepsFromEvidence(
   projectId: number,
-  evidence: EvidenceArtifact,
+  evidence: EvidenceArtifact
 ): Promise<void> {
   const runId = `run_${Date.now()}`;
   const runLogLines: string[] = [];
   const addRunLog = (event: string, payload: Record<string, unknown>) => {
-    runLogLines.push(JSON.stringify({ ts: new Date().toISOString(), event, ...payload }));
+    runLogLines.push(
+      JSON.stringify({ ts: new Date().toISOString(), event, ...payload })
+    );
   };
 
   addRunLog("authoring.start", {
     projectId,
     segmentCount: evidence.segments.length,
+    authoringProvider: ENV.authoringProvider,
     llmProvider: ENV.llmProvider,
     llmModel: ENV.llmModel,
     promptVersion: AUTHORING_PROMPT_VERSION,
   });
 
-  await db.updateProjectProgress(projectId, 74, "ステップを執筆中（一括解析）...");
+  await db.updateProjectProgress(
+    projectId,
+    74,
+    "ステップを執筆中（一括解析）..."
+  );
 
   const result = await authorSteps(evidence);
 
   addRunLog("authoring.done", {
     stepCount: result.steps.length,
-    fallbackCount: result.steps.filter((step) => step.fallback).length,
+    fallbackCount: result.steps.filter(step => step.fallback).length,
     discardedCount: result.discarded.length,
-    needsReviewCount: result.steps.filter((step) => step.needs_review).length,
+    needsReviewCount: result.steps.filter(step => step.needs_review).length,
     warnings: result.warnings,
   });
 
   const segmentById = new Map(
-    evidence.segments.map((segment) => [segment.segment_id, segment]),
+    evidence.segments.map(segment => [segment.segment_id, segment])
   );
 
   const artifactSteps: StepArtifact[] = result.steps.map((step, index) => {
     const sourceSegments = step.source_segment_ids
-      .map((id) => segmentById.get(id))
+      .map(id => segmentById.get(id))
       .filter((segment): segment is EvidenceSegment => segment !== undefined);
     if (sourceSegments.length === 0) {
-      throw new Error(`ステップの根拠セグメントが解決できません: ${step.title}`);
+      throw new Error(
+        `ステップの根拠セグメントが解決できません: ${step.title}`
+      );
     }
 
     // クリップ範囲算出には waiting セグメントを除外する
@@ -294,11 +319,11 @@ async function generateStepsFromEvidence(
     if (!frameId) {
       // evidence契約違反（DBフローでは frame_id 必須）。執筆前に検出する
       throw new Error(
-        `セグメント ${lastSegment.segment_id} に frame_id がありません（evidence契約違反）`,
+        `セグメント ${lastSegment.segment_id} に frame_id がありません（evidence契約違反）`
       );
     }
 
-    const tStart = Math.min(...clipSegments.map((s) => s.t_start));
+    const tStart = Math.min(...clipSegments.map(s => s.t_start));
 
     const bbox = clipSegments.reduce<StepArtifact["changed_region_bbox"]>(
       (acc, segment) => {
@@ -314,15 +339,15 @@ async function generateStepsFromEvidence(
           h: Math.min(1, Math.max(acc.y + acc.h, rect.y + rect.h) - y),
         };
       },
-      null,
+      null
     );
 
     // ocr_text と transcript_snippet は sourceSegments 全体から（cited_ui_labels 検証のため）
     const mergedOcr = Array.from(
-      new Set(sourceSegments.flatMap((segment) => segment.ocr_lines)),
+      new Set(sourceSegments.flatMap(segment => segment.ocr_lines))
     ).slice(0, 40);
     const mergedTranscript = sourceSegments
-      .map((segment) => segment.transcript_snippet.trim())
+      .map(segment => segment.transcript_snippet.trim())
       .filter(Boolean)
       .join(" ");
 
@@ -332,7 +357,7 @@ async function generateStepsFromEvidence(
       frame_id: frameId,
       t_start: tStart,
       t_end: Math.max(lastSegment.t_end, tStart + 1),
-      representative_frames: clipSegments.map((segment) => ({
+      representative_frames: clipSegments.map(segment => ({
         frame_id: segment.after_frame.frame_id ?? undefined,
         frame_number: 0,
         timestamp: segment.after_frame.t,
@@ -362,6 +387,7 @@ async function generateStepsFromEvidence(
     project_id: projectId,
     generated_at: new Date().toISOString(),
     config: {
+      authoring_provider: ENV.authoringProvider,
       asr_provider: evidence.config.asr_provider,
       ocr_provider: evidence.config.ocr_provider,
       llm_provider: ENV.llmProvider,
@@ -376,15 +402,21 @@ async function generateStepsFromEvidence(
   await saveStepsArtifact(projectId, withLegacyIds);
   await writeRunLog(projectId, runId, runLogLines);
 
-  await db.updateProjectProgress(projectId, 90, "steps.json とステップ保存が完了しました");
+  await db.updateProjectProgress(
+    projectId,
+    90,
+    "steps.json とステップ保存が完了しました"
+  );
   logger.info("Authoring complete", {
     projectId,
     stepCount: artifactSteps.length,
-    needsReview: artifactSteps.filter((step) => step.needs_review).length,
+    needsReview: artifactSteps.filter(step => step.needs_review).length,
   });
 }
 
-export async function generateStepsForProject(projectId: number): Promise<void> {
+export async function generateStepsForProject(
+  projectId: number
+): Promise<void> {
   logger.info(`Starting step generation for project ${projectId}`);
   await ensurePipelineCacheDir();
 
@@ -401,7 +433,14 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
     await generateStepsFromEvidence(projectId, evidence);
     return;
   }
-  logger.info("evidence.json が無いため従来のフレーム単位解析を使用します", { projectId });
+  if (ENV.authoringProvider === "codex_app_server") {
+    throw new Error(
+      "AUTHORING_PROVIDER=codex_app_server requires evidence.json; legacy frame LLM authoring is disabled in this mode"
+    );
+  }
+  logger.info("evidence.json が無いため従来のフレーム単位解析を使用します", {
+    projectId,
+  });
 
   const frames = await db.getFramesByProjectId(projectId);
   if (frames.length === 0) {
@@ -417,7 +456,7 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
         ts: new Date().toISOString(),
         event,
         ...payload,
-      }),
+      })
     );
   };
 
@@ -428,9 +467,13 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
     ocrProvider: ENV.ocrProvider,
     llmProvider: ENV.llmProvider,
     llmModel: ENV.llmModel,
+    authoringProvider: ENV.authoringProvider,
   });
 
-  const transcript = await transcribeVideoSource(project.videoUrl, ENV.asrProvider);
+  const transcript = await transcribeVideoSource(
+    project.videoUrl,
+    ENV.asrProvider
+  );
   addRunLog("asr.done", {
     provider: transcript.provider,
     model: transcript.model,
@@ -438,7 +481,8 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
     warnings: transcript.warnings,
   });
 
-  const { getLocalPath, cleanup } = await createFrameLocalPathCache(sortedFrames);
+  const { getLocalPath, cleanup } =
+    await createFrameLocalPathCache(sortedFrames);
 
   try {
     const artifactSteps: StepArtifact[] = [];
@@ -449,14 +493,12 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
       const prevFrame = sortedFrames[index - 1];
 
       const tStart = frame.timestamp;
-      const tEnd =
-        nextFrame?.timestamp ??
-        frame.timestamp + 1_500;
+      const tEnd = nextFrame?.timestamp ?? frame.timestamp + 1_500;
 
       const transcriptSnippet = pickTranscriptSnippet(
         transcript.segments,
         tStart,
-        Math.max(tEnd, tStart + 1),
+        Math.max(tEnd, tStart + 1)
       );
 
       let changedRegionBBox: StepArtifact["changed_region_bbox"] = null;
@@ -472,7 +514,11 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
       }
 
       try {
-        const ocrResult = await extractFrameOcr(frame.imageUrl, frame.frameNumber, ENV.ocrProvider);
+        const ocrResult = await extractFrameOcr(
+          frame.imageUrl,
+          frame.frameNumber,
+          ENV.ocrProvider
+        );
         const stepData = await analyzeFrame({
           imageUrl: frame.imageUrl,
           frameNumber: frame.frameNumber,
@@ -500,7 +546,11 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
           instruction: stepData.instruction,
           expected_result: stepData.expected_result,
           warnings: [...ocrResult.warnings, ...stepData.warnings],
-          confidence: clamp((stepData.confidence + ocrResult.confidence) / 2, 0, 1),
+          confidence: clamp(
+            (stepData.confidence + ocrResult.confidence) / 2,
+            0,
+            1
+          ),
           title: stepData.title,
           operation: stepData.operation,
           description: stepData.description,
@@ -553,7 +603,9 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
           source_segment_ids: [],
           cited_ui_labels: [],
           needs_review: true,
-          review_reasons: ["fallback:legacy_step_analysis_failed" satisfies ReviewReasonCode],
+          review_reasons: [
+            "fallback:legacy_step_analysis_failed" satisfies ReviewReasonCode,
+          ],
         });
         addRunLog("step.failed", {
           index,
@@ -562,11 +614,12 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
         });
       }
 
-      const analysisProgress = 72 + Math.floor(((index + 1) / sortedFrames.length) * 16);
+      const analysisProgress =
+        72 + Math.floor(((index + 1) / sortedFrames.length) * 16);
       await db.updateProjectProgress(
         projectId,
         analysisProgress,
-        `steps.json を生成中 (${index + 1}/${sortedFrames.length})`,
+        `steps.json を生成中 (${index + 1}/${sortedFrames.length})`
       );
     }
 
@@ -575,6 +628,7 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
       project_id: projectId,
       generated_at: new Date().toISOString(),
       config: {
+        authoring_provider: ENV.authoringProvider,
         asr_provider: ENV.asrProvider,
         ocr_provider: ENV.ocrProvider,
         llm_provider: ENV.llmProvider,
@@ -589,8 +643,15 @@ export async function generateStepsForProject(projectId: number): Promise<void> 
     await saveStepsArtifact(projectId, withLegacyIds);
     await writeRunLog(projectId, runId, runLogLines);
 
-    await db.updateProjectProgress(projectId, 90, "steps.json とステップ保存が完了しました");
-    logger.info("Step generation complete", { projectId, stepCount: artifactSteps.length });
+    await db.updateProjectProgress(
+      projectId,
+      90,
+      "steps.json とステップ保存が完了しました"
+    );
+    logger.info("Step generation complete", {
+      projectId,
+      stepCount: artifactSteps.length,
+    });
   } finally {
     await cleanup();
   }
@@ -603,14 +664,18 @@ function generateErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) {
     return "AI解析中に不明なエラーが発生しました";
   }
-  
+
   const msg = error.message.toLowerCase();
-  
+
   if (msg.includes("rate limit") || msg.includes("429")) {
     return "AI APIのレート制限に達しました。しばらく待ってから再度お試しください。";
   } else if (msg.includes("quota") || msg.includes("insufficient")) {
     return "AI APIの利用可能枠を超えました。APIキーの設定を確認してください。";
-  } else if (msg.includes("unauthorized") || msg.includes("401") || msg.includes("403")) {
+  } else if (
+    msg.includes("unauthorized") ||
+    msg.includes("401") ||
+    msg.includes("403")
+  ) {
     return "AI APIの認証に失敗しました。APIキーが有効か確認してください。";
   } else if (msg.includes("timeout") || msg.includes("timed out")) {
     return "AI解析がタイムアウトしました。ネットワーク接続を確認してください。";
@@ -629,8 +694,14 @@ function generateErrorMessage(error: unknown): string {
  * 単一フレームを再分析してステップ内容を返す。
  * 保存先（steps.json / DB）は呼び出し側で決める。
  */
-export async function analyzeFrameForStepRegeneration(frame: Frame): Promise<RegeneratedStepData> {
-  const ocrResult = await extractFrameOcr(frame.imageUrl, frame.frameNumber, ENV.ocrProvider);
+export async function analyzeFrameForStepRegeneration(
+  frame: Frame
+): Promise<RegeneratedStepData> {
+  const ocrResult = await extractFrameOcr(
+    frame.imageUrl,
+    frame.frameNumber,
+    ENV.ocrProvider
+  );
   return analyzeFrame({
     imageUrl: frame.imageUrl,
     frameNumber: frame.frameNumber,
@@ -643,7 +714,10 @@ export async function analyzeFrameForStepRegeneration(frame: Frame): Promise<Reg
  * 単一のフレームを再分析してステップを更新する互換関数。
  * tRPC の step.regenerate は Phase 6 以降 artifact-primary route を使う。
  */
-export async function regenerateStep(stepId: number, frameId: number): Promise<void> {
+export async function regenerateStep(
+  stepId: number,
+  frameId: number
+): Promise<void> {
   // フレーム情報を取得（所有者チェックは呼び出し側で実施済み）
   const frame = await db.getFrameById(frameId);
 

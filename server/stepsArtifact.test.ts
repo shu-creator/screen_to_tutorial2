@@ -7,7 +7,7 @@ import path from "path";
 const storageRoot = vi.hoisted(() => {
   const dir = require("path").join(
     require("os").tmpdir(),
-    `steps_artifact_test_${Date.now()}`,
+    `steps_artifact_test_${Date.now()}`
   );
   process.env.STORAGE_DIR = dir;
   return dir;
@@ -23,8 +23,14 @@ import {
   STEPS_ARTIFACT_VERSION,
 } from "./stepsArtifact";
 
-async function writeArtifactFile(projectId: number, content: unknown): Promise<void> {
-  const filePath = path.join(storageRoot, `projects/${projectId}/artifacts/steps.json`);
+async function writeArtifactFile(
+  projectId: number,
+  content: unknown
+): Promise<void> {
+  const filePath = path.join(
+    storageRoot,
+    `projects/${projectId}/artifacts/steps.json`
+  );
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, JSON.stringify(content, null, 2));
 }
@@ -37,7 +43,12 @@ const v1Step = {
   t_start: 0,
   t_end: 1500,
   representative_frames: [
-    { frame_id: 100, frame_number: 0, timestamp: 0, image_url: "/api/storage/p/f.jpg" },
+    {
+      frame_id: 100,
+      frame_number: 0,
+      timestamp: 0,
+      image_url: "/api/storage/p/f.jpg",
+    },
   ],
   changed_region_bbox: null,
   ocr_text: ["保存"],
@@ -81,6 +92,7 @@ describe("steps artifact v1 -> v2 migration", () => {
     expect(loaded?.steps[0].needs_review).toBe(false);
     expect(loaded?.steps[0].review_reasons).toEqual([]);
     expect(loaded?.steps[0].audio_mode).toBe("auto");
+    expect(loaded?.config.authoring_provider).toBe("llm");
     // 運用必須フィールドが維持される（audio / legacy id / frame_id）
     expect(loaded?.steps[0].audio_url).toBe("/api/storage/p/a.mp3");
     expect(loaded?.steps[0].legacy_step_db_id).toBe(200);
@@ -88,7 +100,11 @@ describe("steps artifact v1 -> v2 migration", () => {
   });
 
   it("未知バージョンはサイレントにnullへフォールバックせずエラーになる", async () => {
-    await writeArtifactFile(78, { ...v1Artifact, project_id: 78, version: "9.9" });
+    await writeArtifactFile(78, {
+      ...v1Artifact,
+      project_id: 78,
+      version: "9.9",
+    });
     await expect(loadStepsArtifact(78)).rejects.toThrow("未対応");
   });
 
@@ -98,12 +114,14 @@ describe("steps artifact v1 -> v2 migration", () => {
       version: STEPS_ARTIFACT_VERSION,
       project_id: 80,
       overview: null,
-      steps: [{
-        ...v1Step,
-        source_segment_ids: ["seg-1"],
-        cited_ui_labels: ["保存"],
-        needs_review: true,
-      }],
+      steps: [
+        {
+          ...v1Step,
+          source_segment_ids: ["seg-1"],
+          cited_ui_labels: ["保存"],
+          needs_review: true,
+        },
+      ],
     });
 
     const loaded = await loadStepsArtifact(80);
@@ -128,7 +146,10 @@ describe("steps artifact v1 -> v2 migration", () => {
       reason: "not_found",
     });
 
-    const malformedPath = path.join(storageRoot, "projects/82/artifacts/steps.json");
+    const malformedPath = path.join(
+      storageRoot,
+      "projects/82/artifacts/steps.json"
+    );
     await fs.mkdir(path.dirname(malformedPath), { recursive: true });
     await fs.writeFile(malformedPath, "{ not valid json");
     await expect(loadStepsArtifactResult(82)).resolves.toMatchObject({
@@ -136,7 +157,11 @@ describe("steps artifact v1 -> v2 migration", () => {
       reason: "json_parse_error",
     });
 
-    await writeArtifactFile(84, { ...v1Artifact, project_id: 84, version: "9.9" });
+    await writeArtifactFile(84, {
+      ...v1Artifact,
+      project_id: 84,
+      version: "9.9",
+    });
     await expect(loadStepsArtifactResult(84)).resolves.toMatchObject({
       status: "invalid",
       reason: "unknown_version",
@@ -157,15 +182,17 @@ describe("steps artifact v1 -> v2 migration", () => {
   });
 
   it("patchStepArtifact はファイルが無ければ false を返す", async () => {
-    await expect(patchStepArtifact(99998, (artifact) => artifact)).resolves.toBe(false);
+    await expect(patchStepArtifact(99998, artifact => artifact)).resolves.toBe(
+      false
+    );
   });
 
   it("patchStepArtifact はファイルがあれば保存して true を返す", async () => {
     await writeArtifactFile(81, { ...v1Artifact, project_id: 81 });
 
-    const patched = await patchStepArtifact(81, (artifact) => ({
+    const patched = await patchStepArtifact(81, artifact => ({
       ...artifact,
-      steps: artifact.steps.map((step) => ({ ...step, title: "patched" })),
+      steps: artifact.steps.map(step => ({ ...step, title: "patched" })),
     }));
     const loaded = await loadStepsArtifact(81);
 
