@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildPreflightChecks,
   buildPreflightLines,
+  collectPreflightChecks,
   parseArgs,
 } from "./generatePipeline";
 
@@ -116,6 +117,123 @@ describe("generate pipeline CLI helpers", () => {
     expect(lines).toContain("ocr_provider: llm");
   });
 
+  it("allows local_whisper ASR in Codex App Server API-free preflight", () => {
+    const options = parseArgs([
+      "--video",
+      "sample.mp4",
+      "--outdir",
+      "outputs/demo",
+      "--use-audio",
+      "true",
+      "--asr-provider",
+      "local_whisper",
+      "--ocr-provider",
+      "engine",
+      "--preflight",
+    ]);
+
+    const checks = buildPreflightChecks(options, {
+      AUTHORING_PROVIDER: "codex_app_server",
+      OCR_PROVIDER: "engine",
+      TTS_PROVIDER: "openai",
+      CODEX_MODEL: "gpt-5-codex",
+    } as NodeJS.ProcessEnv);
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "PASS",
+          code: "asr_provider",
+          message: expect.stringContaining("local_whisper"),
+        }),
+      ]),
+    );
+    expect(checks.filter(check => check.code === "asr_provider")).toEqual([
+      expect.objectContaining({ status: "PASS" }),
+    ]);
+  });
+
+  it("rejects openai ASR in Codex App Server API-free preflight", () => {
+    const options = parseArgs([
+      "--video",
+      "sample.mp4",
+      "--outdir",
+      "outputs/demo",
+      "--use-audio",
+      "true",
+      "--asr-provider",
+      "openai",
+      "--ocr-provider",
+      "engine",
+      "--preflight",
+    ]);
+
+    const checks = buildPreflightChecks(options, {
+      AUTHORING_PROVIDER: "codex_app_server",
+      OCR_PROVIDER: "engine",
+      TTS_PROVIDER: "openai",
+      CODEX_MODEL: "gpt-5-codex",
+    } as NodeJS.ProcessEnv);
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "FAIL",
+          code: "asr_provider",
+          message: expect.stringContaining("--asr-provider local_whisper"),
+        }),
+      ]),
+    );
+  });
+
+  it("fails Codex App Server preflight clearly when local_whisper CLI is missing", async () => {
+    const tempDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "generate-pipeline-whisper-preflight-test-")
+    );
+    const fakeCodex = path.join(tempDir, "codex");
+    await fs.writeFile(
+      fakeCodex,
+      "#!/bin/sh\nprintf '%s\\n' 'Usage: codex app-server --listen stdio://'\n",
+      { mode: 0o755 },
+    );
+
+    const options = parseArgs([
+      "--video",
+      "sample.mp4",
+      "--outdir",
+      "outputs/demo",
+      "--use-audio",
+      "true",
+      "--asr-provider",
+      "local_whisper",
+      "--ocr-provider",
+      "engine",
+      "--preflight",
+    ]);
+
+    const checks = await collectPreflightChecks(options, {
+      AUTHORING_PROVIDER: "codex_app_server",
+      OCR_PROVIDER: "engine",
+      TTS_PROVIDER: "openai",
+      CODEX_MODEL: "gpt-5-codex",
+      PATH: tempDir,
+    } as NodeJS.ProcessEnv);
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "FAIL",
+          code: "asr_local_whisper_cli",
+          message: expect.stringContaining("pip install openai-whisper"),
+        }),
+        expect.objectContaining({
+          status: "PASS",
+          code: "codex_app_server_cli",
+        }),
+      ]),
+    );
+  });
+
   it("runs preflight before creating the output directory", async () => {
     const tempDir = await fs.mkdtemp(
       path.join(os.tmpdir(), "generate-pipeline-preflight-test-")
@@ -127,8 +245,9 @@ describe("generate pipeline CLI helpers", () => {
     await expect(fs.rm(outdir, { recursive: true, force: true })).resolves.toBeUndefined();
 
     const { stdout } = await execFileAsync(
-      "pnpm",
+      process.execPath,
       [
+        "--import",
         "tsx",
         "server/cli/generatePipeline.ts",
         "--video",
@@ -159,8 +278,9 @@ describe("generate pipeline CLI helpers", () => {
 
     await expect(
       execFileAsync(
-        "pnpm",
+        process.execPath,
         [
+          "--import",
           "tsx",
           "server/cli/generatePipeline.ts",
           "--video",
