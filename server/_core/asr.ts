@@ -249,11 +249,11 @@ export async function transcribeVideoSource(
     }
 
     if (provider === "openai") {
-      return transcribeWithOpenAI(audioPath);
+      return await transcribeWithOpenAI(audioPath);
     }
 
     if (provider === "local_whisper") {
-      return transcribeWithLocalWhisper(audioPath);
+      return await transcribeWithLocalWhisper(audioPath);
     }
 
     return {
