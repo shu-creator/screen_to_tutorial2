@@ -23,7 +23,13 @@ export type ReviewReasonCode =
   | "verification:unverified_ui_label"
   | "verification:low_confidence";
 
-export const StepAudioModeSchema = z.enum(["auto", "tts", "original", "mixed", "silent"]);
+export const StepAudioModeSchema = z.enum([
+  "auto",
+  "tts",
+  "original",
+  "mixed",
+  "silent",
+]);
 export type StepAudioMode = z.infer<typeof StepAudioModeSchema>;
 
 const NormalizedBBoxSchema = z.object({
@@ -84,6 +90,7 @@ export const StepsArtifactSchema = z.object({
   project_id: z.number().int().positive(),
   generated_at: z.string().min(1),
   config: z.object({
+    authoring_provider: z.string().optional().default("llm"),
     asr_provider: z.string(),
     ocr_provider: z.string(),
     llm_provider: z.string(),
@@ -102,7 +109,11 @@ export type StepsArtifactLoadResult =
   | { status: "missing"; reason: "not_found" | "invalidated" }
   | {
       status: "invalid";
-      reason: "read_error" | "json_parse_error" | "schema_error" | "unknown_version";
+      reason:
+        | "read_error"
+        | "json_parse_error"
+        | "schema_error"
+        | "unknown_version";
       message: string;
     };
 
@@ -139,7 +150,7 @@ function migrateV1ToV2(raw: Record<string, unknown>): unknown {
     ...raw,
     version: STEPS_ARTIFACT_VERSION,
     overview: raw.overview ?? null,
-    steps: steps.map((step) => ({
+    steps: steps.map(step => ({
       source_segment_ids: [],
       cited_ui_labels: [],
       needs_review: false,
@@ -150,7 +161,9 @@ function migrateV1ToV2(raw: Record<string, unknown>): unknown {
   };
 }
 
-export async function loadStepsArtifactResult(projectId: number): Promise<StepsArtifactLoadResult> {
+export async function loadStepsArtifactResult(
+  projectId: number
+): Promise<StepsArtifactLoadResult> {
   const key = getStepsArtifactStorageKey(projectId);
 
   let raw: Record<string, unknown>;
@@ -173,7 +186,11 @@ export async function loadStepsArtifactResult(projectId: number): Promise<StepsA
     raw = JSON.parse(buffer.toString("utf8")) as Record<string, unknown>;
   } catch (error) {
     if (error instanceof SyntaxError) {
-      return { status: "invalid", reason: "json_parse_error", message: error.message };
+      return {
+        status: "invalid",
+        reason: "json_parse_error",
+        message: error.message,
+      };
     }
     return {
       status: "invalid",
@@ -191,7 +208,10 @@ export async function loadStepsArtifactResult(projectId: number): Promise<StepsA
 
   try {
     if (version === STEPS_ARTIFACT_VERSION_V1) {
-      return { status: "loaded", artifact: StepsArtifactSchema.parse(migrateV1ToV2(raw)) };
+      return {
+        status: "loaded",
+        artifact: StepsArtifactSchema.parse(migrateV1ToV2(raw)),
+      };
     }
     if (version === STEPS_ARTIFACT_VERSION) {
       return { status: "loaded", artifact: StepsArtifactSchema.parse(raw) };
@@ -216,7 +236,9 @@ export async function loadStepsArtifactResult(projectId: number): Promise<StepsA
   };
 }
 
-export async function loadStepsArtifact(projectId: number): Promise<StepsArtifact | null> {
+export async function loadStepsArtifact(
+  projectId: number
+): Promise<StepsArtifact | null> {
   const result = await loadStepsArtifactResult(projectId);
   if (result.status === "loaded") {
     return result.artifact;
@@ -237,19 +259,25 @@ export async function loadStepsArtifact(projectId: number): Promise<StepsArtifac
 }
 
 /** retry等でフレームが再生成される際に古いステップartifactを無効化する */
-export async function invalidateStepsArtifact(projectId: number): Promise<void> {
+export async function invalidateStepsArtifact(
+  projectId: number
+): Promise<void> {
   const key = getStepsArtifactStorageKey(projectId);
   try {
     const file = await storageGet(key);
     const raw = JSON.parse(
-      (await readBinaryFromSource(file.url)).toString("utf8"),
+      (await readBinaryFromSource(file.url)).toString("utf8")
     ) as Record<string, unknown>;
     const invalidated = {
       ...raw,
       version: INVALIDATED_VERSION,
       invalidated_at: new Date().toISOString(),
     };
-    await storagePut(key, JSON.stringify(invalidated, null, 2), "application/json");
+    await storagePut(
+      key,
+      JSON.stringify(invalidated, null, 2),
+      "application/json"
+    );
   } catch {
     // 存在しなければ何もしない
   }
@@ -257,7 +285,7 @@ export async function invalidateStepsArtifact(projectId: number): Promise<void> 
 
 export async function saveStepsArtifact(
   projectId: number,
-  artifact: StepsArtifact,
+  artifact: StepsArtifact
 ): Promise<{ key: string; url: string }> {
   const normalized = StepsArtifactSchema.parse({
     ...artifact,
@@ -265,15 +293,21 @@ export async function saveStepsArtifact(
     project_id: projectId,
   });
   const key = getStepsArtifactStorageKey(projectId);
-  return storagePut(key, JSON.stringify(normalized, null, 2), "application/json");
+  return storagePut(
+    key,
+    JSON.stringify(normalized, null, 2),
+    "application/json"
+  );
 }
 
 export function buildLegacyRenderableStepsFromArtifact(
   projectId: number,
   artifact: StepsArtifact,
-  fallbackFramesByTimestamp: Frame[],
+  fallbackFramesByTimestamp: Frame[]
 ): LegacyRenderableStep[] {
-  const framesSorted = [...fallbackFramesByTimestamp].sort((a, b) => a.timestamp - b.timestamp);
+  const framesSorted = [...fallbackFramesByTimestamp].sort(
+    (a, b) => a.timestamp - b.timestamp
+  );
 
   return artifact.steps
     .slice()
@@ -282,7 +316,7 @@ export function buildLegacyRenderableStepsFromArtifact(
       const frameId =
         step.frame_id ??
         step.representative_frames[0]?.frame_id ??
-        framesSorted.find((frame) => frame.timestamp >= step.t_start)?.id ??
+        framesSorted.find(frame => frame.timestamp >= step.t_start)?.id ??
         framesSorted[index]?.id ??
         framesSorted[0]?.id;
 
@@ -310,9 +344,9 @@ export function buildLegacyRenderableStepsFromArtifact(
 export function buildStepsArtifactFromDb(
   project: Project,
   frames: Frame[],
-  steps: Step[],
+  steps: Step[]
 ): StepsArtifact {
-  const frameById = new Map(frames.map((frame) => [frame.id, frame]));
+  const frameById = new Map(frames.map(frame => [frame.id, frame]));
   const orderedSteps = [...steps].sort((a, b) => a.sortOrder - b.sortOrder);
 
   const artifactSteps: StepArtifact[] = orderedSteps.map((step, index) => {
@@ -362,6 +396,7 @@ export function buildStepsArtifactFromDb(
     project_id: project.id,
     generated_at: new Date().toISOString(),
     config: {
+      authoring_provider: "llm",
       asr_provider: "none",
       ocr_provider: "none",
       llm_provider: "legacy",
@@ -375,7 +410,7 @@ export function buildStepsArtifactFromDb(
 
 export async function patchStepArtifact(
   projectId: number,
-  patcher: (artifact: StepsArtifact) => StepsArtifact,
+  patcher: (artifact: StepsArtifact) => StepsArtifact
 ): Promise<boolean> {
   const artifact = await loadStepsArtifact(projectId);
   if (!artifact) {

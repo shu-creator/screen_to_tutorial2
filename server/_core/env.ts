@@ -3,6 +3,7 @@ import path from "path";
 
 type AuthMode = "none" | "oauth";
 type LLMProvider = "openai" | "gemini" | "claude";
+type AuthoringProvider = "llm" | "codex_app_server";
 type TTSProvider = "openai" | "gemini";
 type SlidePreset = "default" | "training";
 type ASRProvider = "none" | "openai" | "local_whisper";
@@ -109,6 +110,11 @@ const llmProvider = parseEnumEnv<LLMProvider>(
   ["openai", "gemini", "claude"],
   "openai"
 );
+const authoringProvider = parseEnumEnv<AuthoringProvider>(
+  "AUTHORING_PROVIDER",
+  ["llm", "codex_app_server"],
+  "llm"
+);
 const ttsProvider = parseEnumEnv<TTSProvider>(
   "TTS_PROVIDER",
   ["openai", "gemini"],
@@ -131,6 +137,7 @@ const slidePreset = parseEnumEnv<SlidePreset>(
 );
 
 const llmModel = process.env.LLM_MODEL ?? DEFAULT_LLM_MODEL[llmProvider];
+const codexModel = process.env.CODEX_MODEL ?? "";
 const ttsModel = process.env.TTS_MODEL ?? DEFAULT_TTS_MODEL[ttsProvider];
 const asrModel = process.env.ASR_MODEL ?? "whisper-1";
 const llmApiKey = resolveLLMApiKey(llmProvider);
@@ -258,7 +265,7 @@ function validateEnvOnStartup(): void {
       );
     }
 
-    if (!llmApiKey) {
+    if ((authoringProvider === "llm" || ocrProvider === "llm") && !llmApiKey) {
       throw new Error("本番環境では LLM 用の API キーが必須です");
     }
     if (!ttsApiKey) {
@@ -294,6 +301,8 @@ export const ENV = {
   llmProvider,
   llmModel,
   llmApiKey,
+  authoringProvider,
+  codexModel,
   ttsProvider,
   ttsModel,
   ttsApiKey,
@@ -328,6 +337,7 @@ export const ENV = {
 export type {
   AuthMode,
   LLMProvider,
+  AuthoringProvider,
   TTSProvider,
   SlidePreset,
   ASRProvider,
